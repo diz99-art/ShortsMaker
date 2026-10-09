@@ -149,22 +149,45 @@ def _placeholder(size: tuple[int, int], label: str, font_path: Path) -> Image.Im
     return img
 
 
-def make_image_card(src: Path | None, box: ImageBox, font_path: Path) -> tuple[Image.Image, bool]:
-    """캐리커처를 박스 크기로 꽉 채우고(cover) 모양·테두리를 입힌 RGBA 카드. (카드, 이미지없음여부)"""
+ZOOM_SUPERSAMPLE = 3  # 줌인 떨림을 줄이려고 그림을 몇 배로 키워 저장할지
+
+
+@dataclass
+class ImageCard:
+    frame: Image.Image   # 테두리만 있는 RGBA (박스 크기) — base에 고정
+    photo: Image.Image   # 테두리 안쪽을 꽉 채운 그림 (RGB, 안쪽 크기 × ZOOM_SUPERSAMPLE)
+    mask: Image.Image    # 안쪽 모양 마스크 (L, 안쪽 크기)
+    inner: Box           # 안쪽 영역 (화면 좌표)
+    missing: bool
+
+    def composite(self) -> Image.Image:
+        """줌 1배 상태의 카드 (미리보기용)."""
+        card = self.frame.copy()
+        small = self.photo.resize((self.inner.w, self.inner.h), Image.Resampling.LANCZOS)
+        bw = (card.width - self.inner.w) // 2
+        card.paste(small, (bw, bw), self.mask)
+        return card
+
+
+def make_image_card(src: Path | None, box: ImageBox, font_path: Path) -> ImageCard:
+    """캐리커처를 박스 안쪽에 꽉 채우고(cover) 모양·테두리를 만든다."""
     size = (box.w, box.h)
     bw = box.border_width
-    inner = (box.w - 2 * bw, box.h - 2 * bw)
+    inner = Box(x=box.x + bw, y=box.y + bw, w=box.w - 2 * bw, h=box.h - 2 * bw)
+    big = (inner.w * ZOOM_SUPERSAMPLE, inner.h * ZOOM_SUPERSAMPLE)
     missing = src is None or not src.exists()
-    photo = _placeholder(inner, "이미지 없음", font_path) if missing else ImageOps.fit(
-        ImageOps.exif_transpose(Image.open(src)).convert("RGB"), inner, Image.Resampling.LANCZOS
-    )
-    card = Image.new("RGBA", size, (0, 0, 0, 0))
+    if missing:
+        photo = _placeholder((inner.w, inner.h), "이미지 없음", font_path).resize(big)
+    else:
+        photo = ImageOps.fit(
+            ImageOps.exif_transpose(Image.open(src)).convert("RGB"), big, Image.Resampling.LANCZOS
+        )
+    frame = Image.new("RGBA", size, (0, 0, 0, 0))
     if bw:
         border = Image.new("RGBA", size, _hex(box.border_color) + (255,))
-        card.paste(border, (0, 0), _shape_mask(size, box))
-    inner_mask = _shape_mask(size, box, inset=bw).crop((bw, bw, bw + inner[0], bw + inner[1]))
-    card.paste(photo, (bw, bw), inner_mask)
-    return card, missing
+        frame.paste(border, (0, 0), _shape_mask(size, box))
+    mask = _shape_mask(size, box, inset=bw).crop((bw, bw, bw + inner.w, bw + inner.h))
+    return ImageCard(frame=frame, photo=photo, mask=mask, inner=inner, missing=missing)
 
 
 # ---------------------------------------------------------------- 장면
@@ -172,7 +195,8 @@ def make_image_card(src: Path | None, box: ImageBox, font_path: Path) -> tuple[I
 @dataclass
 class Layer:
     path: Path
-    box: Box
+    box: Box                  # 화면에 놓일 위치·크기
+    mask: Path | None = None  # image 레이어: 줌 후 씌울 고정 마스크
 
 
 @dataclass
@@ -246,12 +270,16 @@ def build_scenes(
             layers["pop"] = Layer(pop_path, L.rank)
 
             src = (project_dir / item.image) if item.image else None
-            card, missing = make_image_card(src, L.image, fp("bold"))
-            if missing:
+            card = make_image_card(src, L.image, fp("bold"))
+            if card.missing:
                 result.warnings.append(f"[{item.rank}위] 이미지가 없어 대체 이미지를 사용합니다: {item.image}")
-            img_path = work_dir / f"{stem}_image.png"
-            card.save(img_path)
-            layers["image"] = Layer(img_path, L.image)
+            base.paste(card.frame, (L.image.x, L.image.y), card.frame)
+            img_path = work_dir / f"{stem}_image.jpg"
+            card.photo.save(img_path, quality=95)
+            mask_path = work_dir / f"{stem}_mask.png"
+            card.mask.save(mask_path)
+            layers["image"] = Layer(img_path, card.inner, mask=mask_path)
+            preview_card = card.composite()
 
         else:  # outro
             L = t.outro
@@ -262,10 +290,11 @@ def build_scenes(
         base.save(base_path)
 
         preview = base.convert("RGBA")
-        for key in ("image", "pop"):
-            if key in layers:
-                lay = layers[key]
-                preview.alpha_composite(Image.open(lay.path), (lay.box.x, lay.box.y))
+        if "image" in layers:
+            preview.alpha_composite(preview_card, (t.rank.image.x, t.rank.image.y))
+        if "pop" in layers:
+            lay = layers["pop"]
+            preview.alpha_composite(Image.open(lay.path), (lay.box.x, lay.box.y))
         preview_path = work_dir / f"{stem}_preview.png"
         preview.convert("RGB").save(preview_path)
 

@@ -44,6 +44,9 @@ def test_build_scenes_layers_and_warnings(tmp_path):
         assert Image.open(s.base).size == (1080, 1920)
         assert s.preview.exists()
     rank5 = res.scenes[1]
-    assert rank5.image and rank5.pop
-    assert Image.open(rank5.image.path).size == (t.rank.image.w, t.rank.image.h)
+    assert rank5.image and rank5.pop and rank5.image.mask
+    inner = rank5.image.box
+    bw = t.rank.image.border_width
+    assert (inner.w, inner.h) == (t.rank.image.w - 2 * bw, t.rank.image.h - 2 * bw)
+    assert Image.open(rank5.image.mask).size == (inner.w, inner.h)
     assert res.scenes[-1].image is None
