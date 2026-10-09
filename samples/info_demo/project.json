@@ -1,0 +1,49 @@
+{
+  "channel": "info_top5",
+  "title": "알아두면 쓸모있는 정보 TOP 5 (샘플)",
+  "subtitle": "40초 길이 테스트",
+  "duration": 40,
+  "source_note": "출처: 샘플 데이터",
+  "items": [
+    {
+      "rank": 5,
+      "name": "다섯 번째 항목",
+      "value": "85%",
+      "description": "정보 TOP 5 샘플 설명",
+      "image": "item5.png"
+    },
+    {
+      "rank": 4,
+      "name": "네 번째 항목",
+      "value": "68%",
+      "description": "정보 TOP 5 샘플 설명",
+      "image": "item4.png"
+    },
+    {
+      "rank": 3,
+      "name": "세 번째 항목",
+      "value": "51%",
+      "description": "정보 TOP 5 샘플 설명",
+      "image": "item3.png"
+    },
+    {
+      "rank": 2,
+      "name": "두 번째 항목",
+      "value": "34%",
+      "description": "정보 TOP 5 샘플 설명",
+      "image": "item2.png"
+    },
+    {
+      "rank": 1,
+      "name": "첫 번째 항목",
+      "value": "17%",
+      "description": "정보 TOP 5 샘플 설명",
+      "image": "item1.png"
+    }
+  ],
+  "music": "music.mp3",
+  "music_start": 0.0,
+  "lyrics": [],
+  "lyrics_lrc": "lyrics.lrc",
+  "rights_confirmed": true
+}

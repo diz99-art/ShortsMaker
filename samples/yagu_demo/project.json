@@ -1,0 +1,90 @@
+{
+  "channel": "yagu",
+  "title": "KBO 역대 FA 계약 TOP 5 (샘플)",
+  "subtitle": "총액 기준",
+  "duration": 50,
+  "source_note": "출처: 샘플 데이터 — 실제 기록 아님 (2026.10 기준)",
+  "items": [
+    {
+      "rank": 5,
+      "name": "테스트 선수 마",
+      "value": "80억",
+      "description": "샘플 설명 문구입니다",
+      "image": "img5.png"
+    },
+    {
+      "rank": 4,
+      "name": "테스트 선수 라",
+      "value": "90억",
+      "description": "4년 계약 · 옵션 포함 총액",
+      "image": "img4.png"
+    },
+    {
+      "rank": 3,
+      "name": "테스트 선수 다",
+      "value": "100억",
+      "description": "아주 긴 설명이 들어가면 글자 크기가 자동으로 줄어드는지 확인하기 위한 샘플 문장입니다",
+      "image": "img3.png"
+    },
+    {
+      "rank": 2,
+      "name": "테스트 선수 나",
+      "value": "115억",
+      "description": "구단 역사상 최고 대우",
+      "image": "img2.png"
+    },
+    {
+      "rank": 1,
+      "name": "테스트 선수 가",
+      "value": "152억",
+      "description": "역대 최고액 (샘플 데이터)",
+      "image": "img1.png"
+    }
+  ],
+  "music": "music.mp3",
+  "music_start": 2.0,
+  "lyrics": [
+    {
+      "start": 0.5,
+      "end": 2.8,
+      "text": "오늘의 TOP 5 시작합니다"
+    },
+    {
+      "start": 4.0,
+      "end": 8.0,
+      "text": "첫 번째 가사 줄 — 샘플 테스트"
+    },
+    {
+      "start": 12.0,
+      "end": 16.5,
+      "text": "두 번째 가사 줄"
+    },
+    {
+      "start": 20.0,
+      "end": 24.0,
+      "text": "세 번째 가사는 조금 더 길게 써서 두 줄로 나뉘는지 확인합니다"
+    },
+    {
+      "start": 28.0,
+      "end": 32.0,
+      "text": "네 번째 가사 줄"
+    },
+    {
+      "start": 36.0,
+      "end": 40.0,
+      "text": "드디어 1위 발표!"
+    },
+    {
+      "start": 41.0,
+      "end": 44.5,
+      "text": "다섯 번째 가사 줄"
+    },
+    {
+      "start": 45.5,
+      "end": 49.0,
+      "text": "끝까지 봐주셔서 감사합니다"
+    }
+  ],
+  "lyrics_lrc": null,
+  "rights_confirmed": true
+}

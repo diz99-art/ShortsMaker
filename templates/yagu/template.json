@@ -1,0 +1,37 @@
+{
+  "name": "야구한장",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "background": "background.png",
+  "gradient": ["#06142b", "#123a6b"],
+  "fonts": {
+    "regular": "Pretendard-SemiBold.otf",
+    "bold": "Pretendard-Bold.otf",
+    "extrabold": "Pretendard-ExtraBold.otf",
+    "black": "Pretendard-Black.otf"
+  },
+  "intro": {
+    "badge_text": "TOP 5",
+    "badge":    {"x": 140, "y": 520,  "w": 800, "h": 200, "font": "black",     "size": 170, "min_size": 90, "color": "#FFC81E", "max_lines": 1, "stroke_width": 6, "stroke_color": "#06142b"},
+    "title":    {"x": 70,  "y": 760,  "w": 940, "h": 380, "font": "black",     "size": 112, "min_size": 60, "color": "#FFFFFF", "max_lines": 3, "stroke_width": 5, "stroke_color": "#06142b"},
+    "subtitle": {"x": 110, "y": 1160, "w": 860, "h": 110, "font": "bold",      "size": 64,  "min_size": 36, "color": "#BFD4F2", "max_lines": 1}
+  },
+  "rank": {
+    "rank_format": "{rank}위",
+    "rank_one_color": "#FF4D4D",
+    "header":      {"x": 60,  "y": 140,  "w": 960, "h": 160, "font": "extrabold", "size": 66,  "min_size": 38, "color": "#FFFFFF", "max_lines": 2},
+    "rank":        {"x": 60,  "y": 320,  "w": 960, "h": 220, "font": "black",     "size": 190, "min_size": 110, "color": "#FFC81E", "max_lines": 1, "stroke_width": 8, "stroke_color": "#06142b"},
+    "image":       {"x": 190, "y": 560,  "w": 700, "h": 700, "shape": "rounded", "radius": 70, "border_width": 12, "border_color": "#FFC81E"},
+    "name":        {"x": 60,  "y": 1290, "w": 960, "h": 130, "font": "black",     "size": 100, "min_size": 52, "color": "#FFFFFF", "max_lines": 1, "stroke_width": 4, "stroke_color": "#06142b"},
+    "value":       {"x": 60,  "y": 1420, "w": 960, "h": 110, "font": "extrabold", "size": 84,  "min_size": 44, "color": "#FFC81E", "max_lines": 1},
+    "description": {"x": 90,  "y": 1530, "w": 900, "h": 110, "font": "regular",   "size": 46,  "min_size": 30, "color": "#DCE6F5", "max_lines": 2}
+  },
+  "outro": {
+    "cta_text": "구독과 좋아요 부탁드려요!",
+    "cta":    {"x": 80, "y": 700,  "w": 920, "h": 320, "font": "black",   "size": 100, "min_size": 56, "color": "#FFC81E", "max_lines": 2, "stroke_width": 5, "stroke_color": "#06142b"},
+    "source": {"x": 80, "y": 1080, "w": 920, "h": 220, "font": "regular", "size": 46,  "min_size": 28, "color": "#DCE6F5", "max_lines": 3}
+  },
+  "lyrics": {"x": 60, "y": 1660, "w": 960, "h": 140, "font": "bold", "size": 54, "min_size": 32, "color": "#FFFFFF", "max_lines": 2, "stroke_width": 3, "stroke_color": "#000000", "bg_color": "#000000", "bg_opacity": 0.5, "bg_padding": 18},
+  "effects": {"transition": 0.4, "zoom_to": 1.08, "rank_pop": 0.35, "music_fade_out": 1.5}
+}

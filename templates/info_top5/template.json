@@ -1,0 +1,37 @@
+{
+  "name": "정보 TOP 5",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "background": "background.png",
+  "gradient": ["#14092a", "#3d1c73"],
+  "fonts": {
+    "regular": "Pretendard-SemiBold.otf",
+    "bold": "Pretendard-Bold.otf",
+    "extrabold": "Pretendard-ExtraBold.otf",
+    "black": "Pretendard-Black.otf"
+  },
+  "intro": {
+    "badge_text": "TOP 5",
+    "badge":    {"x": 140, "y": 520,  "w": 800, "h": 200, "font": "black",     "size": 170, "min_size": 90, "color": "#3BE8FF", "max_lines": 1},
+    "title":    {"x": 70,  "y": 760,  "w": 940, "h": 380, "font": "black",     "size": 108, "min_size": 60, "color": "#FFFFFF", "max_lines": 3, "stroke_width": 4, "stroke_color": "#14092a"},
+    "subtitle": {"x": 110, "y": 1160, "w": 860, "h": 110, "font": "bold",      "size": 62,  "min_size": 36, "color": "#D8C8FF", "max_lines": 1}
+  },
+  "rank": {
+    "rank_format": "TOP {rank}",
+    "rank_one_color": "#FFD23F",
+    "header":      {"x": 60,  "y": 140,  "w": 960, "h": 160, "font": "extrabold", "size": 62,  "min_size": 36, "color": "#FFFFFF", "max_lines": 2},
+    "rank":        {"x": 60,  "y": 320,  "w": 960, "h": 220, "font": "black",     "size": 170, "min_size": 100, "color": "#3BE8FF", "max_lines": 1, "stroke_width": 6, "stroke_color": "#14092a"},
+    "image":       {"x": 165, "y": 570,  "w": 750, "h": 700, "shape": "rounded", "radius": 40, "border_width": 8, "border_color": "#3BE8FF"},
+    "name":        {"x": 60,  "y": 1300, "w": 960, "h": 130, "font": "black",     "size": 92,  "min_size": 50, "color": "#FFFFFF", "max_lines": 1},
+    "value":       {"x": 60,  "y": 1430, "w": 960, "h": 100, "font": "extrabold", "size": 76,  "min_size": 42, "color": "#3BE8FF", "max_lines": 1},
+    "description": {"x": 90,  "y": 1530, "w": 900, "h": 110, "font": "regular",   "size": 46,  "min_size": 30, "color": "#E6DCFF", "max_lines": 2}
+  },
+  "outro": {
+    "cta_text": "더 많은 TOP 5는 구독!",
+    "cta":    {"x": 80, "y": 700,  "w": 920, "h": 320, "font": "black",   "size": 100, "min_size": 56, "color": "#3BE8FF", "max_lines": 2},
+    "source": {"x": 80, "y": 1080, "w": 920, "h": 220, "font": "regular", "size": 46,  "min_size": 28, "color": "#E6DCFF", "max_lines": 3}
+  },
+  "lyrics": {"x": 60, "y": 1660, "w": 960, "h": 140, "font": "bold", "size": 54, "min_size": 32, "color": "#FFFFFF", "max_lines": 2, "stroke_width": 3, "stroke_color": "#000000", "bg_color": "#14092a", "bg_opacity": 0.6, "bg_padding": 18},
+  "effects": {"transition": 0.4, "zoom_to": 1.06, "rank_pop": 0.35, "music_fade_out": 1.5}
+}
