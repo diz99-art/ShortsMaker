@@ -1,0 +1,17 @@
+{
+  "title": "쇼츠 제목",
+  "music": "음악.mp3",
+  "scenes": [
+    {"kind": "intro", "title": "인트로", "image": "배경.png", "duration": 4},
+    {"kind": "rank", "rank": 5, "title": "5위 정보", "image": "5위.jpg", "duration": 8},
+    {"kind": "rank", "rank": 4, "title": "4위 정보", "image": "4위.jpg", "duration": 8},
+    {"kind": "rank", "rank": 3, "title": "3위 정보", "image": "3위.jpg", "duration": 8},
+    {"kind": "rank", "rank": 2, "title": "2위 정보", "image": "2위.jpg", "duration": 8},
+    {"kind": "rank", "rank": 1, "title": "1위 정보", "image": "1위.jpg", "duration": 8},
+    {"kind": "outro", "title": "아웃트로", "image": "배경.png", "duration": 6}
+  ],
+  "lyrics": [
+    {"start": 0.5, "end": 2.5, "text": "첫 가사"},
+    {"start": 2.5, "end": 4, "text": "다음 가사"}
+  ]
+}
