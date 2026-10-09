@@ -1,0 +1,5 @@
+pillow>=11
+pydantic>=2.7
+streamlit>=1.40
+pytest>=8
+pycapcut==0.0.3
