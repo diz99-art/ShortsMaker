@@ -25,7 +25,7 @@ def _button(at, label):
 
 
 @pytest.mark.slow
-def test_load_preview_render(cleanup):
+def test_load_preview_render(cleanup, tmp_path):
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
     assert not at.exception
 
@@ -55,3 +55,10 @@ def test_load_preview_render(cleanup):
     assert not at.error, [e.value for e in at.error]
     assert any("완성!" in s.value for s in at.success)
     assert (OUTPUT_DIR / f"{SLUG}.mp4").exists()
+
+    # CapCut 초안 (임시 폴더로 — 실제 CapCut 폴더는 건드리지 않음)
+    at.text_input(key="capcut_dir").set_value(str(tmp_path)).run()
+    _button(at, "✂️ CapCut 초안으로 보내기").click().run()
+    assert not at.error, [e.value for e in at.error]
+    drafts = [d for d in tmp_path.iterdir() if d.name.startswith("ShortsMaker_")]
+    assert len(drafts) == 1 and (drafts[0] / "draft_info.json").exists()

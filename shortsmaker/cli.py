@@ -4,6 +4,8 @@
   python -m shortsmaker.cli scenes   projects/x/project.json   # 장면 PNG만 생성
   python -m shortsmaker.cli check    projects/x/project.json   # 렌더 전 검증
   python -m shortsmaker.cli render   projects/x/project.json   # MP4 렌더
+  python -m shortsmaker.cli capcut   projects/x/project.json   # CapCut 초안 (비공식)
+  python -m shortsmaker.cli kit      projects/x/project.json   # CapCut 수동 가져오기 재료
 """
 from __future__ import annotations
 
@@ -75,6 +77,27 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0 if r.ok else 1
 
 
+def cmd_capcut(args: argparse.Namespace) -> int:
+    from .capcut_export import CapCutExportError, export_draft  # 비공식 기능은 필요할 때만 불러온다
+    project, project_dir = load_project(args.project)
+    try:
+        res = export_draft(project, project_dir, root=Path(args.root) if args.root else None, name=args.name)
+    except CapCutExportError as e:
+        print(e, file=sys.stderr)
+        return 1
+    for w in res.warnings:
+        print("경고:", w)
+    print(f"CapCut 초안: {res.path}")
+    return 0
+
+
+def cmd_kit(args: argparse.Namespace) -> int:
+    from .capcut_export import export_manual_kit
+    project, project_dir = load_project(args.project)
+    print(f"CapCut 수동 가져오기 키트: {export_manual_kit(project, project_dir)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="shortsmaker")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -97,6 +120,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--subtitles", choices=["auto", "ass", "png"], default="auto",
                    help="가사 자막 방식 (auto: libass 있으면 ASS, 없으면 PNG)")
     p.set_defaults(func=cmd_render)
+
+    p = sub.add_parser("capcut", help="CapCut 초안 만들기 (비공식)")
+    p.add_argument("project")
+    p.add_argument("--root", help="CapCut 초안 폴더 (기본: ~/Movies/CapCut/User Data/Projects/com.lveditor.draft)")
+    p.add_argument("--name", help="초안 이름 (기본: ShortsMaker_<폴더명>_<시각>)")
+    p.set_defaults(func=cmd_capcut)
+
+    p = sub.add_parser("kit", help="CapCut 수동 가져오기 재료 (장면 PNG·음악·SRT)")
+    p.add_argument("project")
+    p.set_defaults(func=cmd_kit)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from shortsmaker.capcut_export import DEFAULT_DRAFTS_DIR
 from shortsmaker.ffmpeg_builder import FFmpegError
 from shortsmaker.lyrics import parse_lrc
 from shortsmaker.models import (
@@ -41,7 +42,7 @@ def _init_state() -> None:
         "title": "", "subtitle": "", "duration": 50.0, "source_note": "",
         "music_file": None, "music_start": 0.0, "lyrics_mode": "직접 입력",
         "lyrics_base": _empty_lyrics(), "lyrics_ver": 0, "lrc_file": None, "rights": False,
-        "previews": None, "result": None, "upload_ver": 0,
+        "previews": None, "result": None, "upload_ver": 0, "capcut_dir": str(DEFAULT_DRAFTS_DIR),
     }
     for r in RANKS:
         defaults |= {f"name_{r}": "", f"value_{r}": "", f"desc_{r}": "", f"img_{r}": None}
@@ -153,6 +154,9 @@ with st.sidebar:
     st.text_input("저장 폴더 이름 (projects/…)", key="slug")
     st.caption(f"저장 위치: `{_target_dir().relative_to(ROOT)}`")
     save_clicked = st.button("💾 저장", width="stretch")
+    with st.expander("⚙️ 설정"):
+        st.text_input("CapCut 초안 폴더", key="capcut_dir",
+                      help="CapCut 설정 → 초안 위치. 기본: ~/Movies/CapCut/User Data/Projects/com.lveditor.draft")
 
 st.title("🎬 ShortsMaker — TOP 5 쇼츠 만들기")
 
@@ -286,14 +290,21 @@ if mp4_clicked and (got := _collect_or_error()):
 if capcut_clicked and (got := _collect_or_error()):
     project, project_dir = got
     try:
-        from shortsmaker.capcut_export import export_draft  # 비공식 라이브러리 — 실패해도 MP4에 영향 없음
+        # 비공식 라이브러리 — import·생성 실패가 MP4 기능에 영향을 주지 않도록 여기서만 불러온다
+        from shortsmaker.capcut_export import export_draft
         with st.spinner("CapCut 초안 만드는 중…"):
-            draft = export_draft(project, project_dir)
-        st.success(f"CapCut 초안을 만들었습니다: {draft.name}\n\n`{draft.path}`")
+            draft = export_draft(project, project_dir, root=Path(ss.capcut_dir).expanduser())
+        st.success(f"CapCut 초안을 만들었습니다: **{draft.name}**\n\nCapCut을 열어 홈 화면 목록에서 확인하세요.\n\n`{draft.path}`")
         for w in draft.warnings:
             st.warning(w)
     except Exception as e:  # noqa: BLE001
         st.error(f"CapCut 초안 생성 실패: {e}")
+        try:
+            from shortsmaker.capcut_export import export_manual_kit
+            kit = export_manual_kit(project, project_dir)
+            st.info(f"대신 CapCut에 직접 가져올 재료(장면 PNG·음악·가사 SRT)를 만들었습니다:\n\n`{kit}`")
+        except Exception as e2:  # noqa: BLE001
+            st.error(f"가져오기 재료 생성도 실패: {e2}")
 
 if ss.previews:
     tl_cols = st.columns(len(ss.previews))
