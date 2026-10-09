@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .ffmpeg_builder import FFmpegError
 from .models import load_project, load_template
-from .pipeline import prepare, render, work_dir_for
+from .pipeline import LyricsError, prepare, render, work_dir_for
 from .scenes import contact_sheet
 from .timeline import build_timeline, format_timeline
 
@@ -42,12 +42,17 @@ def cmd_render(args: argparse.Namespace) -> int:
     t0 = time.time()
     try:
         res = render(project, project_dir, Path(args.output) if args.output else None,
-                     progress=lambda f, m: print(f"[{f * 100:5.1f}%] {m}"))
+                     progress=lambda f, m: print(f"[{f * 100:5.1f}%] {m}"),
+                     subtitle_mode=args.subtitles)
+    except LyricsError as e:
+        print(f"가사 오류:\n{e}", file=sys.stderr)
+        return 1
     except FFmpegError as e:
         print(e, file=sys.stderr)
         return 1
     for w in res.warnings:
         print("경고:", w)
+    print(f"자막 방식: {res.subtitle_mode}")
     print(f"완성: {res.output}  ({time.time() - t0:.1f}초 소요)")
     return 0
 
@@ -67,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("render", help="MP4 렌더")
     p.add_argument("project")
     p.add_argument("-o", "--output", help="출력 경로 (기본: output/<폴더명>.mp4)")
+    p.add_argument("--subtitles", choices=["auto", "ass", "png"], default="auto",
+                   help="가사 자막 방식 (auto: libass 있으면 ASS, 없으면 PNG)")
     p.set_defaults(func=cmd_render)
 
     args = parser.parse_args(argv)

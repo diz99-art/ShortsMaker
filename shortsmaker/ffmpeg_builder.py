@@ -147,7 +147,9 @@ def final_args(
     music: Path | None = None,
     music_start: float = 0.0,
     overlays: list[TimedOverlay] | None = None,
+    extra_vf: str | None = None,
 ) -> list[str]:
+    """extra_vf: 전환·overlay 뒤에 붙일 필터 (예: ASS subtitles)."""
     overlays = overlays or []
     fx = t.effects
     inputs: list[str] = []
@@ -176,6 +178,9 @@ def final_args(
         )
         cur = nxt
         idx += 1
+    if extra_vf:
+        chains.append(f"{cur}{extra_vf}[sub]")
+        cur = "[sub]"
     chains.append(f"{cur}{TO_TV_YUV420}[vout]")
 
     # 오디오: 음악이 없으면 무음 트랙 (오디오 스트림은 항상 존재)
