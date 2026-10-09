@@ -12,6 +12,7 @@ from .lyrics import build_ass, check_lyrics, has_libass, render_lyric_pngs, reso
 from .models import OUTPUT_DIR, ROOT, Project, Template, load_template
 from .scenes import SceneBuildResult, build_scenes
 from .timeline import Scene, build_timeline
+from .validate import ValidationError, post_render, pre_render
 
 BUILD_DIR = ROOT / "build"
 
@@ -66,12 +67,19 @@ def render(
     output: Path | None = None,
     progress: ProgressFn | None = None,
     subtitle_mode: str = "auto",  # "auto" | "ass" | "png"
+    require_rights: bool = True,
 ) -> RenderResult:
+    """검증 실패 시 ValidationError, 가사 오류 시 LyricsError, FFmpeg 실패 시 FFmpegError."""
     def report(frac: float, msg: str) -> None:
         if progress:
             progress(frac, msg)
 
-    report(0.0, "장면 이미지 생성 중")
+    report(0.0, "입력 검증 중")
+    pre = pre_render(project, project_dir, require_rights=require_rights)
+    if not pre.ok:
+        raise ValidationError(pre)
+
+    report(0.02, "장면 이미지 생성 중")
     t, scenes, built = prepare(project, project_dir)
     work = work_dir_for(project_dir)
 
@@ -92,6 +100,10 @@ def render(
         clips, [s.start for s in scenes], t, project.duration, output,
         music=music, music_start=project.music_start, overlays=overlays, extra_vf=ass_vf,
     ))
+    report(0.97, "결과 검증 중 (ffprobe)")
+    post = post_render(output, project.duration, t.width, t.height)
+    if not post.ok:
+        raise ValidationError(post)
     report(1.0, "완료")
-    return RenderResult(output=output, scenes=scenes, warnings=built.warnings + lyric_warnings,
-                        subtitle_mode=sub_mode)
+    warnings = list(dict.fromkeys(pre.warnings + built.warnings + lyric_warnings + post.warnings))
+    return RenderResult(output=output, scenes=scenes, warnings=warnings, subtitle_mode=sub_mode)

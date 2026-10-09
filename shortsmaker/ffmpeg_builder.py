@@ -8,7 +8,7 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -110,18 +110,14 @@ def render_scene_clips(
 ) -> list[Path]:
     clip_dir.mkdir(parents=True, exist_ok=True)
     outs = [clip_dir / f"clip{s.scene.index:02d}.mp4" for s in scene_layers]
-    done = 0
 
-    def job(i: int) -> None:
-        nonlocal done
-        run_ffmpeg(scene_clip_args(scene_layers[i], t, outs[i]))
-        done += 1
-        if progress:
-            progress(done / len(outs), f"장면 클립 {done}/{len(outs)} 완료 ({scene_layers[i].scene.label})")
-
+    # progress는 호출한 스레드에서만 부른다 (Streamlit 위젯은 작업 스레드에서 갱신할 수 없음)
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        for f in [ex.submit(job, i) for i in range(len(outs))]:
+        futures = {ex.submit(run_ffmpeg, scene_clip_args(s, t, o)): s for s, o in zip(scene_layers, outs)}
+        for done, f in enumerate(as_completed(futures), 1):
             f.result()
+            if progress:
+                progress(done / len(outs), f"장면 클립 {done}/{len(outs)} 완료 ({futures[f].scene.label})")
     return outs
 
 

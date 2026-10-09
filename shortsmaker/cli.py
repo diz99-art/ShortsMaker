@@ -2,6 +2,7 @@
 
   python -m shortsmaker.cli timeline projects/x/project.json   # 장면 시간표
   python -m shortsmaker.cli scenes   projects/x/project.json   # 장면 PNG만 생성
+  python -m shortsmaker.cli check    projects/x/project.json   # 렌더 전 검증
   python -m shortsmaker.cli render   projects/x/project.json   # MP4 렌더
 """
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 from .ffmpeg_builder import FFmpegError
 from .models import load_project, load_template
 from .pipeline import LyricsError, prepare, render, work_dir_for
+from .validate import ValidationError, pre_render
 from .scenes import contact_sheet
 from .timeline import build_timeline, format_timeline
 
@@ -44,6 +46,11 @@ def cmd_render(args: argparse.Namespace) -> int:
         res = render(project, project_dir, Path(args.output) if args.output else None,
                      progress=lambda f, m: print(f"[{f * 100:5.1f}%] {m}"),
                      subtitle_mode=args.subtitles)
+    except ValidationError as e:
+        print("검증 실패:", file=sys.stderr)
+        for err in e.report.errors:
+            print(" -", err, file=sys.stderr)
+        return 1
     except LyricsError as e:
         print(f"가사 오류:\n{e}", file=sys.stderr)
         return 1
@@ -57,6 +64,17 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    project, project_dir = load_project(args.project)
+    r = pre_render(project, project_dir)
+    for e in r.errors:
+        print("오류:", e)
+    for w in r.warnings:
+        print("경고:", w)
+    print("검증 통과" if r.ok else f"검증 실패 (오류 {len(r.errors)}개)")
+    return 0 if r.ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="shortsmaker")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -68,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("scenes", help="장면 PNG 레이어만 생성")
     p.add_argument("project")
     p.set_defaults(func=cmd_scenes)
+
+    p = sub.add_parser("check", help="렌더 전 검증만 실행")
+    p.add_argument("project")
+    p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("render", help="MP4 렌더")
     p.add_argument("project")
