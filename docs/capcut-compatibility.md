@@ -67,3 +67,15 @@ pycapcut 기본 생성물은 `draft_content.json`, `new_version=140.0.0`, Window
 해결되지 않으면 다음 개발 단계에서 FFmpeg 영상 클립 + 원본 음악 복사본 + UTF-8 SRT를
 CapCut 수동 가져오기용으로 제공하는 경로를 우선 검토한다. 이 대체 결과물 역시 앱 가져오기 검증 전에는 성공으로 보고하지 않는다.
 2~4단계 구현은 이번 작업에서 진행하지 않았다.
+
+## 추가 분석 (2026-10-09, 본 개발 ⑥단계)
+
+- **"Unsupported Media"의 유력한 원인: macOS 샌드박스.** `codesign -d --entitlements -`로 확인한 결과
+  CapCut 5.9.1은 `com.apple.security.app-sandbox`가 켜져 있다. 사용자가 고르지 않은 파일 중
+  접근 권한이 있는 곳은 `assets.movies.read-write`(= `~/Movies`)뿐이다.
+  위 시험 초안의 이미지·MP3는 `~/Projects/ShortsMaker/output/...`(샌드박스 밖)을 가리켰다.
+- 대응: `shortsmaker/capcut_export.py`는 모든 미디어를 **초안 폴더 안 `media/`**
+  (`~/Movies/CapCut/...` 아래)로 복사해서 참조한다. 그 밖의 보정(draft_info.json, 설치 앱 버전 값,
+  소재 등록)은 위 시험의 `version` + `registered` 방식을 그대로 쓴다.
+- 시험 초안: `ShortsMaker_yagu_demo_test1` (samples/yagu_demo, 50초, 장면 7·음악 1·가사 8).
+  **CapCut 앱에서 열어 이미지·음악이 정상인지는 아직 확인하지 않았다.**

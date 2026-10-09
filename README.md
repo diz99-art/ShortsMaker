@@ -1,82 +1,150 @@
 # ShortsMaker
 
-macOS용 Python 쇼츠 자동 편집 프로젝트. 현재는 **2단계 CapCut 편집 재료 생성·가져오기 검증**을 진행했다.
-Streamlit 화면과 채널별 자동 편집 기능은 아직 구현하지 않았다. 50초 구성 입력 예시는 제공하지만 실제 시험은 3초로 진행했다.
+'야구한장', '정보 TOP 5' 채널용 **TOP 5 유튜브 쇼츠 자동 제작** 프로그램 (1차).
+제목·5개 항목·이미지·음악·가사 타이밍을 입력하면 1080×1920 / 30fps MP4(기본 50초)를 만든다.
 
-## 2단계: 편집 패키지 생성
-
-CapCut 내부 JSON과 저장소를 건드리지 않는다. 입력 구성에서 장면 시작·종료 시간을 계산하고,
-원본 이미지 복사본, 1080×1920 준비 이미지, 원본 MP3 복사본, UTF-8 SRT, 구성 JSON,
-FFmpeg 미리보기 MP4와 가져오기 안내서를 새 출력 폴더에 만든다.
-미리보기에는 가사를 합성하고, 편집용 SRT는 별도로 유지한다.
+## 설치 (macOS)
 
 ```sh
-.venv/bin/python scripts/create_editing_sample.py output/stage2-input-new
-.venv/bin/python -m shortsmaker.editing_package \
-  output/stage2-input-new/input.json output/stage2-package-new
-.venv/bin/python -m pytest -q
+brew install ffmpeg                      # ffmpeg·ffprobe
+python3.12 -m venv .venv                 # Python 3.11 이상
+.venv/bin/pip install -r requirements.txt
 ```
 
-입력 형식은 [50초 구성 예시](samples/editing-input.example.json)를 참고한다.
-예시는 스키마 참고용이며 이미지·음악 파일은 함께 제공되지 않는다.
-이미지·MP3 경로는 입력 JSON 기준이며, 출력 JSON의 경로는 패키지 루트 기준이다.
-인트로 → 5위~1위 → 아웃트로 순서만 허용한다. 가사 시간은 초 단위, 정렬된 순서로 입력한다.
-중복·겹침·역전·범위 초과·빈 자막은 오류로 처리한다. 장면 길이는 1/30초 단위다.
-PNG/JPG를 원본 비율대로 맞추고 남는 부분은 검게 채운다. EXIF 방향과 투명도도 반영한다.
-음악 전체를 FFmpeg로 디코딩해 오류를 검사하며, 짧으면 미리보기 끝부분은 무음으로 채우고
-길면 미리보기 길이만큼 사용한다. 복사한 MP3는 자르거나 변경하지 않는다.
+- 한글 폰트: `assets/fonts/`에 Pretendard(OFL, `Pretendard-LICENSE.txt`)가 들어 있다.
+  다른 폰트를 쓰려면 파일을 넣고 `templates/<채널>/template.json`의 `fonts`를 바꾼다.
+- 테스트용 샘플 생성 (placeholder 캐리커처 + 직접 합성한 음악):
+  ```sh
+  .venv/bin/python scripts/make_samples.py   # samples/yagu_demo (50초, 직접 입력 가사), samples/info_demo (40초, LRC)
+  ```
 
-현재 합성 3초 샘플만 실험했다. 실제 Suno 음악 청취와 50초 렌더링은 미검증이다.
-프레임별 PNG를 생성하는 검증용 구현이므로 긴 영상의 성능 최적화는 후속 범위다.
-생성이 중간에 실패하면 부분 출력이 남으며, 재시도는 새로운 폴더를 사용해야 한다.
+## 실행
 
-앱 시험 상태는 [2단계 검증 기록](docs/capcut-import-verification.md)에 별도로 기록한다.
-`구성.json`의 `capcut_verified=false`는 자동 생성 시점의 값이다. 앱 시험 결과는 별도 보고서를 근거로 판단한다.
-내보내기 시 **공간 동기화 체크를 해제**해 로컬로만 출력해야 한다.
-
-## 1단계 검증 결론 (보존)
-
-2026-10-09, macOS 26.3.1 / Python 3.12.15 / pycapcut 0.0.3 / CapCut 5.9.1에서
-초안 JSON 생성은 성공했다. Mac 파일명·버전 정보를 보정하면 앱에서 3초 타임라인과
-한글 자막 트랙이 열리지만, 이미지·MP3가 접근 불가로 표시된다.
-**완전히 편집 가능한 CapCut 프로젝트 생성 성공으로 판정하지 않는다.**
-자세한 조사·실제 앱 시험 결과는 [검증 보고서](docs/capcut-compatibility.md)를 참고한다.
-
-## 설치 및 1단계 시험
-
-Python 3.11 이상, FFmpeg와 ffprobe가 필요하다. 시험 환경은 기존 `.venv`를 사용했다.
+### 화면 (Streamlit)
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python scripts/capcut_probe.py output/my-new-probe
-.venv/bin/python -m pytest -q
+.venv/bin/streamlit run app.py
 ```
 
-시험 도구는 파란색 합성 PNG, 440Hz 사인파 MP3, 한글 텍스트 트랙과 UTF-8 SRT를 생성한다.
-기존 출력 경로가 있으면 중단한다. 사용자 입력 파일은 받지 않으며 외부 업로드 기능도 없다.
-`probe_summary.json`의 생성 상태는 앱 호환성 성공을 뜻하지 않는다.
+1. 사이드바 **불러오기**로 `samples/…`나 `projects/…`를 열거나 새로 입력
+2. 채널·제목·부제 → 5위~1위 카드(이름·값·설명·이미지) → 음악·시작 위치·길이(30~60초)
+3. 가사: 표에 직접 입력(시작/끝/가사) 또는 LRC 업로드
+4. 출처 입력 + **권리 확인 체크** → 체크해야 제작 버튼이 켜진다
+5. **장면 미리보기** → **MP4로 완성**(진행률·재생·다운로드) / **CapCut 초안으로 보내기**
+
+입력은 `projects/<저장 폴더 이름>/project.json`과 이미지·음악 파일로 저장된다. 완성 영상은 `output/<폴더>.mp4`.
+
+### 명령줄
+
+```sh
+.venv/bin/python -m shortsmaker.cli check    samples/yagu_demo/project.json  # 렌더 전 검증
+.venv/bin/python -m shortsmaker.cli timeline samples/yagu_demo/project.json  # 장면 시간표
+.venv/bin/python -m shortsmaker.cli scenes   samples/yagu_demo/project.json  # 장면 PNG + 미리보기 시트
+.venv/bin/python -m shortsmaker.cli render   samples/yagu_demo/project.json  # MP4 → output/yagu_demo.mp4
+.venv/bin/python -m shortsmaker.cli capcut   samples/yagu_demo/project.json  # CapCut 초안 (비공식)
+.venv/bin/python -m shortsmaker.cli kit      samples/yagu_demo/project.json  # CapCut 수동 가져오기 재료
+```
+
+## 영상 구성
+
+| 구간 | 50초 기준 | 내용 |
+|---|---|---|
+| 인트로 | 3초 | TOP 5 배지(팝) · 제목 · 부제 |
+| 5위~2위 | 각 8초 | 순위 숫자(팝) · 캐리커처(천천히 줌인) · 이름 · 값 · 설명 |
+| 1위 | 10초 | 1위 색 강조 |
+| 아웃트로 | 5초 | 구독 문구 · 출처 |
+
+- 길이를 바꾸면 모든 구간이 비례해서 늘거나 줄고, 프레임 단위로 맞춘다. 장면 사이 fade 전환은 0.4초.
+- 음악은 `music_start`부터 잘라 길이에 맞추고 끝 1.5초 페이드아웃. 음악이 없으면 무음 트랙.
+- 가사는 화면 하단 고정 영역에 시간 구간에만 표시. FFmpeg에 libass가 있으면 ASS 자막,
+  없으면 Pillow PNG overlay를 쓴다 (현재 Homebrew FFmpeg 9.0.2는 libass 없음 → PNG 방식).
+- 출력: H.264 High / yuv420p, AAC 192k, `+faststart`.
+
+## project.json
+
+```json
+{
+  "channel": "yagu",                 // templates/ 폴더 이름
+  "title": "KBO 역대 FA 계약 TOP 5",
+  "subtitle": "총액 기준",
+  "duration": 50,                    // 30~60초
+  "source_note": "출처: KBO 공식 기록 (2026.10 기준)",
+  "items": [ {"rank": 5, "name": "선수명", "value": "80억", "description": "한 줄 설명", "image": "img5.png"} ],
+  "music": "music.mp3",
+  "music_start": 0.0,
+  "lyrics": [ {"start": 3.0, "end": 6.5, "text": "가사 한 줄"} ],
+  "lyrics_lrc": null,                // lyrics 와 둘 중 하나만
+  "rights_confirmed": false
+}
+```
+
+items는 정확히 5개(rank 1~5 각 한 번). 파일 경로는 project.json이 있는 폴더 기준.
+
+## 템플릿 (채널 추가)
+
+`templates/<채널>/template.json` 하나로 채널이 추가된다. 코드에는 좌표가 없다.
+
+- `gradient` / `background`: 배경 이미지(템플릿 폴더 기준). 파일이 없으면 그라데이션으로 대체
+- `fonts`: 키 → `assets/fonts` 파일명
+- `intro` / `rank` / `outro` / `lyrics`: 각 요소의 박스(`x, y, w, h`)와 글자 크기(`size` → `min_size`까지 자동 축소),
+  색, 정렬, 최대 줄 수, 외곽선. `rank.rank_format`(예: `{rank}위`, `TOP {rank}`), `rank_one_color`
+- `effects`: `transition`(전환 초), `zoom_to`(줌 최종 배율), `rank_pop`(팝 시간), `music_fade_out`
+
+## 검증
+
+- 렌더 전(`check`·화면·`render` 시작 시): 스키마, 템플릿·폰트·이미지·음악·LRC 파일 존재, 음악 시작 위치,
+  가사 겹침·길이 초과, 글자가 최소 크기에서도 넘치는지(경고), 권리 확인
+- 렌더 후: ffprobe로 1080×1920, 길이 ±0.5초, 오디오 스트림 존재 확인
+- FFmpeg 실패 시 실행한 명령과 stderr 끝부분을 보여준다
+
+```sh
+.venv/bin/python -m pytest -q              # 전체 (실제 렌더 포함, 약 30초)
+.venv/bin/python -m pytest -q -m "not slow" # 빠른 테스트만
+```
+
+## CapCut 초안 (비공식, 실험적)
+
+`shortsmaker/capcut_export.py`로 분리되어 있어 실패해도 MP4 기능에는 영향이 없다.
+
+- 초안 폴더: `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/` (화면 사이드바 ⚙️ 설정 또는
+  환경변수 `SHORTSMAKER_CAPCUT_DIR`로 변경). 이름은 `ShortsMaker_<폴더>_<시각>`, 기존 초안은 덮어쓰지 않는다.
+- 트랙: 장면(완성 장면 이미지) / 음악(시작 위치부터, 페이드아웃) / 가사(편집 가능한 텍스트)
+- Mac CapCut 5.9.1 보정: `draft_info.json` 작성, 설치 앱 버전 값 반영, 소재 등록 —
+  [호환성 시험 기록](docs/capcut-compatibility.md)
+- CapCut은 샌드박스 앱이라 `~/Movies` 밖의 파일을 열지 못한다. 그래서 이미지·음악을 **초안 폴더 안 `media/`로 복사**한다.
+- 초안이 열리지 않으면 `kit` 명령(화면에서는 실패 시 자동)으로 `output/<폴더>_capcut_kit/`에
+  장면 PNG(시작 시각이 파일 이름)·자른 음악·가사 SRT를 만들어 CapCut에 직접 가져온다.
 
 ## 구조
 
-- `scripts/capcut_probe.py`: 3초 최소 초안 생성
-- `scripts/adapt_capcut_probe.py`: Mac 5.9.1용 실험적 파일명·버전·소재 등록 보정
-- `shortsmaker/editing_package.py`: 2단계 편집 패키지 생성 CLI
-- `scripts/create_editing_sample.py`: 2단계 합성 샘플 입력 생성
-- `tests/`: 생성 데이터, 한글 경로, 덮어쓰기 거부, 보정 시 원본 보존 검증
-- `docs/`: 조사와 실제 시험 결과
-- `output/`: 로컬 생성물; Git 제외
-- `shortsmaker/`, `projects/`, `templates/`, `samples/`: 후속 개발용 기존 디렉터리
-
-실험적 보정 도구는 완성된 내보내기 기능이 아니다. 다른 CapCut 버전에 사용하지 않는다.
-다음과 같이 **새 경로에만** 보정본을 만들며 CapCut 폴더 설치는 별도 단계다.
-
-```sh
-.venv/bin/python scripts/adapt_capcut_probe.py \
-  output/my-new-probe/ShortsMaker_호환성검증 \
-  output/my-new-adapted \
-  "$HOME/Movies/CapCut/User Data/Projects/com.lveditor.draft/ShortsMaker_new_probe"
+```
+app.py                     Streamlit 화면
+shortsmaker/
+  models.py                pydantic 스키마 (Project, Item, LyricLine, Template)
+  timeline.py              장면 시작/끝 계산
+  scenes.py                Pillow 장면 레이어 (배경·텍스트 / 순위 팝 / 캐리커처 + 마스크)
+  lyrics.py                LRC 파싱·검사, 가사 PNG / ASS
+  ffmpeg_builder.py        FFmpeg 명령 조립·실행 (장면 클립 → xfade·가사·음악 합성)
+  pipeline.py              검증 → 장면 → 클립 → 최종 MP4 → 결과 검증
+  validate.py              렌더 전·후 검증
+  capcut_export.py         CapCut 초안 / 수동 가져오기 키트
+  cli.py                   명령줄
+templates/{yagu,info_top5} 채널 템플릿
+scripts/                   샘플 생성, 렌더 결과 확인(probe.py), CapCut 호환성 프로브
+build/ output/             중간 파일·결과물 (Git 제외)
 ```
 
-스크립트는 앱 저장소에 자동 설치하거나 기존 사용자 프로젝트를 변경하지 않는다.
-시험 초안은 삭제하지 않고 남겨 두었다. 4개의 `ShortsMaker_probe_20261009_*` 항목은 합성 테스트 전용이다.
+## CapCut 시험 기록 · 편집 패키지 (별도 세션 작업)
+
+- [1단계: Mac CapCut 초안 호환성 시험](docs/capcut-compatibility.md) — pyCapCut 초안의 이미지·음악이
+  "Unsupported Media"로 뜬 문제와 샌드박스 원인 분석
+- [2단계: CapCut 편집 재료 가져오기 시험](docs/capcut-import-verification.md) — 앱 UI에서 직접 가져온
+  PNG·MP3·SRT는 정상 표시·편집됨 (사용자가 고른 파일은 샌드박스 허용 → 위 분석과 일치)
+- `shortsmaker/editing_package.py`: 장면 이미지·MP3 복사본·SRT·구성 JSON·미리보기 MP4를 담은 편집 패키지 생성
+  (`kit` 명령과 목적이 겹친다. 하나로 합칠지는 다음 단계에서 정한다)
+
+  ```sh
+  .venv/bin/python scripts/create_editing_sample.py output/stage2-input-new
+  .venv/bin/python -m shortsmaker.editing_package output/stage2-input-new/input.json output/stage2-package-new
+  ```
+- `scripts/capcut_probe.py`, `scripts/adapt_capcut_probe.py`: 1단계 시험용 최소 초안 생성·보정 (실험용)

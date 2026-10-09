@@ -43,4 +43,5 @@ def test_timed_overlays():
     t = load_template("yagu")
     ov = [TimedOverlay(Path("l0.png"), 60, 1660, 3.0, 6.5)]
     fc = _filter(final_args([Path("a.mp4")], [0], t, 30, Path("o.mp4"), overlays=ov))
-    assert "enable='between(t\\,3\\,6.5)'" in fc
+    # 끝 시각은 제외 (다음 가사가 같은 시각에 시작해도 한 프레임 겹치지 않게)
+    assert "enable='gte(t\\,3)*lt(t\\,6.5)'" in fc

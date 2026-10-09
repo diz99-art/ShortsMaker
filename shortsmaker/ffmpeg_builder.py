@@ -170,7 +170,7 @@ def final_args(
         inputs += ["-i", str(ov.path)]
         nxt = f"[o{n}]"
         chains.append(
-            f"{cur}[{idx}:v]overlay=x={ov.x}:y={ov.y}:enable='between(t\\,{_f(ov.start)}\\,{_f(ov.end)})'{nxt}"
+            f"{cur}[{idx}:v]overlay=x={ov.x}:y={ov.y}:enable='gte(t\\,{_f(ov.start)})*lt(t\\,{_f(ov.end)})'{nxt}"
         )
         cur = nxt
         idx += 1
