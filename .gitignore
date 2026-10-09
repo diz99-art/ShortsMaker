@@ -6,3 +6,7 @@ output/
 build/
 .DS_Store
 .claude/
+.env
+.env.*
+!.env.example
+assets/players/

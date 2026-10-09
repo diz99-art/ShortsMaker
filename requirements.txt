@@ -3,3 +3,5 @@ pydantic>=2.7
 streamlit>=1.40
 pytest>=8
 pycapcut==0.0.3
+openai>=2,<3
+requests>=2.32,<3

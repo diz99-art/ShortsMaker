@@ -1,5 +1,6 @@
 """Build offline CapCut import materials without touching CapCut's storage."""
 import argparse
+import hashlib
 import json
 import math
 import shutil
@@ -88,6 +89,22 @@ def srt_text(lyrics: list[Lyric]) -> str:
                    for i, l in enumerate(lyrics, 1))
 
 
+def prepare_image(source: Path) -> Image.Image:
+    """Preserve alpha for CapCut overlays; use black padding for opaque photos."""
+    with Image.open(source) as opened:
+        oriented = ImageOps.exif_transpose(opened)
+        has_alpha = "A" in oriented.getbands() or "transparency" in oriented.info
+        resized = ImageOps.contain(oriented.convert("RGBA"), (1080, 1920))
+    canvas = Image.new("RGBA" if has_alpha else "RGB", (1080, 1920),
+                       (0, 0, 0, 0) if has_alpha else "black")
+    position = ((1080 - resized.width) // 2, (1920 - resized.height) // 2)
+    if has_alpha:
+        canvas.alpha_composite(resized, position)
+    else:
+        canvas.paste(resized, position, resized)
+    return canvas
+
+
 def build(config_path: Path, destination: Path, font_path: Path) -> dict:
     config_path, destination, font_path = config_path.resolve(), destination.resolve(), font_path.resolve()
     config = Composition.model_validate_json(config_path.read_text(encoding="utf-8"))
@@ -120,11 +137,16 @@ def build(config_path: Path, destination: Path, font_path: Path) -> dict:
         original = Path("originals") / f"{index:02}_{image.name}"
         prepared = Path("prepared") / f"{index:02}_장면.png"
         shutil.copy2(image, destination / original)
-        with Image.open(image) as opened:
-            resized = ImageOps.contain(ImageOps.exif_transpose(opened).convert("RGBA"), (1080, 1920))
-            canvas = Image.new("RGB", (1080, 1920), "black")
-            canvas.paste(resized, ((1080 - resized.width) // 2, (1920 - resized.height) // 2), resized)
-        canvas.save(destination / prepared)
+        editable = prepare_image(image)
+        editable.save(destination / prepared)
+        approval_path = image.with_suffix(".approval.json")
+        if approval_path.exists():
+            approval = json.loads(approval_path.read_text())
+            if approval["sha256"] != hashlib.sha256(image.read_bytes()).hexdigest():
+                raise ValueError("승인 캐리커처 이미지가 변경되었습니다")
+            shutil.copy2(approval_path, destination / "originals" / f"{index:02}_asset_metadata.json")
+        canvas = Image.new("RGB", (1080, 1920), "black")
+        canvas.paste(editable, (0, 0), editable.getchannel("A") if editable.mode == "RGBA" else None)
         start = start_frame / 30
         end = (start_frame + round(scene.duration * 30)) / 30
         timeline.append({"index": index, "kind": scene.kind, "title": scene.title, "rank": scene.rank,
