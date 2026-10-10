@@ -49,6 +49,8 @@ def media_duration(path: Path) -> float | None:
 
 def text_fields(project: Project, t: Template) -> list[tuple[str, TextBox, str]]:
     """(이름, 박스, 글자) — 화면에 들어가는 모든 글자."""
+    if t.mode == "card":  # 카드 모드는 이름·값을 그리지 않고 제목만 쓴다
+        return [("제목", t.card.title, project.title.replace("\n", " "))]
     fields: list[tuple[str, TextBox, str]] = [
         ("제목", t.intro.title, project.title),
         ("부제", t.intro.subtitle, project.subtitle),
@@ -75,6 +77,9 @@ def pre_render(project: Project, project_dir: Path, *, require_rights: bool = Tr
     except Exception as e:  # noqa: BLE001 — 템플릿 문제는 모두 사용자에게 보여준다
         r.errors.append(f"템플릿을 읽을 수 없습니다 ({project.channel}): {e}")
         return r
+
+    if project.duration > t.max_duration + 1e-9:
+        r.errors.append(f"영상 길이 {project.duration:g}초가 템플릿 '{t.name}' 최대 {t.max_duration:g}초를 넘습니다")
 
     for key in t.fonts:
         if not t.font_path(key).exists():

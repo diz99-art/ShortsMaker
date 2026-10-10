@@ -259,12 +259,13 @@ def build_scenes(
             item = sc.item
             assert item is not None
             text(base, L.header, project.title, "상단 제목")
-            text(base, L.name, item.name, f"{item.rank}위 이름")
-            text(base, L.value, item.value, f"{item.rank}위 값")
-            text(base, L.description, item.description, f"{item.rank}위 설명")
+            label = project.rank_label(item)
+            text(base, L.name, item.name, f"{label} 이름")
+            text(base, L.value, item.value, f"{label} 값")
+            text(base, L.description, item.description, f"{label} 설명")
 
-            color = L.rank_one_color if item.rank == 1 and L.rank_one_color else None
-            pop_img, ft = _text_layer(L.rank, L.rank_format.format(rank=item.rank), fp(L.rank.font), color)
+            color = L.rank_one_color if item.shown_rank == 1 and L.rank_one_color else None
+            pop_img, ft = _text_layer(L.rank, project.rank_label(item, L.rank_format), fp(L.rank.font), color)
             pop_path = work_dir / f"{stem}_pop.png"
             pop_img.save(pop_path)
             layers["pop"] = Layer(pop_path, L.rank)

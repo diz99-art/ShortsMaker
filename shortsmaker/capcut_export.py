@@ -156,9 +156,12 @@ def export_draft(
         media = draft / "media"
         media.mkdir()
 
+        if t.mode == "card":
+            warnings += _card_tracks(cc, script, project, project_dir, t, lines, media)
         # 장면: 완성 상태 미리보기 PNG를 장면 구간에 배치 (전환·줌은 CapCut에서 추가)
-        script.add_track(cc.TrackType.video, "장면")
-        for s in built.scenes:
+        if t.mode != "card":
+            script.add_track(cc.TrackType.video, "장면")
+        for s in (built.scenes if t.mode != "card" else []):
             dst = media / f"{s.scene.index:02d}_{s.scene.label}.png"
             shutil.copy2(s.preview, dst)
             script.add_segment(
@@ -184,7 +187,7 @@ def export_draft(
             script.add_segment(seg, "음악")
 
         # 가사: 편집 가능한 텍스트 트랙 (템플릿 가사 영역 위치)
-        if lines:
+        if lines and t.mode != "card":
             box = t.lyrics
             cy = box.y + box.h / 2
             transform_y = (t.height / 2 - cy) / (t.height / 2)  # 위가 +, 화면 반 높이 단위
@@ -208,6 +211,82 @@ def export_draft(
 
     warnings.append("CapCut 초안 기능은 비공식입니다. CapCut에서 열어 이미지·음악·가사를 확인하세요.")
     return DraftResult(name=name, path=draft, warnings=warnings)
+
+
+# ---------------------------------------------------------------- 카드 모드 (yagu_v2)
+
+def _fit_ratio(img_size: tuple[int, int], box, t) -> float:
+    """CapCut 은 이미지를 캔버스 안에 맞춰(contain) 넣는다. 박스 크기로 보이려면 그 위에 곱할 배율."""
+    iw, ih = img_size
+    canvas_fit = min(t.width / iw, t.height / ih)
+    box_fit = min(box.w / iw, box.h / ih)
+    return box_fit / canvas_fit
+
+
+def _transform(t, cx: float, cy: float) -> tuple[float, float]:
+    """픽셀 중심 → CapCut transform (캔버스 반 크기 단위, 위가 +)."""
+    return round((cx - t.width / 2) / (t.width / 2), 4), round((t.height / 2 - cy) / (t.height / 2), 4)
+
+
+def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list[LyricLine], media: Path
+                 ) -> list[str]:
+    """MP4 렌더와 같은 배치. 확대는 키프레임으로 옮기고, 모션 블러·글자별 타이밍은 CapCut 효과로 근사한다."""
+    from PIL import Image
+
+    from .card_mode import char_times, make_renderer
+    r = make_renderer(project, project_dir, t, lines)
+    c = t.card
+    base, head = media / "00_배경_버튼.png", media / "99_제목_구분선.png"
+    r.base.save(base)
+    r.head.save(head)
+    D = us(project.duration)
+
+    script.add_track(cc.TrackType.video, "배경", relative_index=0)
+    script.add_track(cc.TrackType.video, "로고·카드", relative_index=1)
+    script.add_track(cc.TrackType.video, "제목", relative_index=2)
+    script.add_segment(cc.VideoSegment(str(base), cc.Timerange(0, D)), "배경")
+
+    for sc in r.scenes:
+        if sc.kind == "intro":
+            src, box, motion = t.asset_path(c.logo), c.logo_box, c.intro_motion
+        else:
+            src, box, motion = project_dir / sc.item.image, c.card_box, c.card_motion
+        dst = media / f"{sc.index:02d}_{sc.label}{src.suffix.lower()}"
+        shutil.copy2(src, dst)
+        gap = motion.gap_frames / t.fps
+        start = sc.start + gap
+        with Image.open(dst) as im:
+            ratio = _fit_ratio(im.size, box, t)
+        tx, ty = _transform(t, box.x + box.w / 2, box.y + box.h / 2)
+        seg = cc.VideoSegment(str(dst), cc.Timerange(us(start), us(sc.end - start)),
+                              clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio, transform_x=tx, transform_y=ty))
+        for sec, scale in motion.curve:  # 측정한 확대 곡선을 그대로 키프레임으로
+            if sec < sc.end - start:
+                seg.add_keyframe(cc.KeyframeProperty.uniform_scale, us(sec), round(ratio * scale, 4))
+        script.add_segment(seg, "로고·카드")
+
+    script.add_segment(cc.VideoSegment(str(head), cc.Timerange(0, D)), "제목")
+
+    if lines:
+        st = c.subtitle
+        script.add_track(cc.TrackType.text, "자막")
+        for i, line in enumerate(lines):
+            end = lines[i + 1].start if i + 1 < len(lines) else min(project.duration, line.end)
+            intro = r.scene_at(line.start).kind == "intro"
+            cy = st.intro_center_y if intro and st.intro_center_y else st.y + st.h / 2
+            seg = cc.TextSegment(
+                line.text, cc.Timerange(us(line.start), us(end - line.start)),
+                style=cc.TextStyle(size=round(st.size / 6, 1), bold=True, color=_rgb01(st.color), align=1,
+                                   auto_wrapping=True, max_line_width=round(st.w / t.width, 3)),
+                border=cc.TextBorder(color=_rgb01(st.stroke_color), width=40.0),
+                clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, cy)[1]),
+            )
+            reveal = char_times(line)[-1] - line.start if line.text else 0
+            if reveal > 0.05:  # 글자가 다 나오는 데 걸리는 시간만큼 타자기 효과
+                seg.add_animation(cc.TextIntro["打字机"], us(min(reveal, end - line.start)))
+            script.add_segment(seg, "자막")
+    return ["카드 모드 CapCut 초안: 확대는 키프레임으로 옮겼지만 모션 블러는 없습니다. "
+            "자막 타자 효과는 CapCut '타자기' 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."]
 
 
 # ---------------------------------------------------------------- 수동 가져오기 키트

@@ -1,0 +1,28 @@
+{
+  "_note": "KBO 현재·과거 구단. 색은 카드 합성용 근사값(공식 색상표 아님) — 직접 고쳐도 된다. 구단 로고는 쓰지 않는다.",
+  "teams": [
+    {"name": "KIA 타이거즈", "short": "KIA", "aliases": ["기아 타이거즈", "기아", "KIA", "케이아이에이"], "colors": ["#EA0029", "#06141F"]},
+    {"name": "삼성 라이온즈", "short": "삼성", "aliases": ["삼성"], "colors": ["#074CA1", "#0A1E3C"]},
+    {"name": "LG 트윈스", "short": "LG", "aliases": ["엘지 트윈스", "엘지", "LG"], "colors": ["#C30452", "#1B1B1B"]},
+    {"name": "두산 베어스", "short": "두산", "aliases": ["두산"], "colors": ["#131230", "#ED1C24"]},
+    {"name": "KT 위즈", "short": "KT", "aliases": ["케이티 위즈", "케이티", "KT"], "colors": ["#1B1B1B", "#EB1C24"]},
+    {"name": "SSG 랜더스", "short": "SSG", "aliases": ["에스에스지 랜더스", "에스에스지", "SSG"], "colors": ["#CE0E2D", "#FFB81C"]},
+    {"name": "롯데 자이언츠", "short": "롯데", "aliases": ["롯데"], "colors": ["#041E42", "#D00F31"]},
+    {"name": "한화 이글스", "short": "한화", "aliases": ["한화"], "colors": ["#FC4E00", "#1B1B1B"]},
+    {"name": "NC 다이노스", "short": "NC", "aliases": ["엔씨 다이노스", "엔씨", "NC"], "colors": ["#315288", "#C7A079"]},
+    {"name": "키움 히어로즈", "short": "키움", "aliases": ["키움"], "colors": ["#570514", "#B07F4A"]},
+    {"name": "해태 타이거즈", "short": "해태", "aliases": ["해태"], "colors": ["#ED1C24", "#1B1B1B"]},
+    {"name": "OB 베어스", "short": "OB", "aliases": ["오비 베어스", "오비", "OB"], "colors": ["#131230", "#ED1C24"]},
+    {"name": "MBC 청룡", "short": "MBC", "aliases": ["엠비씨 청룡", "MBC"], "colors": ["#0046AD", "#C8102E"]},
+    {"name": "삼미 슈퍼스타즈", "short": "삼미", "aliases": ["삼미"], "colors": ["#1D3F8C", "#E21F26"]},
+    {"name": "청보 핀토스", "short": "청보", "aliases": ["청보"], "colors": ["#0F6B3B", "#F2C200"]},
+    {"name": "태평양 돌핀스", "short": "태평양", "aliases": ["태평양"], "colors": ["#0072CE", "#00A3E0"]},
+    {"name": "빙그레 이글스", "short": "빙그레", "aliases": ["빙그레"], "colors": ["#FF6600", "#003087"]},
+    {"name": "쌍방울 레이더스", "short": "쌍방울", "aliases": ["쌍방울"], "colors": ["#1F3B73", "#C8102E"]},
+    {"name": "현대 유니콘스", "short": "현대", "aliases": ["현대"], "colors": ["#0B2C6B", "#E5A823"]},
+    {"name": "SK 와이번스", "short": "SK", "aliases": ["에스케이 와이번스", "에스케이", "SK"], "colors": ["#CE0E2D", "#F37321"]},
+    {"name": "넥센 히어로즈", "short": "넥센", "aliases": ["넥센"], "colors": ["#820024", "#1B1B1B"]},
+    {"name": "우리 히어로즈", "short": "우리", "aliases": ["우리 히어로즈"], "colors": ["#820024", "#1B1B1B"]}
+  ],
+  "default_colors": ["#2B2B2B", "#C8102E"]
+}

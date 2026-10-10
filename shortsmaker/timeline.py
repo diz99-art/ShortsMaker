@@ -2,6 +2,8 @@
 
 기본 50초 구성(인트로 3 / 5~2위 각 8 / 1위 10 / 아웃트로 5)을 duration 에 비례해
 늘리거나 줄인다. 시간은 프레임 단위로 맞춘다.
+items[].start 가 있으면 (노래에서 각 순위를 부르는 시각) 그 시각에 장면이 넘어가고,
+outro_start 가 없으면 아웃트로는 비례 길이만큼 끝에 둔다.
 
 xfade 를 쓰면 클립이 겹치므로, 각 클립(마지막 제외)은 화면 구간보다 transition 만큼
 길게 렌더한다. 그러면 k번째 xfade offset == k+1번째 장면 시작 시각이 되고,
@@ -12,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .models import Item, Project
+from .models import MIN_SCENE, Item, Project
 
 BASE_TOTAL = 50.0
 BASE_INTRO = 3.0
@@ -39,7 +41,7 @@ class Scene:
     @property
     def label(self) -> str:
         if self.kind == "rank" and self.item:
-            return f"{self.item.rank}위"
+            return f"{self.item.shown_rank}위"
         return {"intro": "인트로", "outro": "아웃트로"}.get(self.kind, self.kind)
 
 
@@ -53,13 +55,21 @@ def build_timeline(project: Project, fps: int = 30, transition: float = 0.4) -> 
     base = [BASE_INTRO] + [BASE_RANK_ONE if it.rank == 1 else BASE_RANK for it in items] + [BASE_OUTRO]
     scale = project.duration / BASE_TOTAL
 
-    # 누적 경계를 프레임에 맞춰 반올림 → 오차가 쌓이지 않고 끝이 정확히 duration
-    bounds = [0.0]
-    acc = 0.0
-    for b in base:
-        acc += b * scale
-        bounds.append(snap(acc, fps))
-    bounds[-1] = snap(project.duration, fps)
+    if project.has_scene_starts:
+        outro = project.outro_start
+        if outro is None:
+            outro = project.duration - BASE_OUTRO * scale
+            if outro - items[-1].start < MIN_SCENE:
+                raise ValueError("1위 장면이 너무 짧습니다. outro_start 를 직접 주세요")
+        bounds = [0.0] + [snap(it.start, fps) for it in items] + [snap(outro, fps), snap(project.duration, fps)]
+    else:
+        # 누적 경계를 프레임에 맞춰 반올림 → 오차가 쌓이지 않고 끝이 정확히 duration
+        bounds = [0.0]
+        acc = 0.0
+        for b in base:
+            acc += b * scale
+            bounds.append(snap(acc, fps))
+        bounds[-1] = snap(project.duration, fps)
 
     transition = snap(transition, fps)
     kinds: list[SceneKind] = ["intro"] + ["rank"] * len(items) + ["outro"]

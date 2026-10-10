@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -13,9 +14,11 @@ import streamlit as st
 
 from shortsmaker.capcut_export import DEFAULT_DRAFTS_DIR
 from shortsmaker.ffmpeg_builder import FFmpegError
-from shortsmaker.lyrics import parse_lrc
+from shortsmaker.lyrics import check_lyrics, parse_lrc
+from shortsmaker.lyrics_align import (MODEL_CHOICES, AlignError, auto_align, embedded_lyrics, lrc_text,
+                                      missing_packages)
 from shortsmaker.models import (
-    MAX_DURATION, MIN_DURATION, PROJECTS_DIR, ROOT, Project, list_channels, load_project,
+    MIN_DURATION, PROJECTS_DIR, ROOT, LyricLine, Project, list_channels, load_project,
     load_template, save_project,
 )
 from shortsmaker.pipeline import LyricsError, prepare, render
@@ -43,6 +46,7 @@ def _init_state() -> None:
         "music_file": None, "music_start": 0.0, "lyrics_mode": "직접 입력",
         "lyrics_base": _empty_lyrics(), "lyrics_ver": 0, "lrc_file": None, "rights": False,
         "previews": None, "result": None, "upload_ver": 0, "capcut_dir": str(DEFAULT_DRAFTS_DIR),
+        "align_text": "", "align_vocals": True, "align_model": MODEL_CHOICES[0], "align_info": None,
     }
     for r in RANKS:
         defaults |= {f"name_{r}": "", f"value_{r}": "", f"desc_{r}": "", f"img_{r}": None}
@@ -69,7 +73,7 @@ def _load_into_state(path: Path) -> None:
     for it in project.items:
         ss[f"name_{it.rank}"], ss[f"value_{it.rank}"] = it.name, it.value
         ss[f"desc_{it.rank}"], ss[f"img_{it.rank}"] = it.description, it.image
-    ss.previews = ss.result = None
+    ss.previews = ss.result = ss.align_info = None
 
 
 def _source_file(name: str | None) -> Path | None:
@@ -197,10 +201,78 @@ with c1:
         st.audio(str(p))
         st.caption(p.name)
 c2.number_input("음악 시작 위치(초)", min_value=0.0, step=0.5, key="music_start")
-c3.slider("영상 길이(초)", MIN_DURATION, MAX_DURATION, step=1.0, key="duration")
+_max_duration = load_template(ss.channel).max_duration  # 템플릿마다 다름 (classic 60초, yagu_v2 90초)
+if ss.duration > _max_duration:
+    ss.duration = _max_duration
+c3.slider("영상 길이(초)", MIN_DURATION, _max_duration, step=1.0, key="duration")
 
 # 4. 가사
 st.subheader("4. 가사")
+
+
+def _fill_embedded_lyrics() -> None:
+    """곡 파일 안의 가사(Suno lyrics 태그)를 가사 입력칸으로."""
+    up = ss.get(f"up_music_{ss.upload_ver}")
+    if up is not None:
+        with tempfile.NamedTemporaryFile(suffix=Path(up.name).suffix) as f:
+            f.write(up.getvalue())
+            f.flush()
+            text = embedded_lyrics(Path(f.name))
+    else:
+        text = embedded_lyrics(p) if (p := _source_file(ss.music_file)) else None
+    if text:
+        ss.align_text = text
+    else:
+        ss.align_info = {"error": "음악 파일에서 가사를 찾지 못했습니다. 직접 붙여 넣어 주세요."}
+
+
+with st.expander("🎙️ 가사 자동 맞추기 (내 Mac에서 로컬 모델로)", expanded=bool(ss.align_info)):
+    missing = missing_packages(ss.align_vocals)
+    st.text_area("가사 텍스트 (한 줄 = 자막 한 줄 · [Verse] 같은 태그와 빈 줄은 자동으로 뺍니다)",
+                 key="align_text", height=220)
+    a1, a2, a3, a4 = st.columns([1, 1, 1, 1])
+    a1.button("📄 곡에서 가사 불러오기", on_click=_fill_embedded_lyrics, width="stretch",
+              help="Suno 곡처럼 음악 파일에 가사가 들어 있으면 가져옵니다")
+    a2.checkbox("보컬 분리 후 맞추기 (demucs)", key="align_vocals", help="반주가 크면 켜 두세요 (기본)")
+    a3.selectbox("모델", MODEL_CHOICES, key="align_model", help="large-v3가 가장 정확, small이 가장 빠름")
+    align_clicked = a4.button("🎙️ 가사 자동 맞추기", type="primary", disabled=bool(missing), width="stretch")
+    if missing:
+        st.info(f"필요한 패키지가 없습니다: {', '.join(missing)}\n\n설치: `.venv/bin/pip install -r requirements-align.txt`")
+    st.caption("처음 실행할 때 모델을 내려받느라 몇 분 걸립니다(large-v3 약 3GB, 한 번만). 이후엔 1분 안팎.")
+
+    if align_clicked:
+        try:
+            project, project_dir = _collect_project(ss.lyrics_base)
+            with st.status("가사 자동 맞추기", expanded=True) as status:
+                bar = st.progress(0.0, text="시작")
+                res = auto_align(project, project_dir, ss.align_text, vocals=ss.align_vocals,
+                                 model_size=ss.align_model,
+                                 progress=lambda f, m: bar.progress(min(f, 1.0), text=m))
+                status.update(label=f"완료: {len(res.lines)}줄, {res.seconds:.0f}초", state="complete")
+            ss.lyrics_base = pd.DataFrame([l.model_dump() for l in res.lines], columns=LYRIC_COLUMNS)
+            ss.lyrics_ver += 1
+            ss.lyrics_mode = "직접 입력"
+            ss.lrc_file = None
+            ss.align_info = {"count": len(res.lines), "seconds": res.seconds, "needs_check": res.needs_check,
+                             "lrc": str(res.lrc_path), "model": res.model, "vocals": res.used_vocals}
+        except (AlignError, FFmpegError) as e:
+            ss.align_info = {"error": str(e)}
+        except Exception as e:  # noqa: BLE001 — 입력 오류 등은 화면에 그대로
+            ss.align_info = {"error": f"{type(e).__name__}: {e}"}
+
+    info = ss.align_info
+    if info and "error" in info:
+        st.error(info["error"])
+    elif info:
+        st.success(f"{info['count']}줄 자동으로 맞췄습니다 ({info['model']}, 보컬 분리 "
+                   f"{'사용' if info['vocals'] else '안 함'}, {info['seconds']:.0f}초). "
+                   "아래 표에서 시작·끝을 초 단위로 고친 뒤 💾 저장하세요.")
+        for n in info["needs_check"]:
+            st.warning(f"확인 필요: {n}")
+        if (lrc := Path(info["lrc"])).exists():
+            st.download_button("⬇️ 자동 결과 LRC", lrc.read_bytes(), file_name=lrc.name, mime="text/plain")
+            st.caption(f"저장 위치: `{lrc.relative_to(ROOT) if lrc.is_relative_to(ROOT) else lrc}`")
+
 st.radio("입력 방식", ["직접 입력", "LRC 파일"], key="lyrics_mode", horizontal=True)
 lyrics_df = ss.lyrics_base
 if ss.lyrics_mode == "직접 입력":
@@ -212,6 +284,23 @@ if ss.lyrics_mode == "직접 입력":
             "text": st.column_config.TextColumn("가사", width="large"),
         },
     )
+    if st.button("📝 표를 LRC로 저장 (나중에 다시 고치기용)"):
+        try:
+            df = lyrics_df.dropna(subset=["start", "end"])
+            df = df[df["text"].fillna("").str.strip() != ""]
+            rows = [LyricLine(start=float(r.start), end=float(r.end), text=str(r.text).strip())
+                    for r in df.sort_values("start").itertuples()]
+            if not rows:
+                raise ValueError("저장할 가사 줄이 없습니다")
+            for e in check_lyrics(rows, ss.duration):
+                st.warning(e)
+            target = _target_dir()
+            target.mkdir(parents=True, exist_ok=True)
+            out = target / "lyrics_edited.lrc"
+            out.write_text(lrc_text(rows), encoding="utf-8")
+            st.success(f"LRC로 저장했습니다: `{out.relative_to(ROOT)}` ({len(rows)}줄)")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"LRC 저장 실패: {e}")
 else:
     up_lrc = st.file_uploader("LRC 파일", type=["lrc", "txt"], key=f"up_lrc_{ss.upload_ver}")
     lrc_text = None

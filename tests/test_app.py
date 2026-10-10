@@ -2,12 +2,14 @@
 
 실제 렌더가 들어가 20초 정도 걸린다. 건너뛰려면: pytest -m "not slow"
 """
+import importlib.util
 import json
 import shutil
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from shortsmaker.lyrics import parse_lrc
 from shortsmaker.models import OUTPUT_DIR, PROJECTS_DIR, ROOT
 
 SLUG = "_apptest_demo"
@@ -62,3 +64,26 @@ def test_load_preview_render(cleanup, tmp_path):
     assert not at.error, [e.value for e in at.error]
     drafts = [d for d in tmp_path.iterdir() if d.name.startswith("ShortsMaker_")]
     assert len(drafts) == 1 and (drafts[0] / "draft_info.json").exists()
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(importlib.util.find_spec("stable_whisper") is None, reason="requirements-align 미설치")
+def test_auto_align_fills_table_and_saves_lrc(cleanup):
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=300).run()
+    sel = at.sidebar.selectbox[0]
+    sel.select_index(next(i for i, o in enumerate(sel.options) if o.endswith("yagu_demo"))).run()
+    _button(at, "불러오기").click().run()
+    at.text_input(key="slug").set_value(SLUG).run()
+
+    at.text_area(key="align_text").set_value("[Verse]\n첫 번째 줄\n\n두 번째 줄\n세 번째 줄").run()
+    at.checkbox(key="align_vocals").uncheck().run()   # 샘플 음악은 사인파라 분리 불필요, 빠르게
+    at.selectbox(key="align_model").set_value("small").run()
+    _button(at, "🎙️ 가사 자동 맞추기").click().run()
+    assert not at.error, [e.value for e in at.error]
+    assert any("3줄 자동으로 맞췄습니다" in s.value for s in at.success)
+    assert list(at.session_state["lyrics_base"]["text"]) == ["첫 번째 줄", "두 번째 줄", "세 번째 줄"]  # 표 원본
+    assert (PROJECTS_DIR / SLUG / "lyrics_auto.lrc").exists()
+
+    _button(at, "📝 표를 LRC로 저장 (나중에 다시 고치기용)").click().run()
+    assert not at.error, [e.value for e in at.error]
+    assert len(parse_lrc((PROJECTS_DIR / SLUG / "lyrics_edited.lrc").read_text(encoding="utf-8"))) == 3

@@ -6,6 +6,7 @@
   python -m shortsmaker.cli render   projects/x/project.json   # MP4 렌더
   python -m shortsmaker.cli capcut   projects/x/project.json   # CapCut 초안 (비공식)
   python -m shortsmaker.cli kit      projects/x/project.json   # CapCut 수동 가져오기 재료
+  python -m shortsmaker.cli align    projects/x/project.json   # 가사 타이밍 자동 맞추기 (2차, 로컬 모델)
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import time
 from pathlib import Path
 
 from .ffmpeg_builder import FFmpegError
-from .models import load_project, load_template
+from .models import load_project, load_template, save_project
 from .pipeline import LyricsError, prepare, render, work_dir_for
 from .validate import ValidationError, pre_render
 from .scenes import contact_sheet
@@ -98,6 +99,28 @@ def cmd_kit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_align(args: argparse.Namespace) -> int:
+    from .lyrics_align import AlignError, auto_align  # 무거운 2차 기능은 필요할 때만 불러온다
+    project, project_dir = load_project(args.project)
+    text = Path(args.lyrics).read_text(encoding="utf-8-sig") if args.lyrics else None
+    try:
+        res = auto_align(project, project_dir, text, vocals=not args.no_vocals, model_size=args.model,
+                         progress=lambda f, m: print(f"[{f * 100:5.1f}%] {m}"), lrc_name=args.lrc_name)
+    except AlignError as e:
+        print(e, file=sys.stderr)
+        return 1
+    for l in res.lines:
+        print(f"{l.start:7.2f} ~ {l.end:7.2f}  {l.text}")
+    for n in res.needs_check:
+        print("확인 필요:", n)
+    print(f"{len(res.lines)}줄, 보컬 분리 {'사용' if res.used_vocals else '안 함'}, 모델 {res.model}, "
+          f"{res.seconds:.1f}초 소요 → {res.lrc_path}")
+    if args.write:
+        save_project(project.model_copy(update={"lyrics": res.lines, "lyrics_lrc": None}), project_dir)
+        print("project.json의 lyrics에 기록했습니다")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="shortsmaker")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -130,6 +153,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("kit", help="CapCut 수동 가져오기 재료 (장면 PNG·음악·SRT)")
     p.add_argument("project")
     p.set_defaults(func=cmd_kit)
+
+    p = sub.add_parser("align", help="가사 타이밍 자동 맞추기 (로컬 모델, requirements-align.txt 필요)")
+    p.add_argument("project")
+    p.add_argument("--lyrics", help="가사 텍스트 파일 (한 줄 = 자막 한 줄). 없으면 음악 파일 내장 가사")
+    p.add_argument("--no-vocals", action="store_true", help="보컬 분리(demucs) 없이 원곡으로 정렬")
+    p.add_argument("--model", default="large-v3", choices=["large-v3", "medium", "small"])
+    p.add_argument("--lrc-name", default="lyrics_auto.lrc", help="프로젝트 폴더에 저장할 LRC 이름")
+    p.add_argument("--write", action="store_true", help="결과를 project.json의 lyrics에도 기록")
+    p.set_defaults(func=cmd_align)
 
     args = parser.parse_args(argv)
     return args.func(args)

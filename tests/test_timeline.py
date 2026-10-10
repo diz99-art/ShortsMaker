@@ -48,7 +48,8 @@ def test_duration_range():
     with pytest.raises(ValidationError):
         make_project(duration=25)
     with pytest.raises(ValidationError):
-        make_project(duration=61)
+        make_project(duration=91)  # 스키마 상한 90초 (템플릿별 상한은 pre_render 가 검사)
+    assert make_project(duration=61).duration == 61
 
 
 def test_lyrics_single_source():
@@ -66,3 +67,42 @@ def test_templates_load():
     for ch in list_channels():
         t = load_template(ch)
         assert t.font_path("bold").exists()
+
+
+# ---------------------------------------------------------------- 장면 시작 시간 직접 지정 (노래에 맞추기)
+
+SONG_STARTS = {5: 8.82, 4: 12.10, 3: 16.02, 2: 32.26, 1: 36.30}
+
+
+def song_items(starts=SONG_STARTS):
+    return [{"rank": r, "name": f"선수{r}", "start": starts.get(r)} for r in (5, 4, 3, 2, 1)]
+
+
+def test_scene_starts_follow_song():
+    fps = 30
+    p = make_project(duration=54, items=song_items(), outro_start=48.14)
+    scenes = build_timeline(p, fps=fps)
+    assert [s.start for s in scenes] == [0.0] + [round(t * fps) / fps for t in (8.82, 12.10, 16.02, 32.26, 36.30, 48.14)]
+    assert scenes[-1].end == 54
+    for a, b in zip(scenes, scenes[1:]):
+        assert a.end == b.start
+
+
+def test_scene_starts_without_outro_start_uses_proportional_outro():
+    scenes = build_timeline(make_project(duration=54, items=song_items()))
+    assert scenes[-1].kind == "outro" and scenes[-1].start == pytest.approx(54 - 5 * 54 / 50, abs=1 / 30)
+
+
+def test_scene_starts_all_or_nothing():
+    with pytest.raises(ValidationError, match="모두"):
+        make_project(items=song_items({5: 8.0, 4: 12.0}))
+
+
+def test_scene_starts_must_increase():
+    with pytest.raises(ValidationError, match="너무 짧습니다"):
+        make_project(duration=54, items=song_items({**SONG_STARTS, 3: 11.0}))
+
+
+def test_outro_start_requires_item_starts():
+    with pytest.raises(ValidationError, match="outro_start"):
+        make_project(outro_start=45.0)

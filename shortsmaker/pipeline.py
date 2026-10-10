@@ -56,6 +56,10 @@ def prepare(project: Project, project_dir: Path, template: Template | None = Non
             ) -> tuple[Template, list[Scene], SceneBuildResult]:
     """타임라인과 장면 PNG까지만 만든다 (미리보기용)."""
     t = template or load_template(project.channel)
+    if t.mode == "card":
+        from . import card_mode
+        r = card_mode.make_renderer(project, project_dir, t, resolve_lyrics(project, project_dir))
+        return t, r.scenes, card_mode.build_previews(r, work_dir_for(project_dir) / "scenes")
     scenes = build_timeline(project, fps=t.fps, transition=t.effects.transition)
     built = build_scenes(project, project_dir, t, scenes, work_dir_for(project_dir) / "scenes")
     return t, scenes, built
@@ -79,8 +83,12 @@ def render(
     if not pre.ok:
         raise ValidationError(pre)
 
+    t = load_template(project.channel)
+    if t.mode == "card":
+        return _render_card(project, project_dir, t, output, report, pre.warnings)
+
     report(0.02, "장면 이미지 생성 중")
-    t, scenes, built = prepare(project, project_dir)
+    t, scenes, built = prepare(project, project_dir, t)
     work = work_dir_for(project_dir)
 
     report(0.05, "가사 자막 준비 중")  # 가사 오류는 오래 걸리는 렌더 전에 알린다
@@ -107,3 +115,29 @@ def render(
     report(1.0, "완료")
     warnings = list(dict.fromkeys(pre.warnings + built.warnings + lyric_warnings + post.warnings))
     return RenderResult(output=output, scenes=scenes, warnings=warnings, subtitle_mode=sub_mode)
+
+
+def _render_card(project: Project, project_dir: Path, t: Template, output: Path | None,
+                 report, pre_warnings: list[str]) -> RenderResult:
+    """카드 모드: 프레임을 직접 그려 인코딩 (장면 클립·xfade 없음)."""
+    from . import card_mode
+    lines = resolve_lyrics(project, project_dir)
+    errors = check_lyrics(lines, project.duration)
+    if errors:
+        raise LyricsError("\n".join(errors))
+    report(0.03, "장면 시간·자막 준비 중")
+    try:
+        r = card_mode.make_renderer(project, project_dir, t, lines)
+    except card_mode.CardModeError as e:
+        raise LyricsError(str(e)) from e
+    output = output or OUTPUT_DIR / f"{project_dir.name}.mp4"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    report(0.05, "프레임 렌더·인코딩 중")
+    card_mode.render_video(r, output, progress=lambda f, m: report(0.05 + 0.9 * f, m))
+    report(0.97, "결과 검증 중 (ffprobe)")
+    post = post_render(output, project.duration, t.width, t.height)
+    if not post.ok:
+        raise ValidationError(post)
+    report(1.0, "완료")
+    warnings = list(dict.fromkeys(pre_warnings + r.warnings + post.warnings))
+    return RenderResult(output=output, scenes=r.scenes, warnings=warnings, subtitle_mode="typing" if lines else "none")

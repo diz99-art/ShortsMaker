@@ -1,0 +1,9 @@
+# 2차 기능: 가사 타이밍 자동 맞추기 (로컬 모델, 유료 API 없음)
+# 설치: .venv/bin/pip install -r requirements-align.txt
+# 모델(faster-whisper large-v3 약 3GB, demucs htdemucs 약 80MB)은 처음 실행 때 한 번 무료로 내려받는다.
+-r requirements.txt
+stable-ts==2.19.1
+faster-whisper==1.2.1
+demucs==4.1.0
+torch==2.14.1
+torchaudio==2.11.0

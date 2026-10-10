@@ -102,9 +102,13 @@ def new_session():
     return session
 
 
-def search_photos(player: Player, session=None, limit=12) -> list[Photo]:
-    # No silent broadening: an empty strict search stays empty.
-    query = f'"{player.name.strip()}" "{player.team.strip()}" {player.season} baseball'
+def default_query(player: Player) -> str:
+    return f'"{player.name.strip()}" "{player.team.strip()}" {player.season} baseball'
+
+
+def search_photos(player: Player, session=None, limit=12, query: str | None = None) -> list[Photo]:
+    # No silent broadening: an empty strict search stays empty. 넓힌 검색어는 사용자가 화면에서 직접 고친 것만 쓴다.
+    query = (query or default_query(player)).strip()
     session = session or new_session()
     response = session.get(COMMONS_API, params={
         "action": "query", "format": "json", "formatversion": 2, "generator": "search",
