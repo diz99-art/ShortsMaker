@@ -108,12 +108,13 @@ def _fit_text(text: str, size: int, max_w: int, **kw) -> Image.Image:
 
 
 def compose_card(caricature: Path, *, rank: int, record: str, year: str, team: str, player: str,
-                 mock: bool = False, tied: bool = False) -> Image.Image:
+                 mock: bool = False, tied: bool = False, rank_fill: tuple[str, ...] | None = None) -> Image.Image:
     """아래에서부터 쌓는다: 선수 이름 리본 → 팀 이름 띠 → 연도 → 기록 → 순위. 캐리커처는 그 위·뒤에 크게."""
     primary, secondary = team_colors(team)
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
-    rank_img = _fit_text(f"{rank}위", 270, 540, fill=GOLD, stroke="#3B0A00", stroke_w=12, outer="#FFFFFF", outer_w=6)
+    gold = tuple(rank_fill) if rank_fill else GOLD  # 영상마다 바꾸는 순위 강조색 (variation.ACCENTS)
+    rank_img = _fit_text(f"{rank}위", 270, 540, fill=gold, stroke="#3B0A00", stroke_w=12, outer="#FFFFFF", outer_w=6)
     rec = (_fit_text(record, 190, W - 90, fill=SILVER, stroke="#111111", stroke_w=11, outer=primary, outer_w=7)
            if record else None)
     yr = styled_text(year, 66, "#FFFFFF", stroke="#111111", stroke_w=6, skew=0.08, shadow=4) if year else None
@@ -154,7 +155,7 @@ def compose_card(caricature: Path, *, rank: int, record: str, year: str, team: s
     # 3) 글자들
     card.alpha_composite(rank_img, (34, y_rank))
     if tied:  # 공동 순위: 순위 글자 위에 '공동'
-        co = styled_text("공동", 96, GOLD, stroke="#3B0A00", stroke_w=8, outer="#FFFFFF", outer_w=5, shadow=6)
+        co = styled_text("공동", 96, gold, stroke="#3B0A00", stroke_w=8, outer="#FFFFFF", outer_w=5, shadow=6)
         card.alpha_composite(co, (40, max(0, y_rank - co.height + 24)))
     if rec:
         card.alpha_composite(rec, (56, y_rec))

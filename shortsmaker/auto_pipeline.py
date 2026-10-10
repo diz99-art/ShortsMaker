@@ -22,7 +22,11 @@ from typing import Callable, Literal
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
+from . import production_log as plog
+from . import upload as upl
 from .bg_remove import remove_background
+from .lyrics_check import check_lyrics_text, history_lyrics
+from .variation import ACCENTS, Variation, conflicts, record as record_variation, suggest
 from .card_compose import FONT_EXTRA, compose_card, save_card
 from .manual_prompt import build_prompt, default_scene, manual_dir, prepare_folder
 from .lyrics_align import clean_lyrics_text, embedded_lyrics
@@ -85,6 +89,36 @@ class AutoState(BaseModel):
     output: str | None = None
     capcut: str | None = None
     credits: str | None = None
+    # 수익화 대비 (진정성·권리)
+    brief: str | None = None               # 연결한 가사 브리프 (projects/_briefs/<이름>)
+    data_source_name: str = ""
+    data_source_url: str = ""
+    rows_draft: list[dict] = Field(default_factory=list)   # 가사에서 자동 추출한 표 (사람 수정 내역 비교용)
+    lyrics_report: dict | None = None
+    lyrics_ack: bool = False               # 가사 검사 결과를 사람이 확인함
+    variation: dict | None = None
+    no_logo: dict[int, bool] = Field(default_factory=dict)  # 자리별 '로고·유니폼 글씨 없음' 확인
+    suno: dict = Field(default_factory=dict)  # 곡 파일 태그의 Suno 정보 (id, created)
+    suno_paid: bool = False
+    suno_plan: str = ""
+    render_kind: str | None = None         # draft | monetize
+    upload: dict | None = None
+
+
+def suno_info(song: Path) -> dict:
+    """Suno 곡 파일 태그(comment: 'made with suno; created=…; id=…')에서 생성 정보."""
+    import re
+    import subprocess
+    proc = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", str(song)],
+                          capture_output=True, text=True)
+    tags = json.loads(proc.stdout or "{}").get("format", {}).get("tags", {}) if proc.returncode == 0 else {}
+    comment = next((v for k, v in tags.items() if k.lower() == "comment"), "")
+    out = {"made_with_suno": "suno" in comment.lower()}
+    for key in ("created", "id"):
+        m = re.search(rf"{key}=([^;\s]+)", comment)
+        if m:
+            out[key] = m.group(1)
+    return out
 
 
 def now() -> str:
@@ -112,7 +146,7 @@ def _project(state: AutoState, d: Path) -> Project:
 # ---------------------------------------------------------------- 1. 곡 등록·가사
 
 def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bool | None = None,
-                    mode: str | None = None, template: str = CHANNEL,
+                    mode: str | None = None, template: str = CHANNEL, brief: str | None = None,
                     root: Path = PROJECTS_DIR) -> tuple[AutoState, Path]:
     """mode: manual(기본, 무료) | openai(유료) | mock. 옛 호출(mock=True/False)도 받는다."""
     if mode is None:
@@ -137,12 +171,24 @@ def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bo
     music = f"music{song.suffix.lower()}"
     shutil.copy2(song, d / music)
     state = AutoState(slug=slug, title=title or song.stem, music=music, duration=duration, mock=mode == "mock",
-                      gen_mode=mode, template=template, music_length=round(length, 2))
+                      gen_mode=mode, template=template, music_length=round(length, 2), suno=suno_info(song))
+    if brief:  # 가사 만들기에서 확정한 데이터·출처를 이어받는다
+        b = load_brief(brief, root)
+        state.brief, state.data_source_name, state.data_source_url = brief, b.get("source_name", ""), b.get("source_url", "")
+        state.title = title or b.get("title") or state.title
     # 가사 맞추기에 쓸 임시 project.json (순위·이미지는 6단계에서 채움)
     save_project(Project(channel=template, title=state.title, duration=duration, music=music,
                          items=[{"rank": r, "name": f"{r}위"} for r in (5, 4, 3, 2, 1)]), d)
     save_state(state, d)
+    plog.append(d, "project_started", song=song.name, template=template, gen_mode=mode, suno=state.suno, brief=brief)
     return state, d
+
+
+def load_brief(name: str, root: Path = PROJECTS_DIR) -> dict:
+    p = root / "_briefs" / name / "brief.json"
+    if not p.exists():
+        raise FlowError(f"가사 브리프가 없습니다: {p}")
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def align(state: AutoState, d: Path, *, aligner=None, progress: ProgressFn | None = None) -> list[LyricLine]:
@@ -152,12 +198,67 @@ def align(state: AutoState, d: Path, *, aligner=None, progress: ProgressFn | Non
     project = project.model_copy(update={"duration": music_cap(state)})
     res = auto_align(project, d, None, aligner=aligner or align_lines, progress=progress)
     save_project(project.model_copy(update={"lyrics": res.lines, "lyrics_lrc": None}), d)
+    # 실제로 부른 가사 원문 보관 (자막은 확정 때 다듬어지므로 가사 검사는 이 원문으로)
+    (d / "lyrics_sung.json").write_text(json.dumps([l.model_dump() for l in res.lines], ensure_ascii=False, indent=2),
+                                        encoding="utf-8")
     state.aligned = True
     set_end_mode(state, d, state.end_mode)
-    state.rows = [r.model_copy(update={"scene": default_scene(r)}) for r in extract_ranks(res.lines)]
+    rows = [r.model_copy(update={"scene": default_scene(r)}) for r in extract_ranks(res.lines)]
+    if state.brief:  # 브리프의 확정 데이터로 채운다 (가사 근거·시각은 추출 결과)
+        brows = sorted(load_brief(state.brief, d.parent).get("rows", []), key=lambda r: -int(r["rank"]))
+        for i, r in enumerate(rows):
+            if i < len(brows):
+                b = brows[i]
+                rows[i] = r.model_copy(update={k: str(b.get(k) or getattr(r, k)) for k in ("team", "player", "record", "year")}
+                                       | {"rank": int(b["rank"]), "stat_line": b.get("stat_line") or r.stat_line})
+    state.rows = rows
+    state.rows_draft = [r.model_dump() for r in rows]
     state.table_confirmed = False
     save_state(state, d)
+    plog.append(d, "lyrics_aligned", lines=len(res.lines), duration=state.duration)
     return res.lines
+
+
+def sung_lyrics(d: Path) -> str:
+    p = d / "lyrics_sung.json"
+    return "\n".join(l["text"] for l in json.loads(p.read_text(encoding="utf-8"))) if p.exists() else ""
+
+
+def set_data_source(state: AutoState, d: Path, name: str, url: str) -> None:
+    state.data_source_name, state.data_source_url = name.strip(), url.strip()
+    save_state(state, d)
+    plog.append(d, "data_source", name=state.data_source_name, url=state.data_source_url)
+
+
+def check_song_lyrics(state: AutoState, d: Path) -> dict:
+    """곡 가사(실제로 부른 원문)를 확정 데이터·이전 영상과 비교. 이미 만든 곡이라 결과는 사람이 확인한다."""
+    rows = [r.model_dump() for r in state.rows]
+    rep_ = check_lyrics_text(sung_lyrics(d), rows, history=history_lyrics(d.parent, exclude=state.slug))
+    state.lyrics_report, state.lyrics_ack = rep_.as_dict(), False
+    save_state(state, d)
+    plog.append(d, "lyrics_checked", passed=rep_.passed, errors=rep_.errors, warnings=rep_.warnings)
+    return state.lyrics_report
+
+
+def ack_lyrics(state: AutoState, d: Path, note: str = "") -> None:
+    if state.lyrics_report is None:
+        raise FlowError("가사 검사를 먼저 실행하세요")
+    state.lyrics_ack = True
+    save_state(state, d)
+    plog.append(d, "lyrics_reviewed", note=note, passed=state.lyrics_report["passed"])
+
+
+def edit_subtitles(state: AutoState, d: Path, texts: list[str]) -> None:
+    """자막 표기 수정 (시간은 그대로). 바뀐 줄을 기록한다."""
+    project = _project(state, d)
+    if len(texts) != len(project.lyrics):
+        raise FlowError("자막 줄 수가 다릅니다")
+    changes = [{"line": i, "from": l.text, "to": t.strip()} for i, (l, t) in enumerate(zip(project.lyrics, texts))
+               if l.text != t.strip() and t.strip()]
+    if changes:
+        lines = [l.model_copy(update={"text": t.strip() or l.text}) for l, t in zip(project.lyrics, texts)]
+        save_project(project.model_copy(update={"lyrics": lines}), d)
+        plog.append(d, "subtitles_edited", changes=changes)
 
 
 def music_cap(state: AutoState) -> float:
@@ -215,6 +316,10 @@ def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str 
             ps.query = f'"{r.player}" {r.team.split()[0]} baseball'
     state.table_confirmed = True
     save_state(state, d)
+    fields = ("rank", "team", "player", "record", "year", "scene", "stat_line")
+    plog.append(d, "data_confirmed", changes=plog.diff_rows(state.rows_draft, [r.model_dump() for r in state.rows], fields),
+                rows=[{f: getattr(r, f) for f in fields} for r in state.rows])
+    check_song_lyrics(state, d)
 
 
 def subtitle_lines(lines: list[LyricLine], rows: list[RankRow], merge: bool) -> list[LyricLine]:
@@ -424,14 +529,17 @@ def generate_caricatures(state: AutoState, d: Path, editor, *, progress: Progres
     return out
 
 
-def approve_caricature(state: AutoState, d: Path, slot: int, *, confirmed: bool) -> Path:
+def approve_caricature(state: AutoState, d: Path, slot: int, *, confirmed: bool, no_logo_text: bool = False) -> Path:
     ps = state.players[slot]
     if not ps.generations:
         raise FlowError(f"{row_label(state, slot)} 캐리커처를 먼저 만드세요")
     path = approve_image(d / ps.folder, d / ps.generations[-1], confirmed=confirmed, allow_mock=state.mock)
     ps.approved, ps.card = str(path.relative_to(d)), None
+    state.no_logo[slot] = no_logo_text
     state.cards_done = False
     save_state(state, d)
+    plog.append(d, "caricature_approved", slot=slot, who=row_label(state, slot), mode=state.gen_mode,
+                image=ps.approved, no_logo_text=no_logo_text)
     return path
 
 
@@ -474,7 +582,7 @@ def _cutout(data: bytes, method: str) -> tuple[bytes, str]:
 
 
 def use_manual_image(state: AutoState, d: Path, slot: int, data: bytes, *, source_name: str = "",
-                     method: str = "auto") -> Path:
+                     method: str = "auto", no_logo_text: bool = False) -> Path:
     """다운로드한(또는 올린) 그림을 배경 제거 후 이 순위의 캐리커처로. 버튼을 누른 것이 승인이다."""
     _need_table(state)
     if state.gen_mode != "manual":
@@ -490,9 +598,21 @@ def use_manual_image(state: AutoState, d: Path, slot: int, data: bytes, *, sourc
                                                "sha256": digest(png), "approved": True})
     ps = state.players[slot]
     ps.approved, ps.card = str(path.relative_to(d)), None
+    state.no_logo[slot] = no_logo_text
     state.cards_done = False
     save_state(state, d)
+    prompt_file = folder / "prompt.txt"
+    plog.append(d, "caricature_approved", slot=slot, who=row_label(state, slot), mode="manual", image=ps.approved,
+                source=source_name, background=how, no_logo_text=no_logo_text,
+                prompt=prompt_file.read_text(encoding="utf-8") if prompt_file.exists() else None)
     return path
+
+
+def confirm_no_logo(state: AutoState, d: Path, slot: int, ok: bool) -> None:
+    """승인한 그림에 구단 로고·유니폼 글씨가 없음을 사람이 확인 (렌더 체크리스트)."""
+    state.no_logo[slot] = ok
+    save_state(state, d)
+    plog.append(d, "no_logo_checked", slot=slot, who=row_label(state, slot), ok=ok)
 
 
 def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "auto") -> Path:
@@ -504,10 +624,30 @@ def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "au
     return path
 
 
+# ---------------------------------------------------------------- 5'. 연출 (영상마다 다르게)
+
+def suggest_variation(state: AutoState, d: Path) -> Variation:
+    return suggest(d.parent, exclude=state.slug)
+
+
+def choose_variation(state: AutoState, d: Path, v: Variation, *, reason: str = "") -> list[str]:
+    """최근 5편과 너무 비슷하면 거부. 정한 연출을 기록한다."""
+    bad = conflicts(v, d.parent, exclude=state.slug)
+    if bad:
+        raise FlowError("최근 영상과 연출이 너무 비슷합니다: " + "; ".join(bad))
+    state.variation = v.model_dump()
+    state.cards_done = False  # 강조색이 카드에 들어가므로 다시 합성
+    save_state(state, d)
+    plog.append(d, "variation_chosen", variation=state.variation, describe=v.describe(), reason=reason)
+    return bad
+
+
 # ---------------------------------------------------------------- 5. 카드
 
 def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
     _need_table(state)
+    if state.variation is None:
+        raise FlowError("연출(전환·강조색·자막·인트로)을 먼저 고르세요")
     waiting = [s for s, ps in state.players.items() if not ps.approved]
     if waiting:
         raise FlowError("승인한 캐리커처가 없는 순위: "
@@ -520,7 +660,8 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
             card = _sticker(d / ps.approved, mock=state.mock)
         else:
             card = compose_card(d / ps.approved, rank=r.rank, record=r.record, year=r.year, team=r.team,
-                                player=r.player, mock=state.mock, tied=label(state.rows, r).startswith("공동"))
+                                player=r.player, mock=state.mock, tied=label(state.rows, r).startswith("공동"),
+                                rank_fill=ACCENTS[Variation.model_validate(state.variation).accent]["rank"])
         out[r.slot] = save_card(card, d / "cards" / f"card{r.slot}.png")
         ps.card = str(out[r.slot].relative_to(d))
     state.cards_done = True
@@ -567,26 +708,85 @@ def build_project(state: AutoState, d: Path) -> Project:
     items = [{"rank": r.slot, "display_rank": r.rank, "name": r.player or r.team, "value": r.record,
               "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card,
               "stat_line": r.stat_line} for r in state.rows]
+    source = state.data_source_name + (f" ({state.data_source_url})" if state.data_source_url else "")
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
-                                      "items": items, "intro_image": state.intro_image,
+                                      "items": items, "intro_image": state.intro_image, "variation": state.variation,
+                                      "source_note": f"출처: {source}" if source else "",
                                       "rights_confirmed": state.rights_confirmed and not state.mock})
     save_project(project, d)
     return project
 
 
-def render_all(state: AutoState, d: Path, *, rights_confirmed: bool, capcut_root: Path | None = None,
-               output_dir: Path = OUTPUT_DIR, progress: ProgressFn | None = None) -> dict:
-    """MP4 + CapCut 초안. 실제 모드는 자료·이미지·음악 권리 확인 체크가 필요하다."""
+# ---------------------------------------------------------------- 6. 권리 체크리스트·렌더
+
+def set_suno(state: AutoState, d: Path, *, paid: bool, plan: str) -> None:
+    state.suno_paid, state.suno_plan = paid, plan.strip()
+    save_state(state, d)
+    plog.append(d, "suno_confirmed", paid=paid, plan=state.suno_plan, suno=state.suno)
+
+
+def checklist(state: AutoState, d: Path) -> list[dict]:
+    """수익화용 렌더 전 체크리스트. 하나라도 ok=False 면 수익화용 렌더를 막는다."""
+    items = []
+
+    def add(key: str, label: str, ok: bool, detail: str = "") -> None:
+        items.append({"key": key, "label": label, "ok": bool(ok), "detail": detail})
+
+    add("not_mock", "Mock 이 아닌 실제 제작", not state.mock, "Mock 프로젝트는 수익화용으로 렌더할 수 없습니다" if state.mock else "")
+    add("table", "순위 표 확정", state.table_confirmed, "" if state.table_confirmed else "2단계 표를 먼저 확정하세요")
+    if not state.table_confirmed:
+        return items
+    add("suno", "Suno 유료 플랜으로 생성한 곡", state.suno_paid and bool(state.suno_plan),
+        f"플랜: {state.suno_plan or '미입력'} · 곡 태그: " +
+        (f"Suno id {state.suno.get('id', '없음')}, 생성 {state.suno.get('created', '알 수 없음')}"
+         if state.suno.get("made_with_suno") else "Suno 표시 없음 (확인 필요)"))
+    missing = [row_label(state, s) for s in state.players if not state.no_logo.get(s)]
+    add("no_logo", "캐리커처에 구단 로고·유니폼 글씨 없음 (사람 확인)", not missing,
+        ("확인 안 된 순위: " + ", ".join(missing)) if missing else "5명 모두 확인")
+    bad_credit = []
+    for r in state.rows:
+        ps = state.players[r.slot]
+        if ps.source == "placeholder" or (not ps.folder and ps.source != "none"):
+            bad_credit.append(label(state.rows, r))
+        elif ps.folder and not (d / ps.folder / "metadata.json").exists():
+            bad_credit.append(label(state.rows, r))
+    add("photo_credits", "사진 출처 기록 (credits.txt)", not bad_credit,
+        ("출처가 없는 순위: " + ", ".join(bad_credit)) if bad_credit else "모든 사진 출처 기록됨 (또는 사진 없이 직접 그림)")
+    add("data_source", "데이터 출처 (이름·URL)", bool(state.data_source_name and state.data_source_url),
+        state.data_source_name or "미입력")
+    add("lyrics", "가사 검사 결과 확인 (나열형·데이터 일치·이전 영상과 겹침)", state.lyrics_ack,
+        "" if state.lyrics_report is None else ("통과" if state.lyrics_report["passed"] else
+                                                "검사 오류 있음: " + "; ".join(state.lyrics_report["errors"][:2])))
+    v_ok = state.variation is not None and not conflicts(Variation.model_validate(state.variation), d.parent,
+                                                         exclude=state.slug)
+    add("variation", "연출이 최근 5편과 충분히 다름", v_ok,
+        Variation.model_validate(state.variation).describe() if state.variation else "미선택")
+    return items
+
+
+def render_all(state: AutoState, d: Path, *, rights_confirmed: bool = False, kind: str = "draft",
+               capcut_root: Path | None = None, output_dir: Path = OUTPUT_DIR,
+               progress: ProgressFn | None = None) -> dict:
+    """kind=draft: 언제나 가능, 출력 이름 _DRAFT (Mock 은 _MOCK).
+    kind=monetize: 체크리스트가 모두 통과하고 자료·권리 확인을 해야 렌더. 연출 기록(_history)에 남는다."""
     from .capcut_export import CapCutExportError, drafts_dir, export_draft
     from .pipeline import render
-    if not state.mock and not rights_confirmed:
-        raise FlowError("자료 정확성과 이미지·음악 사용 권리를 확인해야 렌더합니다")
-    state.rights_confirmed = rights_confirmed
+    if kind not in ("draft", "monetize"):
+        raise FlowError("렌더 종류는 draft 또는 monetize 입니다")
+    state.credits = credits_text(state, d)
+    (d / "credits.txt").write_text(state.credits, encoding="utf-8")
+    if kind == "monetize":
+        failed = [c for c in checklist(state, d) if not c["ok"]]
+        if failed:
+            raise FlowError("수익화용 렌더를 할 수 없습니다 — " + "; ".join(f"{c['label']}: {c['detail']}" for c in failed))
+        if not rights_confirmed:
+            raise FlowError("자료 정확성과 이미지·음악 사용 권리를 확인해야 수익화용으로 렌더합니다")
+    state.rights_confirmed = rights_confirmed and kind == "monetize"
     project = build_project(state, d)
-    suffix = "_MOCK" if state.mock else ""
+    suffix = "_MOCK" if state.mock else ("" if kind == "monetize" else "_DRAFT")
     res = render(project, d, output_dir / f"{state.slug}{suffix}.mp4", progress=progress,
-                 require_rights=not state.mock)
-    state.output = str(res.output)
+                 require_rights=kind == "monetize")
+    state.output, state.render_kind = str(res.output), kind
     warnings = list(res.warnings)
     try:
         draft = export_draft(project, d, root=capcut_root or drafts_dir(),
@@ -595,7 +795,24 @@ def render_all(state: AutoState, d: Path, *, rights_confirmed: bool, capcut_root
         warnings += draft.warnings
     except CapCutExportError as e:  # CapCut 실패는 MP4 에 영향 없음
         warnings.append(f"CapCut 초안을 만들지 못했습니다: {e}")
-    state.credits = credits_text(state, d)
-    (d / "credits.txt").write_text(state.credits, encoding="utf-8")
     save_state(state, d)
+    if kind == "monetize":
+        record_variation(state.slug, Variation.model_validate(state.variation), d.parent)
+    plog.append(d, "render", kind=kind, output=state.output, capcut=state.capcut,
+                checklist=checklist(state, d), final_confirmed=kind == "monetize")
     return {"output": res.output, "capcut": state.capcut, "warnings": warnings, "credits": state.credits}
+
+
+# ---------------------------------------------------------------- 7. 업로드 준비
+
+def make_upload(state: AutoState, d: Path) -> dict:
+    if not state.output:
+        raise FlowError("영상을 먼저 렌더하세요")
+    source = state.data_source_name + (f" {state.data_source_url}" if state.data_source_url else "")
+    state.credits = credits_text(state, d)
+    draft = upl.build(state.title, state.rows, data_source=source, credits=state.credits, gen_mode=state.gen_mode)
+    upl.write(d, draft)
+    state.upload = draft
+    save_state(state, d)
+    plog.append(d, "upload_draft", titles=draft["titles"], tags=len(draft["tags"]))
+    return draft

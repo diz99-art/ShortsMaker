@@ -234,8 +234,10 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
     from PIL import Image
 
     from .card_mode import char_times, make_renderer
+    from .variation import ACCENTS
     r = make_renderer(project, project_dir, t, lines)
     c = t.card
+    v = r.v
     base, head = media / "00_배경_버튼.png", media / "99_제목_구분선.png"
     r.base.save(base)
     r.head.save(head)
@@ -262,9 +264,13 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         tx, ty = _transform(t, box.x + box.w / 2, box.y + box.h / 2)
         seg = cc.VideoSegment(str(dst), cc.Timerange(us(start), us(sc.end - start)),
                               clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio, transform_x=tx, transform_y=ty))
-        for sec, scale in motion.curve:  # 측정한 확대 곡선을 그대로 키프레임으로
+        layer = r.layers[sc.index]  # 연출(variation)이 반영된 움직임
+        for sec, scale in layer.motion.curve:  # 확대 곡선을 그대로 키프레임으로
             if sec < sc.end - start:
                 seg.add_keyframe(cc.KeyframeProperty.uniform_scale, us(sec), round(ratio * scale, 4))
+        for sec, dx in layer.dx or []:  # 옆에서 들어오기
+            if sec < sc.end - start:
+                seg.add_keyframe(cc.KeyframeProperty.position_x, us(sec), round(tx + dx / (t.width / 2), 4))
         script.add_segment(seg, "로고·카드")
 
     script.add_segment(cc.VideoSegment(str(head), cc.Timerange(0, D)), "제목")
@@ -278,7 +284,8 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                 continue
             seg = cc.TextSegment(
                 text, cc.Timerange(us(sc.start + sl.delay), us(sc.end - sc.start - sl.delay)),
-                style=cc.TextStyle(size=round(sl.size / 6, 1), bold=True, color=_rgb01(sl.color), align=1,
+                style=cc.TextStyle(size=round(sl.size / 6, 1), bold=True,
+                                   color=_rgb01(ACCENTS.get(v.accent, {}).get("stat", sl.color)), align=1,
                                    auto_wrapping=True, max_line_width=round(sl.w / t.width, 3)),
                 clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, sl.center_y)[1]),
             )
@@ -300,10 +307,12 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                 clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, cy)[1]),
             )
             reveal = char_times(line)[-1] - line.start if line.text else 0
-            if reveal > 0.05:  # 글자가 다 나오는 데 걸리는 시간만큼 타자기 효과
-                seg.add_animation(cc.TextIntro["打字机"], us(min(reveal, end - line.start)))
+            anim = {"typing": "打字机", "word": "波浪弹入", "line": "滑动上升"}.get(v.subtitle, "打字机")
+            dur = min(reveal, end - line.start) if v.subtitle != "line" else min(0.25, end - line.start)
+            if dur > 0.05:  # 자막 등장 방식 (한 글자씩 / 단어 / 줄)
+                seg.add_animation(cc.TextIntro[anim], us(dur))
             script.add_segment(seg, "자막")
-    return ["카드 모드 CapCut 초안: 확대는 키프레임으로 옮겼지만 모션 블러는 없습니다. "
+    return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
             "자막 타자 효과는 CapCut '타자기' 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."]
 
 

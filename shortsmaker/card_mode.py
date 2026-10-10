@@ -30,6 +30,7 @@ from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegErro
 from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import SceneBuildResult, SceneLayers, _font, _hex, _wrap
 from .timeline import Scene, snap
+from .variation import ACCENTS, FLASH, LINE_RISE, TITLE_CARD, Variation, intro_motion, transition_motion
 
 ProgressFn = Callable[[float, str], None]
 
@@ -256,12 +257,22 @@ def fit_size(img_size: tuple[int, int], box: Box) -> tuple[float, float]:
     return iw * s, ih * s
 
 
-class MovingLayer:
-    """박스 가운데를 중심으로 배율 s 로 그린다. 모션 블러는 여러 배율을 평균."""
+def _interp(curve: list[tuple[float, float]], t: float) -> float:
+    if t <= curve[0][0]:
+        return curve[0][1]
+    for (t0, v0), (t1, v1) in zip(curve, curve[1:]):
+        if t <= t1:
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return curve[-1][1]
 
-    def __init__(self, path: Path, box: Box, motion: Motion, fps: int, top: int, canvas: tuple[int, int]):
+
+class MovingLayer:
+    """박스 가운데를 중심으로 배율 s, 가로 이동 dx 로 그린다. 모션 블러는 셔터 동안의 위치·배율을 평균."""
+
+    def __init__(self, path: Path, box: Box, motion: Motion, fps: int, top: int, canvas: tuple[int, int],
+                 dx: list[tuple[float, float]] | None = None):
         self.src = _load_rgba(str(path))
-        self.box, self.motion, self.fps, self.top, self.canvas = box, motion, fps, top, canvas
+        self.box, self.motion, self.fps, self.top, self.canvas, self.dx = box, motion, fps, top, canvas, dx
         self.w, self.h = fit_size(self.src.size, box)
         self.cx, self.cy = box.x + box.w / 2, box.y + box.h / 2
         max_s = max(s for _, s in motion.curve)
@@ -269,10 +280,25 @@ class MovingLayer:
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
             (round(self.w * max_s), round(self.h * max_s)), Image.LANCZOS)
 
-    def _place(self, s: float) -> tuple[Image.Image, int, int]:
+    def _place(self, s: float, dx: float = 0.0) -> tuple[Image.Image, int, int]:
         w, h = max(1, round(self.w * s)), max(1, round(self.h * s))
         img = self._big.resize((w, h), Image.BICUBIC if s > 1.01 else Image.LANCZOS)
-        return img, round(self.cx - w / 2), round(self.cy - h / 2)
+        return img, round(self.cx - w / 2 + dx), round(self.cy - h / 2)
+
+    def _dx(self, t: float | None) -> float:
+        if t is None or not self.dx:
+            return 0.0
+        if t < 0:  # 등장 직전: 첫 구간 기울기로 연장 (블러용)
+            (t0, v0), (t1, v1) = self.dx[0], self.dx[1]
+            return v0 + (v1 - v0) / (t1 - t0) * t
+        return _interp(self.dx, t)
+
+    @staticmethod
+    def _paste(layer: Image.Image, img: Image.Image, x: int, y: int) -> None:
+        W, H = layer.size
+        if x >= W or y >= H or x + img.width <= 0 or y + img.height <= 0:
+            return
+        layer.alpha_composite(img, (max(0, x), max(0, y)), (max(0, -x), max(0, -y)))
 
     def draw(self, frame: Image.Image, t_anim: float | None) -> None:
         """t_anim: 등장 후 경과 초 (None 이면 정지 상태). 구분선 위(top)로는 그리지 않는다."""
@@ -282,17 +308,18 @@ class MovingLayer:
             return  # 이전 카드가 사라지고 새 카드가 들어오기 직전의 빈 프레임
         ta = None if t_anim is None else t_anim - gap
         s = 1.0 if ta is None else m.scale_at(ta)
+        dx = self._dx(ta)
         layer = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
         if ta is not None and ta < m.blur and m.blur_samples > 1:
-            # 셔터가 열린 1프레임 동안의 배율 변화를 평균 → 확대 방향 모션 블러
-            back = m.shutter / self.fps  # 셔터가 열린 동안의 움직임
-            prev = m.scale_ext(ta - back)
+            # 셔터가 열린 동안의 배율·위치 변화를 평균 → 확대/이동 방향 모션 블러
+            back = m.shutter / self.fps
+            prev_s, prev_dx = m.scale_ext(ta - back), self._dx(ta - back)
             acc = None
             for k in range(m.blur_samples):
-                sk = prev + (s - prev) * (k + 1) / m.blur_samples
-                img, x, y = self._place(sk)
+                f = (k + 1) / m.blur_samples
+                img, x, y = self._place(prev_s + (s - prev_s) * f, prev_dx + (dx - prev_dx) * f)
                 tmp = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
-                tmp.alpha_composite(img, (max(0, x), max(0, y)), (max(0, -x), max(0, -y)))
+                self._paste(tmp, img, x, y)
                 a = np.asarray(tmp, dtype=np.float32)
                 a[..., :3] *= a[..., 3:4] / 255.0  # premultiplied 로 평균해야 가장자리가 검게 번지지 않음
                 acc = a if acc is None else acc + a
@@ -301,8 +328,8 @@ class MovingLayer:
             rgb = np.where(alpha > 0, acc[..., :3] * 255.0 / np.maximum(alpha, 1e-6), 0)
             layer = Image.fromarray(np.concatenate([rgb, alpha], axis=2).clip(0, 255).astype(np.uint8), "RGBA")
         else:
-            img, x, y = self._place(s)
-            layer.alpha_composite(img, (max(0, x), max(0, y)), (max(0, -x), max(0, -y)))
+            img, x, y = self._place(s, dx)
+            self._paste(layer, img, x, y)
         if self.top > 0:
             layer.paste((0, 0, 0, 0), (0, 0, self.canvas[0], self.top))
         frame.alpha_composite(layer)
@@ -348,15 +375,16 @@ def layout_subtitle(text: str, st: TypingSubtitle, font_path: Path, center_y: fl
     return SubtitleLayout(font, out, overflow)
 
 
-def render_subtitle(layout: SubtitleLayout, visible_chars: int, st: TypingSubtitle, canvas: tuple[int, int]
-                    ) -> Image.Image:
-    """원문 앞쪽 visible_chars 글자까지만 그린 RGBA 레이어 (그림자 → 검은 테두리 → 흰 글씨)."""
+def render_subtitle(layout: SubtitleLayout, visible_chars: int, st: TypingSubtitle, canvas: tuple[int, int],
+                    *, alpha: float = 1.0, dy: float = 0.0) -> Image.Image:
+    """원문 앞쪽 visible_chars 글자까지만 그린 RGBA 레이어 (그림자 → 검은 테두리 → 흰 글씨).
+    alpha·dy: 줄 단위로 떠오르는 자막용 (투명도, 아래로 내린 거리)."""
     layer = Image.new("RGBA", canvas, (0, 0, 0, 0))
     parts = []
     for line, start, x, y in layout.lines:
         n = max(0, min(len(line), visible_chars - start))
         if n:
-            parts.append((line[:n], x, y))
+            parts.append((line[:n], x, y + dy))
     if not parts:
         return layer
     font = layout.font
@@ -374,6 +402,8 @@ def render_subtitle(layout: SubtitleLayout, visible_chars: int, st: TypingSubtit
     for s, x, y in parts:
         d.text((x, y), s, font=font, fill=_hex(st.color), anchor="la",
                stroke_width=st.stroke_width, stroke_fill=_hex(st.stroke_color))
+    if alpha < 1.0:
+        layer.putalpha(layer.getchannel("A").point(lambda v: round(v * max(0.0, alpha))))
     return layer
 
 
@@ -403,13 +433,14 @@ def layout_stat(text: str, sl: StatLine, font_path: Path) -> SubtitleLayout:
     return SubtitleLayout(font, out, len(lines) > sl.max_lines)
 
 
-def render_stat(layout: SubtitleLayout, visible_chars: int, sl: StatLine, canvas: tuple[int, int]) -> Image.Image:
+def render_stat(layout: SubtitleLayout, visible_chars: int, sl: StatLine, canvas: tuple[int, int],
+                color: str | None = None) -> Image.Image:
     layer = Image.new("RGBA", canvas, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     for line, start, x, y in layout.lines:
         n = max(0, min(len(line), visible_chars - start))
         if n:
-            d.text((x, y), line[:n], font=layout.font, fill=_hex(sl.color), anchor="la",
+            d.text((x, y), line[:n], font=layout.font, fill=_hex(color or sl.color), anchor="la",
                    stroke_width=sl.stroke_width, stroke_fill=_hex(sl.stroke_color))
     return layer
 
@@ -419,6 +450,30 @@ def stat_visible(text: str, sl: StatLine, since: float) -> int:
     if since < sl.delay:
         return 0
     return min(len(text), int((since - sl.delay) * sl.rate) + 1)
+
+
+def render_title_card(t: Template, project: Project) -> Image.Image:
+    """인트로 '제목 카드' 연출: 구분선 아래에 영상 제목을 크게 (제목 파랑 고정)."""
+    c = t.card
+    layer = Image.new("RGBA", (t.width, t.height), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    lines = project.title.split("\n")
+    size = 120
+    while size > 50:
+        font = _font(str(t.font_path("black")), size)
+        if all(font.getlength(l) <= t.width - 120 for l in lines):
+            break
+        size -= 4
+    pitch = size * 1.15
+    block = pitch * (len(lines) - 1) + size
+    top = (c.content_top + c.footer.button.y) / 2 - block / 2
+    blue = _hex(c.title.color)
+    d.rounded_rectangle([40, top - 70, t.width - 40, top + block + 70], radius=48,
+                        fill=(240, 245, 255, 255), outline=blue + (255,), width=10)
+    for i, l in enumerate(lines):
+        d.text((t.width / 2, top + i * pitch), l, font=font, fill=_hex(c.title.color), anchor="mt",
+               stroke_width=6, stroke_fill=(255, 255, 255))
+    return layer
 
 
 # ---------------------------------------------------------------- 프레임 렌더러
@@ -436,6 +491,11 @@ class CardRenderer:
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
         self.base, self.head = render_chrome(t, self.project)
+        self.v = Variation.model_validate(self.project.variation or {})
+        card_m, card_dx, self.flash = transition_motion(self.v.transition, c.card_motion)
+        intro_m, intro_dx = intro_motion(self.v.intro, c.intro_motion)
+        self.title_card = render_title_card(t, self.project) if self.v.intro == "title_card" else None
+        self.stat_color = ACCENTS.get(self.v.accent, {}).get("stat")
         if self.project.intro_image:  # 프로젝트 인트로 캐릭터
             intro, intro_box = self.project_dir / self.project.intro_image, c.intro_box or c.logo_box
             if not intro.exists():
@@ -445,15 +505,15 @@ class CardRenderer:
             if intro is None:
                 raise CardModeError(f"채널 로고 이미지가 없습니다: templates/{self.project.channel}/{c.logo}")
         self.layers: dict[int, MovingLayer] = {
-            0: MovingLayer(intro, intro_box, c.intro_motion, t.fps, c.content_top, self.canvas)}
+            0: MovingLayer(intro, intro_box, intro_m, t.fps, c.content_top, self.canvas, dx=intro_dx)}
         for s in self.scenes[1:]:
             if not s.item.image:
                 raise CardModeError(f"[{s.item.rank}위] 카드 이미지가 지정되지 않았습니다")
-            self.layers[s.index] = MovingLayer(self.project_dir / s.item.image, c.card_box, c.card_motion,
-                                               t.fps, c.content_top, self.canvas)
+            self.layers[s.index] = MovingLayer(self.project_dir / s.item.image, c.card_box, card_m,
+                                               t.fps, c.content_top, self.canvas, dx=card_dx)
         st = c.subtitle
         font_path = t.font_path(st.font)
-        self._times = [char_times(l) for l in self.lines]
+        self._times = [self._reveal_times(l) for l in self.lines]
         self._layouts: dict[tuple[int, bool], SubtitleLayout] = {}
         self._font_path = font_path
         for i, l in enumerate(self.lines):
@@ -473,6 +533,24 @@ class CardRenderer:
         self._cache_key = None
         self._cache_frame: Image.Image | None = None
 
+    def _reveal_times(self, line: LyricLine) -> list[float]:
+        """자막 등장 방식별 글자 시각: typing=글자마다, word=단어 첫 글자 시각에 단어 전체, line=줄 시작에 전부."""
+        times = char_times(line)
+        if self.v.subtitle == "line":
+            return [line.start] * len(times)
+        if self.v.subtitle == "word":
+            out, i, text = [], 0, line.text
+            while i < len(text):
+                j = i
+                while j < len(text) and not text[j].isspace():
+                    j += 1
+                j = j + 1 if j < len(text) else j  # 단어 뒤 공백 포함
+                first = times[i]
+                out += [first] * (j - i)
+                i = j
+            return out
+        return times
+
     def _layout(self, i: int, intro: bool) -> SubtitleLayout:
         key = (i, intro)
         if key not in self._layouts:
@@ -491,10 +569,19 @@ class CardRenderer:
     def state(self, frame_no: int) -> tuple:
         """프레임 모양을 결정하는 값. 같으면 이전 프레임을 그대로 쓴다."""
         sec = frame_no / self.t.fps
+        fps = self.t.fps
         sc = self.scene_at(sec)
         m = self.layers[sc.index].motion
-        since = frame_no - round(sc.start * self.t.fps)
-        anim = since if since / self.t.fps < m.length + m.gap_frames / self.t.fps else None
+        since = frame_no - round(sc.start * fps)
+        if sc.kind == "intro" and self.title_card is not None:  # 제목 카드 → 그다음 로고 움직임
+            hold = round(TITLE_CARD * fps)
+            since = since - hold if since >= hold else -1
+        if since < 0:
+            anim = "title"
+        else:
+            anim = since if since / fps < m.length + m.gap_frames / fps else None
+        flash = since if sc.kind == "rank" and self.flash and 0 <= since < round(self.flash * fps) else None
+        rise = None
         line_i, shown = None, 0
         for i, l in enumerate(self.lines):  # 다음 가사가 시작되면 교체
             if l.start <= sec + 1e-9:
@@ -503,23 +590,37 @@ class CardRenderer:
                 break
         if line_i is not None:
             shown = sum(1 for x in self._times[line_i] if x <= sec + 1e-9)
+            if self.v.subtitle == "line" and shown:
+                k = frame_no - round(self.lines[line_i].start * fps)
+                rise = k if k < round(LINE_RISE * fps) else None
         stat = 0
         if sc.index in self._stats:
             stat = stat_visible(sc.item.stat_line, self.t.card.stat_line, sec - sc.start)
-        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat)
+        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise)
 
     def frame(self, frame_no: int) -> Image.Image:
         key = self.state(frame_no)
         if key == self._cache_key and self._cache_frame is not None:
             return self._cache_frame
-        idx, anim, line_i, shown, intro, stat = key
+        idx, anim, line_i, shown, intro, stat, flash, rise = key
+        fps = self.t.fps
         img = self.base.convert("RGBA")
-        self.layers[idx].draw(img, None if anim is None else anim / self.t.fps)
+        if anim == "title":
+            img.alpha_composite(self.title_card)
+        else:
+            self.layers[idx].draw(img, None if anim is None else anim / fps)
+        if flash is not None:  # 흰 섬광이 FLASH 초에 걸쳐 사라짐 (구분선 아래만)
+            a = round(255 * (1 - flash / max(1, round(self.flash * fps))))
+            white = Image.new("RGBA", self.canvas, (255, 255, 255, 0))
+            white.paste((255, 255, 255, a), (0, self.t.card.content_top, self.canvas[0], self.canvas[1]))
+            img.alpha_composite(white)
         img.alpha_composite(self.head)
         if stat:
-            img.alpha_composite(render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas))
+            img.alpha_composite(render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas, self.stat_color))
         if line_i is not None and shown:
-            img.alpha_composite(render_subtitle(self._layout(line_i, intro), shown, self.t.card.subtitle, self.canvas))
+            p = 1.0 if rise is None else (rise + 1) / round(LINE_RISE * fps)
+            img.alpha_composite(render_subtitle(self._layout(line_i, intro), shown, self.t.card.subtitle, self.canvas,
+                                                alpha=p, dy=(1 - p) * 40))
         out = img.convert("RGB")
         self._cache_key, self._cache_frame = key, out
         return out

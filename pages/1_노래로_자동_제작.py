@@ -58,6 +58,9 @@ with tab_new:
         slug = st.text_input("프로젝트 이름 (영문·한글·숫자)", "")
         tpl = st.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="tpl",
                        help="카드형: 정보가 다 든 카드 / 스티커형: 글씨 없는 치비 스티커 + 빨간 기록 줄")
+        briefs = sorted(p.parent.name for p in (ROOT / "_briefs").glob("*/brief.json"))
+        brief = st.selectbox("가사 브리프 연결 (가사 만들기에서 확정한 데이터·출처를 이어받음)", ["(없음)"] + briefs,
+                             key="brief_pick")
         modes = [m for m in ap.GEN_MODES if m != "openai" or has_key]
         mode = st.radio("캐리커처 생성", modes, format_func=ap.GEN_MODES.get, key="mode")
         go = st.form_submit_button("시작")
@@ -70,7 +73,8 @@ with tab_new:
                 path = Path(tmp) / song.name
                 path.write_bytes(song.getvalue())
                 try:
-                    state, d = ap.start_from_song(path, name, title=title.strip(), mode=mode, template=tpl, root=ROOT)
+                    state, d = ap.start_from_song(path, name, title=title.strip(), mode=mode, template=tpl, root=ROOT,
+                                                  brief=None if brief == "(없음)" else brief)
                     ss.auto_slug = name
                     st.success(f"프로젝트 생성: {d}")
                 except ap.FlowError as e:
@@ -157,6 +161,39 @@ else:
             _err(e)
     if state.table_confirmed:
         st.success("표 확정됨 (수정 후 다시 '표 확정'을 누르면 갱신)")
+        st.subheader("데이터 출처")
+        a1, a2 = st.columns(2)
+        dsn = a1.text_input("출처 이름", state.data_source_name, key="dsn")
+        dsu = a2.text_input("출처 URL", state.data_source_url, key="dsu")
+        if st.button("출처 저장", key="ds_save") and (dsn, dsu) != (state.data_source_name, state.data_source_url):
+            ap.set_data_source(state, D, dsn, dsu)
+            st.rerun()
+
+        st.subheader("가사 검사 (곡 원문 vs 확정 데이터·이전 영상)")
+        rep_ = state.lyrics_report or {}
+        if rep_.get("passed"):
+            st.success("통과: 나열형 아님 · 반전·해설·비교 있음 · 숫자·이름 일치")
+        for e in rep_.get("errors", []):
+            st.error(e)
+        for w in rep_.get("warnings", []):
+            st.warning(w)
+        st.caption("이미 만든 곡이라 가사를 고칠 수는 없습니다. 결과를 보고 확인하세요 (다음 곡은 '가사 만들기'에서 검사를 통과한 가사로).")
+        if not state.lyrics_ack and st.button("가사 검사 결과를 확인했습니다", key="lyr_ack"):
+            ap.ack_lyrics(state, D)
+            st.rerun()
+        elif state.lyrics_ack:
+            st.caption("✅ 가사 검사 결과 확인함")
+
+        with st.expander("자막 표기 고치기 (시간은 그대로)"):
+            proj = load_project(D / "project.json")[0]
+            sub = st.data_editor(pd.DataFrame([{"시작": l.start, "자막": l.text} for l in proj.lyrics]), hide_index=True,
+                                 disabled=["시작"], key="subs")
+            if st.button("자막 저장", key="subs_save"):
+                try:
+                    ap.edit_subtitles(state, D, [str(x) for x in sub["자막"].tolist()])
+                    st.rerun()
+                except ap.FlowError as e:
+                    _err(e)
 
 # ---------------------------------------------------------------- 3. 사진
 st.header("3. 선수 사진 (위키미디어 공용)")
@@ -339,12 +376,51 @@ else:
             else:
                 st.caption("아직 생성 전")
 
-# ---------------------------------------------------------------- 5. 카드
-st.header("5. " + ("스티커 정리 (글씨 없는 그림 그대로)" if sticker else "카드 합성 (구단 로고 없이 팀 색·이름)"))
+# ---------------------------------------------------------------- 5. 확인·연출·합성
+st.header("5. 로고·글씨 확인 → 연출 고르기 → " + ("스티커 정리" if sticker else "카드 합성"))
 if not all(ps.approved for ps in state.players.values()):
     st.caption("5명 캐리커처가 모두 준비되면 열립니다")
 else:
-    if st.button("합성" if not state.cards_done else "다시 합성", key="cards"):
+    st.subheader("① 그림에 구단 로고·유니폼 글씨가 없는지 확인")
+    cols = st.columns(5)
+    for i, r in enumerate(state.rows):
+        ps = state.players[r.slot]
+        with cols[i]:
+            st.image(str(D / ps.approved), use_container_width=True, caption=label(state.rows, r))
+            ok = st.checkbox("로고·글씨 없음", value=state.no_logo.get(r.slot, False), key=f"nl{r.slot}")
+            if ok != state.no_logo.get(r.slot, False):
+                ap.confirm_no_logo(state, D, r.slot, ok)
+                st.rerun()
+
+    st.subheader("② 연출 (최근 5편과 2요소 이상 달라야 함, 제목 파랑·로고는 고정)")
+    from shortsmaker import variation as var
+    cur = var.Variation.model_validate(state.variation) if state.variation else ap.suggest_variation(state, D)
+    v1, v2, v3, v4 = st.columns(4)
+    tr = v1.selectbox("장면 전환", list(var.TRANSITIONS), index=list(var.TRANSITIONS).index(cur.transition),
+                      format_func=var.TRANSITIONS.get, key="v_tr")
+    ac = v2.selectbox("강조색 (기록 줄·순위)", list(var.ACCENTS), index=list(var.ACCENTS).index(cur.accent),
+                      format_func=lambda k: var.ACCENTS[k]["label"], key="v_ac")
+    sb = v3.selectbox("자막 등장", list(var.SUBTITLES), index=list(var.SUBTITLES).index(cur.subtitle),
+                      format_func=var.SUBTITLES.get, key="v_sb")
+    it = v4.selectbox("인트로", list(var.INTROS), index=list(var.INTROS).index(cur.intro),
+                      format_func=var.INTROS.get, key="v_it")
+    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it)
+    bad = var.conflicts(pick, D.parent, exclude=state.slug)
+    for b_ in bad:
+        st.warning(b_)
+    recent = var.recent(D.parent, exclude=state.slug)
+    st.caption("최근 영상 연출: " + (" / ".join(r_.describe() for r_ in recent) if recent else "기록 없음"))
+    if st.button("이 연출로 정하기" if not state.variation else "연출 바꾸기", key="v_set", disabled=bool(bad)):
+        try:
+            ap.choose_variation(state, D, pick)
+            st.rerun()
+        except ap.FlowError as e:
+            _err(e)
+    if state.variation:
+        st.success("연출: " + var.Variation.model_validate(state.variation).describe())
+
+    st.subheader("③ " + ("스티커 정리" if sticker else "카드 합성 (구단 로고 없이 팀 색·이름, 순위 글자는 강조색)"))
+    if st.button("합성" if not state.cards_done else "다시 합성", key="cards", disabled=state.variation is None):
         try:
             ap.compose_cards(state, D)
             st.rerun()
@@ -356,25 +432,72 @@ else:
             cols[i].image(str(D / state.players[r.slot].card), use_container_width=True, caption=label(state.rows, r))
 
 # ---------------------------------------------------------------- 6. 렌더
-st.header("6. 영상 렌더 + CapCut 초안")
+st.header("6. 권리 체크 → 렌더 + CapCut 초안")
 if not state.cards_done:
     st.caption("5단계를 끝내면 열립니다")
 else:
-    rights = st.checkbox("자료 정확성과 이미지·음악 사용 권리를 확인했습니다", value=state.rights_confirmed,
-                         key="rights", disabled=state.mock, help="Mock 모드는 시험용이라 확인 없이 _MOCK 으로 만듭니다")
-    if st.button("렌더 + CapCut 초안 만들기", key="render", type="primary", disabled=not (rights or state.mock)):
-        bar = st.progress(0.0)
-        try:
-            res = ap.render_all(state, D, rights_confirmed=rights, progress=lambda f, m: bar.progress(min(f, 1.0), m))
-            for w in res["warnings"]:
-                st.warning(w)
-            st.rerun()
-        except Exception as e:  # noqa: BLE001
-            _err(e)
+    st.subheader("Suno 곡")
+    info = state.suno
+    st.caption("곡 파일 태그: " + (f"Suno 곡 id {info.get('id', '없음')} · 생성 {info.get('created', '알 수 없음')}"
+                                  if info.get("made_with_suno") else "Suno 표시를 찾지 못함"))
+    q1, q2 = st.columns([1, 2])
+    paid = q1.checkbox("Suno 유료 플랜으로 생성한 곡입니다", value=state.suno_paid, key="suno_paid", disabled=state.mock)
+    plan = q2.text_input("플랜 이름 (예: Pro, Premier)", state.suno_plan, key="suno_plan", disabled=state.mock)
+    if (paid, plan.strip()) != (state.suno_paid, state.suno_plan) and st.button("Suno 확인 저장", key="suno_save"):
+        ap.set_suno(state, D, paid=paid, plan=plan)
+        st.rerun()
+
+    st.subheader("수익화용 렌더 체크리스트")
+    items = ap.checklist(state, D)
+    for c in items:
+        (st.success if c["ok"] else st.error)(f"{'✅' if c['ok'] else '❌'} {c['label']} — {c['detail']}")
+    all_ok = all(c["ok"] for c in items)
+    rights = st.checkbox("자료 정확성과 이미지·음악 사용 권리를 최종 확인했습니다", value=state.rights_confirmed,
+                         key="rights", disabled=state.mock or not all_ok)
+    r1, r2 = st.columns(2)
+    bar = st.progress(0.0)
+    for col, kind, lab, ok in ((r1, "draft", "시험 렌더 (_DRAFT, 언제나 가능)", True),
+                               (r2, "monetize", "수익화용 렌더", all_ok and rights)):
+        if col.button(lab, key=f"render_{kind}", type="primary" if kind == "monetize" else "secondary", disabled=not ok):
+            try:
+                res = ap.render_all(state, D, rights_confirmed=rights, kind=kind,
+                                    progress=lambda f, m: bar.progress(min(f, 1.0), m))
+                for w in res["warnings"]:
+                    st.warning(w)
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                _err(e)
+    if not all_ok:
+        st.caption("❌ 항목이 있으면 수익화용 렌더는 막힙니다 (시험 렌더는 가능)")
     if state.output and Path(state.output).exists():
         st.video(state.output)
-        st.write(f"MP4: `{state.output}`")
+        st.write(f"MP4 ({'수익화용' if state.render_kind == 'monetize' else '시험'}): `{state.output}`")
         if state.capcut:
             st.write(f"CapCut 초안: `{state.capcut}`")
-        if state.credits:
-            st.text_area("영상 설명용 사진 출처", state.credits, height=160)
+
+# ---------------------------------------------------------------- 7. 업로드 준비
+st.header("7. 업로드 준비 (제목·설명·태그 초안)")
+if not state.output:
+    st.caption("렌더하면 열립니다")
+else:
+    if st.button("초안 만들기" if not state.upload else "다시 만들기", key="upload"):
+        ap.make_upload(state, D)
+        st.rerun()
+    if state.upload:
+        up = state.upload
+        for i, t_ in enumerate(up["titles"]):
+            c_a, c_b = st.columns([5, 1])
+            c_a.write(f"제목 후보 {i + 1}: **{t_}**")
+            if c_b.button("복사", key=f"cp_t{i}"):
+                mp.copy_to_clipboard(t_)
+        st.text_area("설명", up["description"], height=260, key="desc_view")
+        if st.button("설명 복사", key="cp_desc"):
+            mp.copy_to_clipboard(up["description"])
+        st.text_input("태그", ", ".join(up["tags"]), key="tags_view")
+        if st.button("태그 복사", key="cp_tags"):
+            mp.copy_to_clipboard(", ".join(up["tags"]))
+        st.caption(f"저장: {D / 'upload.txt'} · 업로드는 직접 하세요")
+
+with st.expander("제작 기록 (production_log.json)"):
+    from shortsmaker import production_log as plog
+    st.json(plog.read_log(D), expanded=False)

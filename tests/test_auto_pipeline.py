@@ -206,6 +206,9 @@ def test_full_mock_flow_until_cards(aligned):
     ap.confirm_table(state, d, filled(state))
     for r in (5, 4, 3, 2, 1):
         ap.placeholder_photo(state, d, r)
+    with pytest.raises(ap.FlowError, match="연출"):
+        ap.compose_cards(state, d)                                  # 연출을 먼저 골라야 함
+    ap.choose_variation(state, d, ap.suggest_variation(state, d))
     with pytest.raises(ap.FlowError, match="승인한 캐리커처"):
         ap.compose_cards(state, d)
     ap.approve_cost(state, d, ap.cost_estimate(state, d), approved=True)
@@ -296,6 +299,8 @@ def test_streamlit_page_flow(aligned, monkeypatch):
     assert not at.exception
     for r in (5, 4, 3, 2, 1):
         at.button(key=f"ap{r}").click().run()
+    assert at.button(key="cards").disabled                    # 연출을 고르기 전에는 합성 잠김
+    at.button(key="v_set").click().run()
     at.button(key="cards").click().run()
     assert not at.exception and ap.load_state(d).cards_done
     assert (d / "cards" / "card1.png").exists()
@@ -315,6 +320,7 @@ def test_full_mock_flow_with_tie(tmp_path):
     ap.generate_caricatures(state, d, MockEditor())
     for s in (5, 4, 3, 2, 1):
         ap.approve_caricature(state, d, s, confirmed=True)
+    ap.choose_variation(state, d, ap.suggest_variation(state, d))
     ap.compose_cards(state, d)
     project = ap.build_project(state, d)
     assert [(it.rank, it.shown_rank, it.name) for it in project.ordered_items] == [
@@ -483,6 +489,7 @@ def test_sticker_manual_flow_to_project(manual):
         ap.skip_photo(state, d, s)
         ap.use_manual_image(state, d, s, _white_bg_png(Path(".")))
     ap.set_intro_image(state, d, _white_bg_png(Path(".")))
+    ap.choose_variation(state, d, ap.suggest_variation(state, d))
     ap.compose_cards(state, d)
     card = Image.open(d / state.players[5].card)
     assert card.mode == "RGBA" and card.size[0] < 400               # 스티커형: 글씨 없이 그림만 (잘라낸 크기)

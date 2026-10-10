@@ -83,6 +83,7 @@ class Project(BaseModel):
     rights_confirmed: bool = False
     outro_start: float | None = Field(default=None, ge=0)  # 아웃트로 시작 시각(초). 없으면 비례 배분
     intro_image: str | None = None  # 카드 모드 인트로 캐릭터 (프로젝트 폴더 기준). 없으면 템플릿 채널 로고
+    variation: dict | None = None   # 카드 모드 연출 {transition, accent, subtitle, intro} (shortsmaker/variation.py)
 
     @field_validator("items")
     @classmethod
