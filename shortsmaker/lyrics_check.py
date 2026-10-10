@@ -43,8 +43,8 @@ class LyricsReport:
                 "overlaps": self.overlaps, "stats": self.stats}
 
 
-def _numbers(text: str) -> set[str]:
-    return {n.replace(",", "") for n in _NUM.findall(normalize_numbers(text))}
+def _numbers(text: str, names=()) -> set[str]:
+    return {n.replace(",", "") for n in _NUM.findall(normalize_numbers(text, names))}
 
 
 def _is_list_line(line: str) -> bool:
@@ -116,13 +116,15 @@ def check_lyrics_text(text: str, rows: list[dict] | None = None, *,
     """rows: 확정 데이터 [{rank, team, player, record, year, notes?, stat_line?}] — 주면 숫자·이름 일치도 검사."""
     lines = clean_lyrics_text(text)
     r = LyricsReport()
+    names = [str(row.get(k) or "") for row in rows or [] for k in ("player", "team")]  # 이름 속 한글 숫자 보호
     if not lines:
         r.errors.append("가사가 비어 있습니다")
         return r
 
     # ---- 나열형
     list_lines = [l for l in lines if _is_list_line(l)]
-    comment_lines = [l for l in lines if not _RANK.search(normalize_numbers(l)) and not _NUM.search(normalize_numbers(l))]
+    comment_lines = [l for l in lines if not _RANK.search(normalize_numbers(l, names))
+                     and not _NUM.search(normalize_numbers(l, names))]
     ratio = len(list_lines) / len(lines)
     r.stats.update(lines=len(lines), list_lines=len(list_lines), comment_lines=len(comment_lines),
                    list_ratio=round(ratio, 2))
@@ -145,7 +147,7 @@ def check_lyrics_text(text: str, rows: list[dict] | None = None, *,
         records = [float(n) for row in rows for n in _numbers(str(row.get("record") or ""))]
         allowed |= _derived(records)
         for l in lines:
-            bad = sorted(_numbers(l) - allowed, key=lambda x: float(x))
+            bad = sorted(_numbers(l, names) - allowed, key=lambda x: float(x))
             if bad:
                 r.errors.append(f"데이터에 없는 숫자 {', '.join(bad)}: \"{l}\"")
         data_teams = {find_team(str(row.get("team") or "")).name for row in rows if find_team(str(row.get("team") or ""))}
@@ -170,7 +172,7 @@ def check_lyrics_text(text: str, rows: list[dict] | None = None, *,
         all_players = set().union(*players.values()) if players else set()
         all_teams = set().union(*teams_by.values()) if teams_by else set()
         for l in lines:
-            m = _RANK.search(normalize_numbers(l))
+            m = _RANK.search(normalize_numbers(l, names))
             if not m:
                 continue
             n = int(m.group(1))

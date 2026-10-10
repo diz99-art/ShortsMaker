@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
@@ -117,6 +118,7 @@ def compose_card(caricature: Path, *, rank: int, record: str, year: str, team: s
     rank_img = _fit_text(f"{rank}위", 270, 540, fill=gold, stroke="#3B0A00", stroke_w=12, outer="#FFFFFF", outer_w=6)
     rec = (_fit_text(record, 190, W - 90, fill=SILVER, stroke="#111111", stroke_w=11, outer=primary, outer_w=7)
            if record else None)
+    year = year.strip() if year and re.fullmatch(r"\s*\d{4}\s*", year) else ""  # 장면 설명 등 다른 글은 카드에 안 찍음
     yr = styled_text(year, 66, "#FFFFFF", stroke="#111111", stroke_w=6, skew=0.08, shadow=4) if year else None
     name = _fit_text(team or "팀", 104, W - 150, fill="#FFFFFF", stroke=secondary, stroke_w=9, skew=0.12, shadow=6)
     pl = (_fit_text(player, 58, W - 360, fill="#FFFFFF", stroke="#111111", stroke_w=5, skew=0.06, shadow=0)

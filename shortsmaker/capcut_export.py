@@ -271,6 +271,21 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         for sec, dx in layer.dx or []:  # 옆에서 들어오기
             if sec < sc.end - start:
                 seg.add_keyframe(cc.KeyframeProperty.position_x, us(sec), round(tx + dx / (t.width / 2), 4))
+        if sc.kind == "rank" and v.motion != "none":  # 그림 움직임: 0.3초 간격 키프레임으로 근사
+            from .variation import TOP_GAIN, idle_transform
+            entry = layer.motion.length
+            gain = TOP_GAIN if sc.item.shown_rank == 1 else 1.0
+            k = 0
+            while entry + k * 0.3 < sc.end - start and k < 60:
+                sec = entry + k * 0.3
+                ks, _, dy, ang = idle_transform(v.motion, sec - entry, gain)
+                if v.motion == "kenburns":
+                    seg.add_keyframe(cc.KeyframeProperty.uniform_scale, us(sec), round(ratio * ks, 4))
+                elif v.motion in ("float", "bounce"):
+                    seg.add_keyframe(cc.KeyframeProperty.position_y, us(sec), round(ty - dy / (t.height / 2), 4))
+                elif v.motion == "wobble":
+                    seg.add_keyframe(cc.KeyframeProperty.rotation, us(sec), round(-ang, 2))
+                k += 1
         script.add_segment(seg, "로고·카드")
 
     script.add_segment(cc.VideoSegment(str(head), cc.Timerange(0, D)), "제목")
@@ -313,7 +328,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                 seg.add_animation(cc.TextIntro[anim], us(dur))
             script.add_segment(seg, "자막")
     return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
-            "자막 타자 효과는 CapCut '타자기' 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."]
+            "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."]
 
 
 # ---------------------------------------------------------------- 수동 가져오기 키트

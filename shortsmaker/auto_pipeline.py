@@ -34,7 +34,8 @@ from .models import MAX_DURATION, MIN_DURATION, OUTPUT_DIR, PROJECTS_DIR, LyricL
     load_template, save_project
 from .player_assets import (Photo, Player, Style, approve_image, digest, download_photo, generate,
                             generation_plan, search_photos, validate_image, write_json_new)
-from .rank_extract import RankRow, assign_slots, display_text, extract_ranks, label, rows_complete, team_colors
+from .rank_extract import (RankRow, assign_slots, column_problems, display_text, extract_ranks, label, rows_complete,
+                           team_colors)
 from .validate import media_duration
 
 CHANNEL = "yagu_v2"  # 기본 템플릿 (카드형). 스티커형은 "yagu_v2_sticker"
@@ -175,7 +176,7 @@ def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bo
     if brief:  # 가사 만들기에서 확정한 데이터·출처를 이어받는다
         b = load_brief(brief, root)
         state.brief, state.data_source_name, state.data_source_url = brief, b.get("source_name", ""), b.get("source_url", "")
-        state.title = title or b.get("title") or state.title
+        state.title = (title or "").strip() or b.get("title") or state.title
     # 가사 맞추기에 쓸 임시 project.json (순위·이미지는 6단계에서 채움)
     save_project(Project(channel=template, title=state.title, duration=duration, music=music,
                          items=[{"rank": r, "name": f"{r}위"} for r in (5, 4, 3, 2, 1)]), d)
@@ -294,21 +295,27 @@ def set_end_mode(state: AutoState, d: Path, mode: str) -> float:
 # ---------------------------------------------------------------- 2. 순위 표
 
 def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str | None = None,
-                  merge_record_lines: bool | None = None) -> None:
+                  merge_record_lines: bool | None = None, allow_unknown_team: bool = False) -> None:
     """사용자가 확인·수정한 표를 확정. 빈칸이 있으면 거부. 자막 표시 텍스트도 이때 정한다."""
     if not state.aligned:
         raise FlowError("먼저 가사 자동 맞추기를 끝내세요")
-    problems = rows_complete(rows)
+    problems = rows_complete(rows) + column_problems(rows, allow_unknown_team=allow_unknown_team)
     if problems:
         raise FlowError("표를 확정할 수 없습니다: " + "; ".join(problems))
     filled = [r for r in rows if r.team.strip() or r.player.strip() or r.record.strip()]
     state.rows = sorted(assign_slots(filled), key=lambda r: -r.slot)  # 공동 순위도 자리 5→1 로 한 번씩
     if title:
-        state.title = title
+        set_title(state, d, title)
     if merge_record_lines is not None:
         state.merge_record_lines = merge_record_lines
     project = _project(state, d)
-    lines = subtitle_lines(project.lyrics, state.rows, state.merge_record_lines)
+    # 자막은 매번 실제로 부른 가사 원문에서 새로 만든다 (이미 다듬은 자막을 또 다듬지 않음 — 예: '2승엽' 방지)
+    sung = d / "lyrics_sung.json"
+    base = ([LyricLine.model_validate(x) for x in json.loads(sung.read_text(encoding="utf-8"))]
+            if sung.exists() else project.lyrics)
+    base = [l if l.end <= state.duration else l.model_copy(update={"end": state.duration})
+            for l in base if l.start < state.duration]
+    lines = subtitle_lines(base, state.rows, state.merge_record_lines)
     save_project(project.model_copy(update={"title": state.title, "lyrics": lines}), d)
     for r in state.rows:  # 표가 바뀌면 사진 검색어도 새로
         ps = state.players[r.slot]
@@ -322,16 +329,44 @@ def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str 
     check_song_lyrics(state, d)
 
 
+def set_title(state: AutoState, d: Path, title: str) -> None:
+    """영상 제목 (2줄은 줄바꿈). 바로 저장해서 렌더에 반영된다."""
+    title = title.strip()
+    if not title:
+        raise FlowError("영상 제목이 비어 있습니다")
+    if title != state.title:
+        plog.append(d, "title_changed", **{"from": state.title, "to": title})
+    state.title = title
+    project = _project(state, d)
+    save_project(project.model_copy(update={"title": title}), d)
+    save_state(state, d)
+
+
+def swap_slots(state: AutoState, d: Path, a: int, b: int) -> None:
+    """두 순위의 사진·그림(승인·로고 확인 포함)을 맞바꾼다 (그림이 다른 순위에 들어갔을 때)."""
+    if a == b:
+        return
+    pa, pb = state.players[a], state.players[b]
+    state.players[a], state.players[b] = pb, pa
+    na, nb = state.no_logo.get(a, False), state.no_logo.get(b, False)
+    state.no_logo[a], state.no_logo[b] = nb, na
+    state.cards_done = False
+    save_state(state, d)
+    plog.append(d, "images_swapped", a={"slot": a, "who": row_label(state, a)}, b={"slot": b, "who": row_label(state, b)},
+                images={"a": state.players[a].approved, "b": state.players[b].approved})
+
+
 def subtitle_lines(lines: list[LyricLine], rows: list[RankRow], merge: bool) -> list[LyricLine]:
     """자막 표시: 한글 숫자·'케이비오' 정리. merge 면 'N위, 팀' 줄과 바로 뒤 기록 줄을 한 자막으로."""
     records = {r.record for r in rows if r.record}
+    names = [x for r in rows for x in (r.player, r.team) if x]  # 이름 속 한글 숫자는 바꾸지 않음 ('이승엽')
     out: list[LyricLine] = []
     i = 0
     while i < len(lines):
         cur = lines[i]
-        text = display_text(cur.text)
+        text = display_text(cur.text, names)
         if merge and i + 1 < len(lines):
-            nxt = display_text(lines[i + 1].text)
+            nxt = display_text(lines[i + 1].text, names)
             if "위" in text and any(rec in nxt for rec in records) and "위" not in nxt:
                 out.append(LyricLine(start=cur.start, end=lines[i + 1].end, text=f"{text} {nxt}",
                                      words=cur.words + lines[i + 1].words))

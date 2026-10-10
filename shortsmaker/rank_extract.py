@@ -72,38 +72,70 @@ def korean_to_int(word: str) -> int | None:
 _KNUM = re.compile(f"[{NUM_CHARS}]+")
 
 
-def normalize_numbers(text: str) -> str:
-    """가사 속 한글 숫자를 아라비아 숫자로 ('십육 연패'→'16연패', '이천십 년'→'2010년').
+PARTICLES = set("은는이가을를의도만에과와로째")
 
-    숫자 뒤에 기록 단위나 '위'·'년'이 올 때만 바꾼다 (일반 낱말 속 '이', '사' 등은 그대로).
+
+def _protected(text: str, protect) -> tuple[str, list[str]]:
+    """이름(선수·팀)을 자리표시로 바꿔 숫자 변환에서 빼낸다. 긴 이름부터."""
+    names = sorted({n for n in protect if n and len(n) >= 2}, key=len, reverse=True)
+    kept: list[str] = []
+    for n in names:
+        if n in text:
+            text = text.replace(n, f"\ue000{len(kept)}\ue001")
+            kept.append(n)
+    return text, kept
+
+
+def _restore(text: str, kept: list[str]) -> str:
+    return re.sub("\ue000(\\d+)\ue001", lambda m: kept[int(m.group(1))], text)
+
+
+def normalize_numbers(text: str, protect=()) -> str:
+    """가사 속 한글 숫자를 아라비아 숫자로 ('십육 연패'→'16연패', '오십육 홈런'→'56홈런', '이천십 년'→'2010년').
+
+    - 숫자 뒤에 기록 단위나 '위'·'년'이 올 때만 바꾼다 (일반 낱말 속 '이', '사' 등은 그대로)
+    - 사람·팀 이름은 절대 바꾸지 않는다: protect 로 받은 이름과 구단 사전의 이름은 미리 빼 둔다 ('이승엽'→그대로)
+    - 단위 바로 뒤에 조사가 아닌 한글이 이어지면 낱말의 일부로 본다 ('이승엽', '이승리')
+    - '억'·'만'으로 끝나는 한 글자 숫자('백억', '이억')는 그대로, 두 글자 이상('백오십이억')만 '152억'
     """
+    teams, _ = load_teams()
+    team_names = [n for t in teams for n in (t.name, *t.aliases)]
+    work, kept = _protected(text, list(protect) + team_names)
+
     def repl(m: re.Match) -> str:
         word = m.group(0)
-        rest = text[m.end():]
-        unit = next((u for u in sorted(RECORD_UNITS + ["위", "년", "시즌"], key=len, reverse=True)
-                     if re.match(r"\s*" + re.escape(u), rest)), None)
-        before = text[max(0, m.start() - 1):m.start()]
+        before = work[max(0, m.start() - 1):m.start()]
         if before and re.match(r"[가-힣]", before):
             return word
+        rest = work[m.end():]
         if word[-1] in BIG_UNITS and len(word) > 1:  # '백오십이억' → '152억' (단위는 살린다)
+            nxt = rest[:1]
+            if len(word) < 3 or (nxt and re.match(r"[가-힣]", nxt) and nxt not in PARTICLES):
+                return word
             head = korean_to_int(word[:-1])
             return f"{head}{word[-1]}" if head is not None else word
+        unit = next((u for u in sorted(RECORD_UNITS + ["위", "년", "시즌"], key=len, reverse=True)
+                     if re.match(r"\s*" + re.escape(u), rest)), None)
         if unit is None:
             return word
+        after = rest[re.match(r"\s*" + re.escape(unit), rest).end():][:1]
+        if after and re.match(r"[가-힣]", after) and after not in PARTICLES:
+            return word  # 단위가 아니라 낱말의 일부 ('이승엽'의 '승')
         value = korean_to_int(word)
         if value is None:
             return word
         return str(value)
 
-    out = _KNUM.sub(repl, text)
+    out = _KNUM.sub(repl, work)
     # '16 연패' → '16연패' (숫자와 단위 사이 공백 제거, '억 원' 같은 단위 안 공백은 유지)
     units = "|".join(re.escape(u) for u in sorted(RECORD_UNITS + ["위", "년"], key=len, reverse=True))
-    return re.sub(rf"(\d)\s+({units})", r"\1\2", out)
+    out = re.sub(rf"(\d)\s+({units})", r"\1\2", out)
+    return _restore(out, kept)
 
 
-def display_text(text: str) -> str:
-    """자막 표시용: 숫자 정리 + 부르는 말 → 표기 ('케이비오'→'KBO', '탑파이브'→'TOP 5')."""
-    t = normalize_numbers(text)
+def display_text(text: str, protect=()) -> str:
+    """자막 표시용: 숫자 정리 + 부르는 말 → 표기 ('케이비오'→'KBO', '탑파이브'→'TOP 5'). 이름은 바꾸지 않는다."""
+    t = normalize_numbers(text, protect)
     for a, b in [("케이비오", "KBO"), ("탑파이브", "TOP 5"), ("탑 파이브", "TOP 5"), ("탑텐", "TOP 10")]:
         t = t.replace(a, b)
     return t
@@ -159,6 +191,8 @@ def _player(head: str) -> str:
     """'N위' 바로 뒤 첫 마디가 팀 이름이 아니면 선수 이름으로 본다 ('5위 오지환, LG의 심장' → 오지환)."""
     first = re.split(r"[,!?.·\n]", head.strip(), maxsplit=1)[0].strip()
     first = re.sub(r"^(는|은)\s*", "", first).strip()
+    if first and not re.fullmatch(r"[가-힣]{2,4}", first):  # 쉼표 없이 이어 부름: '이승엽 삼성 오십사 홈런'
+        first = first.split()[0]
     if not first or find_team(first) or _record(first) or not re.fullmatch(r"[가-힣]{2,4}", first):
         return ""
     return first
@@ -226,6 +260,26 @@ def missing_fields(row: RankRow) -> list[str]:
     """표에서 사람이 채워야 할 칸. 가사에 구단 이름이 없고 별명('부산의 자존심')만 있으면 팀은 비워 둔다."""
     names = {"team": "팀", "player": "선수", "record": "기록"}  # 연도는 선택 (없으면 카드에서 빠짐)
     return [label for field, label in names.items() if not getattr(row, field).strip()]
+
+
+def column_problems(rows: list[RankRow], *, allow_unknown_team: bool = False) -> list[str]:
+    """열이 밀린 것 같은 값 ('선수' 칸에 '52홈런', '팀' 칸에 선수 이름, '연도' 칸에 문장)."""
+    out = []
+    players = {r.player for r in rows if r.player}
+    for r in rows:
+        who = label(rows, r) if r.rank else "?"
+        if r.player and re.search(r"\d", r.player):
+            out.append(f"{who} 선수 칸 '{r.player}'이(가) 기록처럼 보입니다 — 열이 밀리지 않았는지 확인하세요")
+        if r.team and not find_team(r.team):
+            if r.team in players:
+                out.append(f"{who} 팀 칸 '{r.team}'이(가) 선수 이름입니다 — 열이 밀리지 않았는지 확인하세요")
+            elif not allow_unknown_team:
+                out.append(f"{who} 팀 '{r.team}'이(가) 구단 사전에 없습니다 (맞으면 '사전에 없는 팀 허용' 체크)")
+        if r.year and not re.fullmatch(r"\d{4}", r.year.strip()):
+            out.append(f"{who} 연도 칸 '{r.year[:20]}'이(가) 4자리 숫자가 아닙니다 — 장면 설명이 들어갔나요?")
+        if r.record and re.fullmatch(r"\d{4}", r.record.strip()):
+            out.append(f"{who} 기록 칸 '{r.record}'이(가) 연도처럼 보입니다 — 열이 밀리지 않았는지 확인하세요")
+    return out
 
 
 def rows_complete(rows: list[RankRow]) -> list[str]:

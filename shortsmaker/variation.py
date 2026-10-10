@@ -25,7 +25,9 @@ ACCENTS = {  # 빨간 기록 줄 / 카드 순위 글자 그라데이션 (제목 
 }
 SUBTITLES = {"typing": "한 글자씩", "word": "단어 단위로 톡톡", "line": "줄 단위로 떠오르기"}
 INTROS = {"shrink": "크게 시작해 줄어들기", "slide": "옆에서 들어오기", "title_card": "제목 카드 → 로고"}
-AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS}
+MOTIONS = {"kenburns": "천천히 확대 (켄 번즈)", "float": "위아래 둥실둥실", "bounce": "등장 후 통통 튀기",
+           "wobble": "살짝 흔들림", "none": "움직임 없음"}
+AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS}
 RECENT = 5
 MIN_DIFF = 2  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
 
@@ -35,6 +37,7 @@ class Variation(BaseModel):
     accent: str = "red_gold"
     subtitle: str = "typing"
     intro: str = "shrink"
+    motion: str = "none"  # 순위 장면 그림 움직임 (예전 프로젝트는 움직임 없음)
 
     def describe(self) -> str:
         return " · ".join(f"{AXES[k][getattr(self, k)] if k != 'accent' else ACCENTS[self.accent]['label']}"
@@ -80,8 +83,9 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
     """최근 5편과 충분히 다른 조합 중 하나 (덜 쓰인 요소를 우선)."""
     rnd = random.Random(seed)
     past = recent(root, exclude)
-    combos = [Variation(transition=t, accent=a, subtitle=s, intro=i)
-              for t, a, s, i in itertools.product(TRANSITIONS, ACCENTS, SUBTITLES, INTROS)]
+    combos = [Variation(transition=t, accent=a, subtitle=s, intro=i, motion=m)
+              for t, a, s, i, m in itertools.product(TRANSITIONS, ACCENTS, SUBTITLES, INTROS,
+                                                     [k for k in MOTIONS if k != "none"])]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]
     counts = {(k, getattr(r, k)) for r in past for k in AXES}
     ok.sort(key=lambda c: (sum((k, getattr(c, k)) in counts for k in AXES), rnd.random()))
@@ -120,3 +124,36 @@ def intro_motion(name: str, base: Motion) -> tuple[Motion, list[tuple[float, flo
         return (Motion(curve=[(0, 1.0), (0.6, 1.0)], blur=0.3, blur_samples=10, shutter=2.0),
                 [(0, -1150), (0.15, -500), (0.3, -150), (0.45, -30), (0.6, 0)])
     return base, None
+
+
+# ---------------------------------------------------------------- 그림 움직임 (순위 장면 내내)
+
+IDLE_RAMP = 0.5   # 등장 효과가 끝난 뒤 움직임이 자리 잡는 시간(초)
+TOP_GAIN = 1.5    # 1위 장면 움직임 배율
+TOP_FLASH = 0.2   # 1위 등장 흰 섬광(초)
+TOP_SHAKE = 0.6   # 1위 등장 흔들림(초)
+
+
+def idle_transform(kind: str, t: float, gain: float = 1.0) -> tuple[float, float, float, float]:
+    """등장 후 t초의 (배율 곱, dx, dy, 회전 각도). t<0 이면 움직임 없음."""
+    import math
+    if t < 0 or kind == "none":
+        return 1.0, 0.0, 0.0, 0.0
+    ramp = min(1.0, t / IDLE_RAMP)
+    if kind == "kenburns":
+        return 1.0 + min(0.08, 0.012 * t) * gain, 0.0, 0.0, 0.0
+    if kind == "float":
+        return 1.0, 0.0, -14 * gain * ramp * math.sin(2 * math.pi * t / 2.4), 0.0
+    if kind == "bounce":
+        return 1.0, 0.0, -55 * gain * math.exp(-2.8 * t) * abs(math.sin(2 * math.pi * t / 0.5)), 0.0
+    if kind == "wobble":
+        return 1.0, 0.0, 0.0, 2.2 * gain * ramp * math.sin(2 * math.pi * t / 1.8)
+    return 1.0, 0.0, 0.0, 0.0
+
+
+def top_shake(t: float) -> float:
+    """1위 등장 흔들림 dx (px)."""
+    import math
+    if t < 0 or t > TOP_SHAKE:
+        return 0.0
+    return 16 * math.exp(-5 * t) * math.sin(2 * math.pi * t * 11)

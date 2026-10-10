@@ -54,7 +54,8 @@ tab_new, tab_load = st.tabs(["새로 만들기", "이어서 하기"])
 with tab_new:
     with st.form("new"):
         song = st.file_uploader("곡 파일 (가사가 들어 있는 m4a·mp3)", type=["m4a", "mp3", "wav"], key="song")
-        title = st.text_area("영상 제목 (2줄: 줄바꿈으로 나눔)", "야구선수 한 명에 152억?!\nKBO 역대 FA 몸값 TOP 5", height=80)
+        title = st.text_area("영상 제목 (2줄: 줄바꿈으로 나눔, 브리프를 연결하면 비워도 됨)", "", height=80,
+                             placeholder="50홈런도 6위라고?!\nKBO 단일 시즌 홈런 TOP 5")
         slug = st.text_input("프로젝트 이름 (영문·한글·숫자)", "")
         tpl = st.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="tpl",
                        help="카드형: 정보가 다 든 카드 / 스티커형: 글씨 없는 치비 스티커 + 빨간 기록 줄")
@@ -67,6 +68,8 @@ with tab_new:
     if go:
         if song is None:
             st.error("곡 파일을 올려 주세요")
+        elif not title.strip() and brief == "(없음)":
+            st.error("영상 제목을 입력하거나 가사 브리프를 연결하세요")
         else:
             name = _slugify(slug or Path(song.name).stem)
             with tempfile.TemporaryDirectory() as tmp:
@@ -95,6 +98,25 @@ state = ap.load_state(D)
 sticker = ap._style_name(state) == "sticker"
 st.info(f"프로젝트 **{state.slug}** · {ap.TEMPLATES[state.template]} · {ap.GEN_MODES[state.gen_mode]} · "
         f"영상 {state.duration:g}초")
+
+def _image_swapper(prefix: str) -> None:
+    """순위별 그림 미리보기 + 다른 순위와 맞바꾸기."""
+    cols = st.columns(5)
+    names = {r.slot: f"{label(state.rows, r)} {r.player}" for r in state.rows}
+    for i, r in enumerate(state.rows):
+        ps = state.players[r.slot]
+        with cols[i]:
+            st.markdown(f"**{names[r.slot]}** ({r.team})")
+            if ps.approved:
+                st.image(str(D / ps.approved), use_container_width=True)
+            else:
+                st.caption("그림 없음")
+            other = st.selectbox("바꿀 순위", [0] + [s_ for s_ in names if s_ != r.slot],
+                                 format_func=lambda s_: "—" if s_ == 0 else names[s_], key=f"{prefix}sw{r.slot}")
+            if other and st.button("바꾸기", key=f"{prefix}swb{r.slot}"):
+                ap.swap_slots(state, D, r.slot, other)
+                st.rerun()
+
 
 # ---------------------------------------------------------------- 1. 가사
 st.header("1. 가사 불러오기 → 자동 맞추기")
@@ -126,9 +148,10 @@ else:
     st.caption("가사에서 뽑은 초안입니다. 확정해야 다음 단계가 열립니다. 공동 순위는 같은 숫자를 두 행에 적으면 "
                "'공동 2위'로 표시되고 다음 순위(3위)는 비워 둡니다. 장면 설명은 캐리커처 그림에 쓰입니다"
                + (", 빨간 기록 줄은 자막 아래에 1~2줄로 나옵니다 (줄바꿈은 ' / ')." if sticker else "."))
-    df = pd.DataFrame([{"순위": r.rank, "표시": label(state.rows, r), "팀": r.team, "선수": r.player,
-                        "기록": r.record, "연도": r.year, "장면 설명": r.scene,
-                        "기록 줄(빨간)": r.stat_line.replace("\n", " / "),
+    # 열 순서는 가사 만들기·빠른 제작 양식과 같다 (순위|선수|팀|기록|연도|장면 설명), 읽기 전용 열은 맨 뒤
+    df = pd.DataFrame([{"순위": r.rank, "선수": r.player, "팀": r.team, "기록": r.record, "연도": r.year,
+                        "장면 설명": r.scene, "기록 줄(빨간)": r.stat_line.replace("\n", " / "),
+                        "표시": label(state.rows, r),
                         "확인 필요": ", ".join(missing_fields(r)) + (" (가사에 없음 — 직접 입력)" if missing_fields(r) else ""),
                         "근거 가사": r.lyric} for r in state.rows])
     if not sticker:
@@ -142,7 +165,11 @@ else:
                                 "순위": st.column_config.NumberColumn(min_value=1, max_value=5, step=1, required=True),
                                 "기록": st.column_config.TextColumn(help="카드에 들어갈 표기 (예: 16연패)"),
                                 "장면 설명": st.column_config.TextColumn(width="large")})
-    title2 = st.text_area("영상 제목", state.title, key="title2", height=80)
+    title2 = st.text_area("영상 제목 (바로 저장됨)", state.title, key="title2", height=80)
+    if title2.strip() and title2.strip() != state.title:
+        ap.set_title(state, D, title2)
+        st.toast("제목 저장")
+    unknown_ok = st.checkbox("사전에 없는 팀 허용 (MLB·해외 팀 등)", key="unknown_team")
     merge = st.checkbox("자막: 'N위, 팀' 줄과 기록 줄을 한 자막으로 합치기", value=state.merge_record_lines, key="merge")
     if st.button("표 확정", key="confirm", type="primary"):
         starts = {r.lyric: r.start for r in state.rows if r.lyric}
@@ -155,10 +182,14 @@ else:
                         scene=_s(x["장면 설명"]), stat_line=_s(x.get("기록 줄(빨간)")).replace(" / ", "\n"))
                 for x in edited.to_dict("records") if x.get("순위") is not None and not pd.isna(x["순위"])]
         try:
-            ap.confirm_table(state, D, rows, title=title2.strip(), merge_record_lines=merge)
+            ap.confirm_table(state, D, rows, title=title2.strip(), merge_record_lines=merge,
+                             allow_unknown_team=unknown_ok)
             st.rerun()
         except ap.FlowError as e:
             _err(e)
+    if state.table_confirmed and any(ps.approved for ps in state.players.values()):
+        st.caption("순위별 그림 (다른 순위에 들어갔으면 '바꾸기')")
+        _image_swapper("t")
     if state.table_confirmed:
         st.success("표 확정됨 (수정 후 다시 '표 확정'을 누르면 갱신)")
         st.subheader("데이터 출처")
@@ -381,13 +412,13 @@ st.header("5. 로고·글씨 확인 → 연출 고르기 → " + ("스티커 정
 if not all(ps.approved for ps in state.players.values()):
     st.caption("5명 캐리커처가 모두 준비되면 열립니다")
 else:
-    st.subheader("① 그림에 구단 로고·유니폼 글씨가 없는지 확인")
+    st.subheader("① 순위별 그림 확인 (다른 순위에 들어갔으면 바꾸기) · 구단 로고·유니폼 글씨가 없는지 확인")
+    _image_swapper("c")
     cols = st.columns(5)
     for i, r in enumerate(state.rows):
         ps = state.players[r.slot]
         with cols[i]:
-            st.image(str(D / ps.approved), use_container_width=True, caption=label(state.rows, r))
-            ok = st.checkbox("로고·글씨 없음", value=state.no_logo.get(r.slot, False), key=f"nl{r.slot}")
+            ok = st.checkbox(f"{label(state.rows, r)} {r.player}: 로고·글씨 없음", value=state.no_logo.get(r.slot, False), key=f"nl{r.slot}")
             if ok != state.no_logo.get(r.slot, False):
                 ap.confirm_no_logo(state, D, r.slot, ok)
                 st.rerun()
@@ -395,7 +426,7 @@ else:
     st.subheader("② 연출 (최근 5편과 2요소 이상 달라야 함, 제목 파랑·로고는 고정)")
     from shortsmaker import variation as var
     cur = var.Variation.model_validate(state.variation) if state.variation else ap.suggest_variation(state, D)
-    v1, v2, v3, v4 = st.columns(4)
+    v1, v2, v3, v4, v5 = st.columns(5)
     tr = v1.selectbox("장면 전환", list(var.TRANSITIONS), index=list(var.TRANSITIONS).index(cur.transition),
                       format_func=var.TRANSITIONS.get, key="v_tr")
     ac = v2.selectbox("강조색 (기록 줄·순위)", list(var.ACCENTS), index=list(var.ACCENTS).index(cur.accent),
@@ -404,7 +435,9 @@ else:
                       format_func=var.SUBTITLES.get, key="v_sb")
     it = v4.selectbox("인트로", list(var.INTROS), index=list(var.INTROS).index(cur.intro),
                       format_func=var.INTROS.get, key="v_it")
-    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it)
+    mo = v5.selectbox("그림 움직임", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
+                      format_func=var.MOTIONS.get, key="v_mo", help="1위는 더 강하게 + 등장 때 번쩍·흔들림")
+    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo)
     bad = var.conflicts(pick, D.parent, exclude=state.slug)
     for b_ in bad:
         st.warning(b_)
@@ -436,6 +469,7 @@ st.header("6. 권리 체크 → 렌더 + CapCut 초안")
 if not state.cards_done:
     st.caption("5단계를 끝내면 열립니다")
 else:
+    st.info("이 제목으로 렌더합니다: **" + state.title.replace("\n", " / ") + "**")
     st.subheader("Suno 곡")
     info = state.suno
     st.caption("곡 파일 태그: " + (f"Suno 곡 id {info.get('id', '없음')} · 생성 {info.get('created', '알 수 없음')}"

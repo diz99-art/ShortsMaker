@@ -30,7 +30,8 @@ from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegErro
 from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import SceneBuildResult, SceneLayers, _font, _hex, _wrap
 from .timeline import Scene, snap
-from .variation import ACCENTS, FLASH, LINE_RISE, TITLE_CARD, Variation, intro_motion, transition_motion
+from .variation import (ACCENTS, FLASH, LINE_RISE, TITLE_CARD, TOP_FLASH, TOP_GAIN, TOP_SHAKE, Variation, idle_transform,
+                        intro_motion, top_shake, transition_motion)
 
 ProgressFn = Callable[[float, str], None]
 
@@ -280,10 +281,12 @@ class MovingLayer:
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
             (round(self.w * max_s), round(self.h * max_s)), Image.LANCZOS)
 
-    def _place(self, s: float, dx: float = 0.0) -> tuple[Image.Image, int, int]:
+    def _place(self, s: float, dx: float = 0.0, dy: float = 0.0, angle: float = 0.0) -> tuple[Image.Image, int, int]:
         w, h = max(1, round(self.w * s)), max(1, round(self.h * s))
         img = self._big.resize((w, h), Image.BICUBIC if s > 1.01 else Image.LANCZOS)
-        return img, round(self.cx - w / 2 + dx), round(self.cy - h / 2)
+        if abs(angle) > 0.05:
+            img = img.rotate(angle, resample=Image.BICUBIC, expand=True)
+        return img, round(self.cx - img.width / 2 + dx), round(self.cy - img.height / 2 + dy)
 
     def _dx(self, t: float | None) -> float:
         if t is None or not self.dx:
@@ -300,8 +303,10 @@ class MovingLayer:
             return
         layer.alpha_composite(img, (max(0, x), max(0, y)), (max(0, -x), max(0, -y)))
 
-    def draw(self, frame: Image.Image, t_anim: float | None) -> None:
-        """t_anim: 등장 후 경과 초 (None 이면 정지 상태). 구분선 위(top)로는 그리지 않는다."""
+    def draw(self, frame: Image.Image, t_anim: float | None, idle: tuple[float, float, float, float] | None = None
+             ) -> None:
+        """t_anim: 등장 후 경과 초 (None 이면 정지 상태). idle: 정지 상태에 더할 (배율, dx, dy, 각도).
+        구분선 위(top)로는 그리지 않는다."""
         m = self.motion
         gap = m.gap_frames / self.fps
         if t_anim is not None and t_anim < gap - 1e-9:
@@ -328,7 +333,8 @@ class MovingLayer:
             rgb = np.where(alpha > 0, acc[..., :3] * 255.0 / np.maximum(alpha, 1e-6), 0)
             layer = Image.fromarray(np.concatenate([rgb, alpha], axis=2).clip(0, 255).astype(np.uint8), "RGBA")
         else:
-            img, x, y = self._place(s, dx)
+            ks, idx_, idy, ang = idle or (1.0, 0.0, 0.0, 0.0)
+            img, x, y = self._place(s * ks, dx + idx_, idy, ang)
             self._paste(layer, img, x, y)
         if self.top > 0:
             layer.paste((0, 0, 0, 0), (0, 0, self.canvas[0], self.top))
@@ -496,6 +502,7 @@ class CardRenderer:
         intro_m, intro_dx = intro_motion(self.v.intro, c.intro_motion)
         self.title_card = render_title_card(t, self.project) if self.v.intro == "title_card" else None
         self.stat_color = ACCENTS.get(self.v.accent, {}).get("stat")
+        self._sub_cache: dict[tuple, Image.Image] = {}
         if self.project.intro_image:  # 프로젝트 인트로 캐릭터
             intro, intro_box = self.project_dir / self.project.intro_image, c.intro_box or c.logo_box
             if not intro.exists():
@@ -581,6 +588,13 @@ class CardRenderer:
         else:
             anim = since if since / fps < m.length + m.gap_frames / fps else None
         flash = since if sc.kind == "rank" and self.flash and 0 <= since < round(self.flash * fps) else None
+        top = sc.kind == "rank" and sc.item.shown_rank == 1
+        if top and 0 <= since < round(TOP_FLASH * fps):  # 1위: 번쩍
+            flash = since if flash is None else flash
+        # 그림 움직임: 등장 효과가 끝난 뒤부터 장면 끝까지 프레임마다 (1위는 흔들림도)
+        idle = None
+        if sc.kind == "rank" and (self.v.motion != "none" or top):
+            idle = since
         rise = None
         line_i, shown = None, 0
         for i, l in enumerate(self.lines):  # 다음 가사가 시작되면 교체
@@ -596,31 +610,54 @@ class CardRenderer:
         stat = 0
         if sc.index in self._stats:
             stat = stat_visible(sc.item.stat_line, self.t.card.stat_line, sec - sc.start)
-        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise)
+        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise, idle)
 
     def frame(self, frame_no: int) -> Image.Image:
         key = self.state(frame_no)
         if key == self._cache_key and self._cache_frame is not None:
             return self._cache_frame
-        idx, anim, line_i, shown, intro, stat, flash, rise = key
+        idx, anim, line_i, shown, intro, stat, flash, rise, idle = key
         fps = self.t.fps
         img = self.base.convert("RGBA")
         if anim == "title":
             img.alpha_composite(self.title_card)
         else:
-            self.layers[idx].draw(img, None if anim is None else anim / fps)
-        if flash is not None:  # 흰 섬광이 FLASH 초에 걸쳐 사라짐 (구분선 아래만)
-            a = round(255 * (1 - flash / max(1, round(self.flash * fps))))
+            transform = None
+            if idle is not None:
+                sc = self.scenes[idx]
+                layer = self.layers[idx]
+                top = sc.item.shown_rank == 1
+                entry = layer.motion.length + layer.motion.gap_frames / fps
+                t_idle = idle / fps - entry
+                ks, dx, dy, ang = idle_transform(self.v.motion, t_idle, TOP_GAIN if top else 1.0)
+                if top:
+                    dx += top_shake(idle / fps)
+                transform = (ks, dx, dy, ang)
+                if anim is not None and t_idle < 0:  # 등장 중에는 1위 흔들림만
+                    transform = (1.0, top_shake(idle / fps) if top else 0.0, 0.0, 0.0)
+            self.layers[idx].draw(img, None if anim is None else anim / fps, transform)
+        if flash is not None:  # 흰 섬광이 사라짐 (구분선 아래만). 1위 번쩍은 TOP_FLASH 초
+            span = round((self.flash or TOP_FLASH) * fps)
+            a = round(255 * (1 - flash / max(1, span)))
             white = Image.new("RGBA", self.canvas, (255, 255, 255, 0))
             white.paste((255, 255, 255, a), (0, self.t.card.content_top, self.canvas[0], self.canvas[1]))
             img.alpha_composite(white)
         img.alpha_composite(self.head)
         if stat:
-            img.alpha_composite(render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas, self.stat_color))
+            ck = ("stat", idx, stat)
+            if ck not in self._sub_cache:
+                self._sub_cache[ck] = render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas,
+                                                  self.stat_color)
+            img.alpha_composite(self._sub_cache[ck])
         if line_i is not None and shown:
-            p = 1.0 if rise is None else (rise + 1) / round(LINE_RISE * fps)
-            img.alpha_composite(render_subtitle(self._layout(line_i, intro), shown, self.t.card.subtitle, self.canvas,
-                                                alpha=p, dy=(1 - p) * 40))
+            ck = ("sub", line_i, shown, intro, rise)  # 그림이 프레임마다 움직여도 자막 레이어는 다시 쓰기
+            if ck not in self._sub_cache:
+                if len(self._sub_cache) > 64:
+                    self._sub_cache.clear()
+                p = 1.0 if rise is None else (rise + 1) / round(LINE_RISE * fps)
+                self._sub_cache[ck] = render_subtitle(self._layout(line_i, intro), shown, self.t.card.subtitle,
+                                                      self.canvas, alpha=p, dy=(1 - p) * 40)
+            img.alpha_composite(self._sub_cache[ck])
         out = img.convert("RGB")
         self._cache_key, self._cache_frame = key, out
         return out
