@@ -63,6 +63,7 @@ class Style(BaseModel):
     # Explicit, priced legacy model. No automatic model substitutions.
     model: Literal["gpt-image-1.5"] = "gpt-image-1.5"
     size: Literal["1024x1536"] = "1024x1536"
+    extra: str = ""  # 선수별 덧붙임 (장면 설명, 로고·글씨 금지 등)
 
     def prompt(self) -> str:
         text = DEFAULT_PROMPT
@@ -71,7 +72,8 @@ class Style(BaseModel):
         if not self.transparent:
             text = text.replace("캐릭터 외의 배경은 투명하게 만들어줘.", "캐릭터 뒤 배경은 단순한 흰색으로 만들어줘.")
         level = {"low": "약하게", "medium": "보통으로", "high": "강하게"}[self.exaggeration]
-        return text + f"\n야구한장 스타일 v1: 둥근 형태, 깨끗한 굵은 외곽선, 부드러운 셀 채색. 얼굴 과장은 {level}."
+        text += f"\n야구한장 스타일 v1: 둥근 형태, 깨끗한 굵은 외곽선, 부드러운 셀 채색. 얼굴 과장은 {level}."
+        return text + (f"\n{self.extra.strip()}" if self.extra.strip() else "")
 
 
 def stamp() -> str:

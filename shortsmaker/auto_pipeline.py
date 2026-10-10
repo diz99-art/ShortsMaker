@@ -17,12 +17,14 @@ import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
-from .card_compose import compose_card, save_card
+from .bg_remove import remove_background
+from .card_compose import FONT_EXTRA, compose_card, save_card
+from .manual_prompt import build_prompt, default_scene, manual_dir, prepare_folder
 from .lyrics_align import clean_lyrics_text, embedded_lyrics
 from .models import MAX_DURATION, MIN_DURATION, OUTPUT_DIR, PROJECTS_DIR, LyricLine, Project, load_project, \
     load_template, save_project
@@ -31,8 +33,11 @@ from .player_assets import (Photo, Player, Style, approve_image, digest, downloa
 from .rank_extract import RankRow, assign_slots, display_text, extract_ranks, label, rows_complete, team_colors
 from .validate import media_duration
 
-CHANNEL = "yagu_v2"
+CHANNEL = "yagu_v2"  # 기본 템플릿 (카드형). 스티커형은 "yagu_v2_sticker"
+TEMPLATES = {"yagu_v2": "카드형", "yagu_v2_sticker": "스티커형"}
+GEN_MODES = {"manual": "수동 생성 (무료, ChatGPT·Gemini)", "openai": "OpenAI 자동 생성 (유료)", "mock": "Mock 시험 (무료)"}
 STATE_FILE = "auto.json"
+END_TAIL = 2.0  # 마지막 가사가 끝난 뒤 남기는 시간(초). 이 안에서 음악이 페이드아웃된다
 ProgressFn = Callable[[float, str], None]
 
 
@@ -61,6 +66,12 @@ class AutoState(BaseModel):
     title: str
     music: str
     duration: float
+    music_length: float = 0.0
+    template: str = CHANNEL
+    gen_mode: Literal["manual", "openai", "mock"] = "manual"
+    intro_image: str | None = None  # 인트로 캐릭터 (프로젝트 폴더 기준, 배경 제거됨)
+    watch_since: float | None = None  # 다운로드 폴더 지켜보기 시작 시각
+    end_mode: Literal["lyrics", "music"] = "lyrics"  # 마지막 가사 + 2초 (기본) / 반주 끝까지
     mock: bool = True
     aligned: bool = False
     rows: list[RankRow] = Field(default_factory=list)
@@ -100,8 +111,16 @@ def _project(state: AutoState, d: Path) -> Project:
 
 # ---------------------------------------------------------------- 1. 곡 등록·가사
 
-def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bool = True,
+def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bool | None = None,
+                    mode: str | None = None, template: str = CHANNEL,
                     root: Path = PROJECTS_DIR) -> tuple[AutoState, Path]:
+    """mode: manual(기본, 무료) | openai(유료) | mock. 옛 호출(mock=True/False)도 받는다."""
+    if mode is None:
+        mode = {True: "mock", False: "openai"}.get(mock, "manual")
+    if mode not in GEN_MODES:
+        raise FlowError(f"생성 방식은 {', '.join(GEN_MODES)} 중 하나입니다")
+    if template not in TEMPLATES:
+        raise FlowError(f"템플릿은 {', '.join(TEMPLATES)} 중 하나입니다")
     """곡을 새 프로젝트 폴더에 복사하고 상태를 만든다. 같은 이름 폴더가 있으면 덮어쓰지 않는다."""
     d = project_dir(slug, root)
     if d.exists():
@@ -113,13 +132,14 @@ def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bo
         raise FlowError(f"곡이 {length:.1f}초로 너무 짧습니다 (최소 {MIN_DURATION:g}초)")
     if not clean_lyrics_text(embedded_lyrics(song) or ""):
         raise FlowError("곡 파일에 가사(lyrics 태그)가 없습니다. Suno 등에서 가사가 들어간 파일을 쓰세요")
-    duration = round(min(length, load_template(CHANNEL).max_duration, MAX_DURATION), 2)
+    duration = round(min(length, load_template(template).max_duration, MAX_DURATION), 2)
     d.mkdir(parents=True)
     music = f"music{song.suffix.lower()}"
     shutil.copy2(song, d / music)
-    state = AutoState(slug=slug, title=title or song.stem, music=music, duration=duration, mock=mock)
+    state = AutoState(slug=slug, title=title or song.stem, music=music, duration=duration, mock=mode == "mock",
+                      gen_mode=mode, template=template, music_length=round(length, 2))
     # 가사 맞추기에 쓸 임시 project.json (순위·이미지는 6단계에서 채움)
-    save_project(Project(channel=CHANNEL, title=state.title, duration=duration, music=music,
+    save_project(Project(channel=template, title=state.title, duration=duration, music=music,
                          items=[{"rank": r, "name": f"{r}위"} for r in (5, 4, 3, 2, 1)]), d)
     save_state(state, d)
     return state, d
@@ -128,13 +148,46 @@ def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bo
 def align(state: AutoState, d: Path, *, aligner=None, progress: ProgressFn | None = None) -> list[LyricLine]:
     from .lyrics_align import align_lines, auto_align
     project = _project(state, d)
+    # 정렬은 곡 전체(최대 90초) 기준으로 하고, 영상 길이는 정렬 결과로 정한다
+    project = project.model_copy(update={"duration": music_cap(state)})
     res = auto_align(project, d, None, aligner=aligner or align_lines, progress=progress)
     save_project(project.model_copy(update={"lyrics": res.lines, "lyrics_lrc": None}), d)
     state.aligned = True
-    state.rows = extract_ranks(res.lines)
+    set_end_mode(state, d, state.end_mode)
+    state.rows = [r.model_copy(update={"scene": default_scene(r)}) for r in extract_ranks(res.lines)]
     state.table_confirmed = False
     save_state(state, d)
     return res.lines
+
+
+def music_cap(state: AutoState) -> float:
+    """반주 끝까지: 곡 길이, 최대 90초 (템플릿 상한)."""
+    return round(min(state.music_length or state.duration, load_template(state.template).max_duration), 2)
+
+
+def end_time(state: AutoState, lines: list[LyricLine]) -> float:
+    """영상 길이. 기본은 노래(마지막 가사)가 끝나고 2초 뒤. 곡 길이·90초를 넘지 않고 최소 30초."""
+    cap = music_cap(state)
+    if state.end_mode == "music" or not lines:
+        return cap
+    last = max(l.end for l in lines)
+    return round(max(MIN_DURATION, min(cap, last + END_TAIL)), 2)
+
+
+def set_end_mode(state: AutoState, d: Path, mode: str) -> float:
+    """영상 끝 기준을 바꾸고 project.json 길이를 다시 맞춘다. 영상 밖으로 나가는 가사는 잘라낸다."""
+    state.end_mode = mode  # type: ignore[assignment]
+    project = _project(state, d)
+    lines = project.lyrics
+    state.duration = end_time(state, lines)
+    kept = []
+    for l in lines:
+        if l.start >= state.duration:
+            continue
+        kept.append(l if l.end <= state.duration else l.model_copy(update={"end": state.duration}))
+    save_project(project.model_copy(update={"duration": state.duration, "lyrics": kept}), d)
+    save_state(state, d)
+    return state.duration
 
 
 # ---------------------------------------------------------------- 2. 순위 표
@@ -278,6 +331,22 @@ def placeholder_photo(state: AutoState, d: Path, slot: int) -> Path:
     return _write_local_photo(state, d, slot, buf.getvalue(), "placeholder", "MOCK 자리표시 실루엣 (실제 사진 아님)")
 
 
+def skip_photo(state: AutoState, d: Path, slot: int) -> None:
+    """수동 생성 모드: 선수 사진 없이 이름·설명만으로 그림을 만들 때."""
+    _need_table(state)
+    if state.gen_mode != "manual":
+        raise FlowError("사진 없이 진행은 수동 생성 모드에서만 됩니다")
+    ps = state.players[slot]
+    ps.folder, ps.source = None, "none"
+    _reset_after_photo(state, slot)
+    save_state(state, d)
+
+
+def photo_ready(state: AutoState, slot: int) -> bool:
+    ps = state.players[slot]
+    return bool(ps.folder) or (state.gen_mode == "manual" and ps.source == "none")
+
+
 def _reset_after_photo(state: AutoState, slot: int) -> None:
     ps = state.players[slot]
     ps.generations, ps.approved, ps.card = [], None, None
@@ -287,13 +356,23 @@ def _reset_after_photo(state: AutoState, slot: int) -> None:
 
 # ---------------------------------------------------------------- 4. 캐리커처 (비용 승인)
 
+def slot_style(state: AutoState, slot: int) -> Style:
+    """선수별 유료 생성 설정: 장면 설명 + 로고·글씨 금지 (+ 스티커형은 2등신 치비)."""
+    r = _row(state, slot)
+    extra = [f"장면: {r.scene or default_scene(r)}.",
+             "구단 로고·엠블럼, 글자·숫자·등번호·영문 팀 이름은 절대 그리지 마."]
+    if _style_name(state) == "sticker":
+        extra.insert(0, "2등신 치비(chibi) 스티커 스타일, 큰 머리와 작은 몸.")
+    return state.style.model_copy(update={"extra": " ".join(extra)})
+
+
 def cost_estimate(state: AutoState, d: Path) -> dict:
     """생성 전에 보여줄 예상 비용. 사진이 있고 아직 승인 이미지가 없는 선수만."""
     _need_table(state)
     plans = {}
     for slot, ps in state.players.items():
         if ps.folder and not ps.approved:
-            plans[slot] = generation_plan(d / ps.folder, state.style)
+            plans[slot] = generation_plan(d / ps.folder, slot_style(state, slot))
     missing = [s for s, ps in state.players.items() if not ps.folder]
     total = 0.0 if state.mock else round(sum(p["estimated_output_usd"] for p in plans.values()), 3)
     high = 0.0 if state.mock else round(sum(p["estimated_total_usd_range"][1] for p in plans.values()), 3)
@@ -330,11 +409,12 @@ def generate_caricatures(state: AutoState, d: Path, editor, *, progress: Progres
         ps = state.players[slot]
         folder = d / ps.folder
         plan_id = state.cost_approval.plan_ids[slot]
-        if generation_plan(folder, state.style)["id"] != plan_id:
+        style = slot_style(state, slot)
+        if generation_plan(folder, style)["id"] != plan_id:
             raise FlowError(f"{row_label(state, slot)}: 승인 뒤 사진이나 설정이 바뀌었습니다. 비용을 다시 확인·승인하세요")
         if progress:
             progress((n - 1) / len(slots), f"{row_label(state, slot)} 캐리커처 생성 중")
-        target = generate(folder, state.style, editor, approved_plan_id=plan_id,
+        target = generate(folder, style, editor, approved_plan_id=plan_id,
                           paid_and_upload_approved=not state.mock)
         ps.generations.append(str(target.relative_to(d)))
         out[slot] = target
@@ -355,6 +435,75 @@ def approve_caricature(state: AutoState, d: Path, slot: int, *, confirmed: bool)
     return path
 
 
+# ---------------------------------------------------------------- 4'. 수동 생성 (무료)
+
+def _style_name(state: AutoState) -> str:
+    return load_template(state.template).card.style
+
+
+def manual_prepare(state: AutoState, d: Path, slot: int) -> tuple[Path, str]:
+    """선수별 프롬프트 + 스타일 참고 그림 + 선수 사진을 한 폴더에 모은다."""
+    _need_table(state)
+    if not photo_ready(state, slot):
+        raise FlowError(f"{row_label(state, slot)}: 사진을 고르거나 '사진 없이 진행'을 먼저 누르세요")
+    r = _row(state, slot)
+    ps = state.players[slot]
+    photo = next((d / ps.folder).glob("original.*"), None) if ps.folder else None
+    t = load_template(state.template)
+    return prepare_folder(d, slot, r, r.scene or default_scene(r), style=t.card.style,
+                          style_ref=t.asset_path("style_ref.png"), photo=photo)
+
+
+def intro_prompt(state: AutoState) -> str:
+    style = "2등신 치비 캐리커처 스티커" if _style_name(state) == "sticker" else "역동적인 만화풍 캐리커처"
+    return "\n".join([
+        "[첨부: 스타일 참고 그림]",
+        f"첨부한 참고 그림과 같은 그림체로, 영상 '{state.title.replace(chr(10), ' ')}' 의 인트로에 쓸 야구 선수 캐릭터를 {style}로 그려줘.",
+        "- 실존 인물이 아닌 가상의 캐릭터, 배트를 휘두르는 신나는 동작",
+        "- 금지: 구단 로고·엠블럼, 글자·숫자, 워터마크 — 그림 안에 글씨가 하나도 없어야 함",
+        "- 배경: 투명 배경 PNG. 안 되면 완전히 흰 단색 배경",
+    ])
+
+
+def _cutout(data: bytes, method: str) -> tuple[bytes, str]:
+    with Image.open(io.BytesIO(data)) as im:
+        out, how = remove_background(im, method=method)
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue(), how
+
+
+def use_manual_image(state: AutoState, d: Path, slot: int, data: bytes, *, source_name: str = "",
+                     method: str = "auto") -> Path:
+    """다운로드한(또는 올린) 그림을 배경 제거 후 이 순위의 캐리커처로. 버튼을 누른 것이 승인이다."""
+    _need_table(state)
+    if state.gen_mode != "manual":
+        raise FlowError("수동 생성 모드가 아닙니다")
+    validate_image(data) if data[:4] != b"RIFF" else None  # webp 는 Pillow 로만 확인
+    png, how = _cutout(data, method)
+    folder = manual_dir(d, slot)
+    folder.mkdir(parents=True, exist_ok=True)
+    n = len(list(folder.glob("result_*.png"))) + 1
+    path = folder / f"result_{n:03d}.png"
+    path.write_bytes(png)
+    write_json_new(path.with_suffix(".json"), {"created_at": now(), "source": source_name, "background": how,
+                                               "sha256": digest(png), "approved": True})
+    ps = state.players[slot]
+    ps.approved, ps.card = str(path.relative_to(d)), None
+    state.cards_done = False
+    save_state(state, d)
+    return path
+
+
+def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "auto") -> Path:
+    png, _ = _cutout(data, method)
+    path = d / "intro.png"
+    path.write_bytes(png)
+    state.intro_image = "intro.png"
+    save_state(state, d)
+    return path
+
+
 # ---------------------------------------------------------------- 5. 카드
 
 def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
@@ -364,10 +513,14 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
         raise FlowError("승인한 캐리커처가 없는 순위: "
                         + ", ".join(row_label(state, s) for s in sorted(waiting, reverse=True)))
     out = {}
+    sticker = _style_name(state) == "sticker"
     for r in state.rows:
         ps = state.players[r.slot]
-        card = compose_card(d / ps.approved, rank=r.rank, record=r.record, year=r.year, team=r.team,
-                            player=r.player, mock=state.mock, tied=label(state.rows, r).startswith("공동"))
+        if sticker:  # 스티커형: 글씨 없는 그림 그대로 (순위·기록은 영상의 자막·빨간 줄로)
+            card = _sticker(d / ps.approved, mock=state.mock)
+        else:
+            card = compose_card(d / ps.approved, rank=r.rank, record=r.record, year=r.year, team=r.team,
+                                player=r.player, mock=state.mock, tied=label(state.rows, r).startswith("공동"))
         out[r.slot] = save_card(card, d / "cards" / f"card{r.slot}.png")
         ps.card = str(out[r.slot].relative_to(d))
     state.cards_done = True
@@ -377,19 +530,33 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
 
 # ---------------------------------------------------------------- 6. 렌더·CapCut
 
+def _sticker(path: Path, *, mock: bool) -> Image.Image:
+    with Image.open(path) as im:
+        img = im.convert("RGBA")
+    img = img.crop(img.getbbox() or (0, 0, *img.size))
+    if mock:
+        from .scenes import _font
+        dr = ImageDraw.Draw(img)
+        dr.rounded_rectangle([8, 8, 250, 60], radius=12, fill=(220, 0, 0, 235))
+        dr.text((129, 34), "MOCK 시험용", font=_font(str(FONT_EXTRA), 34), fill="white", anchor="mm")
+    return img
+
+
 def credits_text(state: AutoState, d: Path) -> str:
     """영상 설명에 넣을 사진 출처 (CC BY / BY-SA 는 저작자·라이선스 표시 필요)."""
     rows = ["[사진 출처]"]
     for r in state.rows:
         ps = state.players[r.slot]
         if not ps.folder:
+            if ps.approved and "manual" in ps.approved:
+                rows.append(f"{label(state.rows, r)} {r.player}: 사용자가 직접 만든 그림 (사진 없음)")
             continue
         meta = json.loads((d / ps.folder / "metadata.json").read_text(encoding="utf-8"))
         ph = meta["photo"]
         rows.append(f"{label(state.rows, r)} {r.player}: {ph['title']} / 저작자 {ph.get('author') or '미상'} / "
                     f"{ph['license']} {ph.get('license_url', '')} / {ph['source']}".rstrip())
-    rows.append("캐리커처는 위 사진을 바탕으로 AI로 변형한 2차 저작물입니다." if not state.mock
-                else "MOCK 시험용 — 실제 영상에 쓰지 마세요.")
+    rows.append("MOCK 시험용 — 실제 영상에 쓰지 마세요." if state.mock else
+                "캐리커처는 위 사진을 바탕으로 AI로 변형한 2차 저작물입니다.")
     return "\n".join(rows)
 
 
@@ -398,9 +565,10 @@ def build_project(state: AutoState, d: Path) -> Project:
         raise FlowError("카드를 먼저 합성하세요")
     project = _project(state, d)
     items = [{"rank": r.slot, "display_rank": r.rank, "name": r.player or r.team, "value": r.record,
-              "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card}
-             for r in state.rows]
-    project = Project.model_validate({**project.model_dump(), "title": state.title, "items": items,
+              "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card,
+              "stat_line": r.stat_line} for r in state.rows]
+    project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
+                                      "items": items, "intro_image": state.intro_image,
                                       "rights_confirmed": state.rights_confirmed and not state.mock})
     save_project(project, d)
     return project

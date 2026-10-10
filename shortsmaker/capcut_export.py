@@ -247,7 +247,9 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
     script.add_segment(cc.VideoSegment(str(base), cc.Timerange(0, D)), "배경")
 
     for sc in r.scenes:
-        if sc.kind == "intro":
+        if sc.kind == "intro" and project.intro_image:
+            src, box, motion = project_dir / project.intro_image, c.intro_box or c.logo_box, c.intro_motion
+        elif sc.kind == "intro":
             src, box, motion = t.asset_path(c.logo), c.logo_box, c.intro_motion
         else:
             src, box, motion = project_dir / sc.item.image, c.card_box, c.card_motion
@@ -266,6 +268,22 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         script.add_segment(seg, "로고·카드")
 
     script.add_segment(cc.VideoSegment(str(head), cc.Timerange(0, D)), "제목")
+
+    if c.stat_line and any(sc.item and sc.item.stat_line.strip() for sc in r.scenes):
+        sl = c.stat_line
+        script.add_track(cc.TrackType.text, "기록 줄")
+        for sc in r.scenes[1:]:
+            text = sc.item.stat_line.strip()
+            if not text:
+                continue
+            seg = cc.TextSegment(
+                text, cc.Timerange(us(sc.start + sl.delay), us(sc.end - sc.start - sl.delay)),
+                style=cc.TextStyle(size=round(sl.size / 6, 1), bold=True, color=_rgb01(sl.color), align=1,
+                                   auto_wrapping=True, max_line_width=round(sl.w / t.width, 3)),
+                clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, sl.center_y)[1]),
+            )
+            seg.add_animation(cc.TextIntro["打字机"], us(min(len(text) / sl.rate, sc.end - sc.start - sl.delay)))
+            script.add_segment(seg, "기록 줄")
 
     if lines:
         st = c.subtitle

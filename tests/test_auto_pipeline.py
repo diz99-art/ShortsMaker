@@ -9,7 +9,7 @@ from PIL import Image
 from shortsmaker import auto_pipeline as ap
 from shortsmaker.card_compose import compose_card
 from shortsmaker.lyrics_align import AlignedLine, clean_lyrics_text
-from shortsmaker.models import load_project
+from shortsmaker.models import LyricLine, load_project
 from shortsmaker.player_assets import MockEditor, Player, search_photos
 from shortsmaker.rank_extract import (RankRow, assign_slots, display_text, extract_ranks, korean_to_int, label,
                                       normalize_numbers, rows_complete, team_colors)
@@ -127,7 +127,8 @@ FILL = {5: ("윤석민", "2010"), 4: ("박정태", "2002"), 3: ("김기태", "19
 @pytest.fixture
 def aligned(tmp_path):
     song = make_song(tmp_path / "song.m4a", LOSING)
-    state, d = ap.start_from_song(song, "t", title="한 번만 이겼어도…\nKBO 역대 최장 연패 TOP 5", root=tmp_path / "projects")
+    state, d = ap.start_from_song(song, "t", title="한 번만 이겼어도…\nKBO 역대 최장 연패 TOP 5", mode="mock",
+                                  root=tmp_path / "projects")
     ap.align(state, d, aligner=fake_aligner)
     return state, d
 
@@ -147,7 +148,8 @@ def test_start_refuses_existing_and_lyricless(tmp_path):
 
 def test_table_must_be_confirmed_before_photos(aligned):
     state, d = aligned
-    assert state.duration == pytest.approx(35, abs=0.1) and len(state.rows) == 5
+    assert state.music_length == pytest.approx(35, abs=0.1) and len(state.rows) == 5
+    assert state.duration == pytest.approx(28.9 + ap.END_TAIL)  # 노래가 끝나면 (마지막 가사 + 2초)
     with pytest.raises(ap.FlowError, match="표"):
         ap.placeholder_photo(state, d, 5)
     with pytest.raises(ap.FlowError, match="선수"):
@@ -180,7 +182,7 @@ def test_cost_must_be_approved_and_replanned(aligned):
 
 def test_real_mode_cost_shown_and_editor_mismatch(aligned):
     state, d = aligned
-    state.mock = False
+    state.mock, state.gen_mode = False, "openai"
     ap.confirm_table(state, d, filled(state))
     ap.upload_photo(state, d, 5, _png(), rights_confirmed=True)
     est = ap.cost_estimate(state, d)
@@ -301,7 +303,7 @@ def test_streamlit_page_flow(aligned, monkeypatch):
 
 def test_full_mock_flow_with_tie(tmp_path):
     song = make_song(tmp_path / "fa.m4a", FA_TIE)
-    state, d = ap.start_from_song(song, "fa", title="KBO FA TOP 5", root=tmp_path / "projects")
+    state, d = ap.start_from_song(song, "fa", title="KBO FA TOP 5", mode="mock", root=tmp_path / "projects")
     ap.align(state, d, aligner=fake_aligner)
     rows = [r.model_copy(update={"team": r.team or "롯데 자이언츠", "year": "2024"}) for r in state.rows]
     ap.confirm_table(state, d, rows)
@@ -350,7 +352,7 @@ def test_project_tie_validation():
 def test_streamlit_shows_tie_label(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
     song = make_song(tmp_path / "fa.m4a", FA_TIE)
-    state, d = ap.start_from_song(song, "fa2", title="FA", root=tmp_path / "projects")
+    state, d = ap.start_from_song(song, "fa2", title="FA", mode="mock", root=tmp_path / "projects")
     ap.align(state, d, aligner=fake_aligner)
     state.rows = [r.model_copy(update={"team": r.team or "롯데 자이언츠", "year": "2024"}) for r in state.rows]
     ap.save_state(state, d)
@@ -364,3 +366,127 @@ def test_streamlit_shows_tie_label(tmp_path, monkeypatch):
     assert not at.exception and ap.load_state(d).table_confirmed
     labels = [e.label for e in at.expander]
     assert sum("공동 2위" in l for l in labels) == 2 and not any(l.startswith("3위") for l in labels)
+
+
+# ---------------------------------------------------------------- 영상 길이
+
+def test_end_mode_lyrics_default_and_music_option(aligned):
+    state, d = aligned
+    assert state.end_mode == "lyrics" and state.duration == pytest.approx(30.9)
+    assert load_project(d / "project.json")[0].duration == pytest.approx(30.9)
+    ap.set_end_mode(state, d, "music")
+    assert state.duration == pytest.approx(35, abs=0.1)
+    ap.set_end_mode(state, d, "lyrics")
+    assert state.duration == pytest.approx(30.9)
+
+
+def test_end_time_caps():
+    st = ap.AutoState(slug="x", title="t", music="m", duration=90, music_length=94.8)
+    lines = [LyricLine(start=1, end=84.0, text="a")]
+    assert ap.end_time(st, lines) == pytest.approx(86.0)          # 연패 곡: 노래 84초 → 86초
+    st.end_mode = "music"
+    assert ap.end_time(st, lines) == 90                           # 반주 끝까지는 90초 상한
+    st.end_mode = "lyrics"
+    assert ap.end_time(st, [LyricLine(start=1, end=10, text="a")]) == 30  # 최소 30초
+
+
+# ---------------------------------------------------------------- 별명만 있는 팀
+
+def test_nickname_team_left_blank():
+    rows = extract_ranks(["5위 이대호, 부산의 자존심", "백오십 억"])
+    assert rows[0].player == "이대호" and rows[0].team == ""
+    from shortsmaker.rank_extract import missing_fields
+    assert missing_fields(rows[0]) == ["팀"]
+
+
+# ---------------------------------------------------------------- 수동 생성 (무료)
+
+def _white_bg_png(tmp_path: Path) -> bytes:
+    import io
+    im = Image.new("RGB", (400, 600), "white")
+    from PIL import ImageDraw
+    ImageDraw.Draw(im).ellipse([100, 100, 300, 500], fill="#C8102E", outline="black", width=6)
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def manual(tmp_path):
+    song = make_song(tmp_path / "fa.m4a", FA_TIE)
+    state, d = ap.start_from_song(song, "m", title="FA", template="yagu_v2_sticker", root=tmp_path / "projects")
+    ap.align(state, d, aligner=fake_aligner)
+    rows = [r.model_copy(update={"team": r.team or "롯데 자이언츠"}) for r in state.rows]
+    ap.confirm_table(state, d, rows)
+    return state, d
+
+
+def test_manual_is_default_and_free(manual):
+    state, d = manual
+    assert state.gen_mode == "manual" and not state.mock and state.template == "yagu_v2_sticker"
+    with pytest.raises(ap.FlowError, match="사진"):
+        ap.manual_prepare(state, d, 5)                             # 사진 또는 '사진 없이 진행' 먼저
+    ap.skip_photo(state, d, 5)
+    folder, prompt = ap.manual_prepare(state, d, 5)
+    assert (folder / "prompt.txt").read_text(encoding="utf-8").strip() == prompt
+    assert (folder / "1_스타일참고.png").exists()
+    for must in ("2등신 치비", "구단 로고", "글자", "투명 배경", ap._row(state, 5).scene):
+        assert must in prompt
+    assert "오지환" in prompt
+
+
+def test_prompt_with_photo_and_scene_from_lyrics(manual):
+    state, d = manual
+    ap.upload_photo(state, d, 4, _png(), rights_confirmed=True)
+    folder, prompt = ap.manual_prepare(state, d, 4)
+    assert "첨부 2: 선수 사진" in prompt and list(folder.glob("2_선수사진_*"))
+    assert "기자회견" in ap._row(state, 4).scene                    # '박민우, NC에 남아' → 잔류 기자회견
+    assert "악수" in ap._row(state, 3).scene                        # '나성범, KIA로 간다' → 악수
+
+
+def test_downloads_watch_and_use(manual, tmp_path, monkeypatch):
+    import time as _t
+    from shortsmaker import manual_prompt as mp
+    state, d = manual
+    downloads = tmp_path / "dl"
+    downloads.mkdir()
+    since = _t.time() - 5
+    (downloads / "old.png").write_bytes(_white_bg_png(tmp_path))
+    import os
+    os.utime(downloads / "old.png", (since - 100, since - 100))     # 지켜보기 전 파일은 무시
+    (downloads / "new.png").write_bytes(_white_bg_png(tmp_path))
+    os.utime(downloads / "new.png", (since + 1, since + 1))
+    (downloads / "memo.txt").write_text("x")
+    found = mp.new_images(since, downloads, settle=0)
+    assert [p.name for p in found] == ["new.png"]
+    path = ap.use_manual_image(state, d, 5, found[0].read_bytes(), source_name="new.png")
+    out = Image.open(path)
+    assert out.mode == "RGBA" and out.getpixel((0, 0))[3] == 0      # 흰 배경 제거
+    assert out.getpixel((out.width // 2, out.height // 2))[3] == 255
+    assert state.players[5].approved == str(path.relative_to(d))   # '이 순위에 사용' = 승인
+    meta = json.loads(path.with_suffix(".json").read_text())
+    assert meta["background"] == "flood" and meta["source"] == "new.png"
+
+
+def test_manual_mode_blocks_paid_and_mock_paths(manual):
+    state, d = manual
+    with pytest.raises(ap.FlowError, match="Mock"):
+        ap.placeholder_photo(state, d, 5)
+    ap.skip_photo(state, d, 5)
+    with pytest.raises(ap.FlowError):
+        ap.generate_caricatures(state, d, MockEditor())            # 비용 승인 없음
+
+
+def test_sticker_manual_flow_to_project(manual):
+    state, d = manual
+    for s in (5, 4, 3, 2, 1):
+        ap.skip_photo(state, d, s)
+        ap.use_manual_image(state, d, s, _white_bg_png(Path(".")))
+    ap.set_intro_image(state, d, _white_bg_png(Path(".")))
+    ap.compose_cards(state, d)
+    card = Image.open(d / state.players[5].card)
+    assert card.mode == "RGBA" and card.size[0] < 400               # 스티커형: 글씨 없이 그림만 (잘라낸 크기)
+    project = ap.build_project(state, d)
+    assert project.channel == "yagu_v2_sticker" and project.intro_image == "intro.png"
+    assert project.ordered_items[0].stat_line                       # 빨간 기록 줄 초안 (가사 다음 줄)
+    assert "사용자가 직접 만든 그림" in ap.credits_text(state, d)

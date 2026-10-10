@@ -42,6 +42,7 @@ class Item(BaseModel):
     image: str | None = None  # 프로젝트 폴더 기준 상대경로
     start: float | None = Field(default=None, ge=0)  # 이 순위 장면이 시작하는 시각(초). 노래에 맞출 때만
     display_rank: int | None = Field(default=None, ge=1, le=5)  # 화면에 보이는 순위 (공동 2위 2명 → 2, 2 / 3위 없음)
+    stat_line: str = ""  # 스티커형: 자막 아래 빨간 기록 줄 (1~2줄, 줄바꿈은 '\n')
 
     @property
     def shown_rank(self) -> int:
@@ -81,6 +82,7 @@ class Project(BaseModel):
     lyrics_lrc: str | None = None  # 프로젝트 폴더 기준 .lrc 경로
     rights_confirmed: bool = False
     outro_start: float | None = Field(default=None, ge=0)  # 아웃트로 시작 시각(초). 없으면 비례 배분
+    intro_image: str | None = None  # 카드 모드 인트로 캐릭터 (프로젝트 폴더 기준). 없으면 템플릿 채널 로고
 
     @field_validator("items")
     @classmethod
@@ -309,6 +311,7 @@ class Motion(BaseModel):
 class TypingSubtitle(TextBox):
     """노래에 맞춰 한 글자씩 나타나는 자막. 박스 세로 가운데에 줄 블록을 맞춘다."""
     intro_center_y: int | None = None  # 인트로 장면에서만 쓰는 세로 중심 (없으면 박스 중심)
+    intro_align: Literal["left", "center"] = "center"  # 인트로 장면 자막 정렬
     wide_w: int | None = None           # 최소 크기로도 max_lines 를 넘으면 이 폭까지 넓혀 다시 맞춤 (가운데 기준)
     line_pitch: float = 1.08            # 줄 간격 (글자 크기 배수)
     shadow_offset: tuple[int, int] = (5, 7)
@@ -317,7 +320,16 @@ class TypingSubtitle(TextBox):
     shadow_blur: float = Field(default=3.0, ge=0)
 
 
+class StatLine(TextBox):
+    """스티커형: 자막 아래 빨간 굵은 기록 줄. 순위 장면이 시작되고 delay 뒤부터 초당 rate 글자씩 나타난다."""
+    center_y: int = 880
+    line_pitch: float = 0.9
+    rate: float = Field(default=27.0, gt=0)
+    delay: float = Field(default=0.2, ge=0)
+
+
 class CardLayout(BaseModel):
+    style: Literal["card", "sticker"] = "card"  # card: 정보가 다 든 카드 / sticker: 글씨 없는 치비 스티커 + 빨간 기록 줄
     background_color: str = "#FCFCFC"
     pill: PillLogo
     title: TextBox                     # 파란 2줄 제목 (project.title, 줄바꿈은 '\n' 또는 자동)
@@ -326,11 +338,13 @@ class CardLayout(BaseModel):
     footer: Footer
     logo: str = "logo.png"             # 템플릿 폴더 기준 채널 로고 (인트로)
     logo_box: Box                      # 로고 전체 이미지가 놓이는 자리 (배율 1)
+    intro_box: Box | None = None       # 프로젝트 인트로 캐릭터(intro_image) 자리. 없으면 logo_box
     card_box: Box                      # 순위 카드가 놓이는 자리 (비율 유지해 박스 안에 맞춤)
     content_top: int                   # 움직이는 로고·카드를 이 y 위로는 그리지 않음 (구분선 아래)
     intro_motion: Motion
     card_motion: Motion
     subtitle: TypingSubtitle
+    stat_line: StatLine | None = None  # 스티커형 빨간 기록 줄
     rank_word: str = "{rank}위"        # 가사에서 장면 전환 시점을 찾을 낱말
 
 

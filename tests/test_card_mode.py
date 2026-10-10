@@ -216,3 +216,61 @@ def test_onset_not_moved_when_sung_continuously():
     a = [AlignedLine(30.84, 31.82, "3위", 0.9, words=[(30.84, 31.82, "3위")])]
     refine_onsets(a, [-20.0] * 4000)
     assert a[0].start == 30.84
+
+
+# ---------------------------------------------------------------- 스티커형 (yagu_v2_sticker)
+
+@pytest.fixture(scope="module")
+def ts():
+    return load_template("yagu_v2_sticker")
+
+
+def make_sticker_project(tmp_path, **kw):
+    make_cards(tmp_path)
+    Image.new("RGBA", (600, 800), "#336699").save(tmp_path / "intro.png")
+    items = [{"rank": r, "name": f"선수{r}", "image": f"card{r}.png", "stat_line": "2022 | 104G 0.267 4HR\n38타점, 21도루"}
+             for r in (5, 4, 3, 2, 1)]
+    data = dict(channel="yagu_v2_sticker", title="야구선수 한 명에 152억?!\nKBO 역대 FA 몸값 TOP 5", duration=30,
+                items=items, lyrics=[l.model_dump() for l in SONG], rights_confirmed=True, intro_image="intro.png")
+    data.update(kw)
+    return Project.model_validate(data)
+
+
+def test_sticker_template_measured(ts):
+    c = ts.card
+    assert c.style == "sticker" and c.stat_line.color == "#EB1B1B" and c.stat_line.max_lines == 2
+    assert c.subtitle.intro_align == "left" and c.intro_box is not None
+    assert ts.asset_path("style_ref.png") and ts.asset_path("logo.png")
+
+
+def test_stat_line_types_after_scene_start(tmp_path, ts):
+    p = make_sticker_project(tmp_path)
+    r = make_renderer(p, tmp_path, ts, p.lyrics)
+    start = 6.0
+    counts = [r.state(round((start + dt) * FPS))[5] for dt in (0.0, 0.1, 0.3, 0.6, 2.0)]
+    assert counts[0] == counts[1] == 0                      # 0.2초 전에는 안 보임
+    assert 0 < counts[2] < counts[3] < counts[4] == len(p.items[0].stat_line)
+    red = r.frame(round((start + 2.0) * FPS))
+    reds = [red.getpixel((x, y)) for x in range(100, 1000, 4) for y in range(830, 930, 4)]
+    assert (235, 27, 27) in reds                            # 빨간 기록 줄 (#EB1B1B)
+
+
+def test_intro_character_and_left_subtitle(tmp_path, ts):
+    p = make_sticker_project(tmp_path)
+    r = make_renderer(p, tmp_path, ts, p.lyrics)
+    img = r.frame(round(3.5 * FPS))                         # 인트로: 첫 줄 다 나온 뒤, 캐릭터 제자리 근처
+    assert img.getpixel((410, 1300))[:3] == (0x33, 0x66, 0x99)  # intro_box (x60~760) 안의 캐릭터
+    lay = layout_subtitle("KBO 역대 최악의 연패는?", ts.card.subtitle, ts.font_path("black"), 645, "left")
+    assert lay.lines[0][2] == ts.card.subtitle.x + ts.card.subtitle.stroke_width
+
+
+def test_capcut_sticker_has_stat_track(tmp_path, ts):
+    from shortsmaker.capcut_export import export_draft
+    pdir = tmp_path / "p"
+    pdir.mkdir()
+    p = make_sticker_project(pdir)
+    res = export_draft(p, pdir, root=tmp_path, name="ShortsMaker_st")
+    info = json.loads((res.path / "draft_info.json").read_text(encoding="utf-8"))
+    tracks = {tr["name"]: tr for tr in info["tracks"]}
+    assert len(tracks["기록 줄"]["segments"]) == 5
+    assert tracks["기록 줄"]["segments"][0]["target_timerange"]["start"] == round((6.0 + 0.2) * 1e6)

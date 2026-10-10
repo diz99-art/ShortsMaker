@@ -27,7 +27,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegError, _f, ffmpeg_bin
-from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, Template, TypingSubtitle
+from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import SceneBuildResult, SceneLayers, _font, _hex, _wrap
 from .timeline import Scene, snap
 
@@ -317,7 +317,8 @@ class SubtitleLayout:
     overflow: bool = False
 
 
-def layout_subtitle(text: str, st: TypingSubtitle, font_path: Path, center_y: float) -> SubtitleLayout:
+def layout_subtitle(text: str, st: TypingSubtitle, font_path: Path, center_y: float,
+                    align: str = "center") -> SubtitleLayout:
     """최종 문장 기준으로 줄을 나누고 위치를 고정한다 (글자가 늘어나도 자리가 움직이지 않게)."""
     for box_w in [st.w] + ([st.wide_w] if st.wide_w and st.wide_w > st.w else []):
         width = box_w - 2 * st.stroke_width
@@ -340,7 +341,8 @@ def layout_subtitle(text: str, st: TypingSubtitle, font_path: Path, center_y: fl
         start = text.find(line, pos) if line else pos
         start = pos if start < 0 else start
         lw = font.getlength(line)
-        out.append((line, start, st.x + st.w / 2 - lw / 2, y))
+        x = st.x + st.stroke_width if align == "left" else st.x + st.w / 2 - lw / 2
+        out.append((line, start, x, y))
         pos = start + len(line)
         y += pitch
     return SubtitleLayout(font, out, overflow)
@@ -375,6 +377,50 @@ def render_subtitle(layout: SubtitleLayout, visible_chars: int, st: TypingSubtit
     return layer
 
 
+# ---------------------------------------------------------------- 빨간 기록 줄 (스티커형)
+
+def layout_stat(text: str, sl: StatLine, font_path: Path) -> SubtitleLayout:
+    """'\n' 으로 나눈 줄(없으면 폭에 맞춰 자동), 최대 max_lines, 가운데 정렬, center_y 기준."""
+    size = sl.size
+    while True:
+        font = _font(str(font_path), size)
+        lines = []
+        for para in text.split("\n"):
+            lines += _wrap(para, font, sl.w)
+        if (len(lines) <= sl.max_lines and all(font.getlength(l) <= sl.w for l in lines)) or size <= sl.min_size:
+            break
+        size -= 2
+    pitch = size * sl.line_pitch
+    block = pitch * (len(lines) - 1) + size
+    y = sl.center_y - block / 2
+    out, pos = [], 0
+    for line in lines:
+        start = text.find(line, pos)
+        start = pos if start < 0 else start
+        out.append((line, start, sl.x + sl.w / 2 - font.getlength(line) / 2, y))
+        pos = start + len(line)
+        y += pitch
+    return SubtitleLayout(font, out, len(lines) > sl.max_lines)
+
+
+def render_stat(layout: SubtitleLayout, visible_chars: int, sl: StatLine, canvas: tuple[int, int]) -> Image.Image:
+    layer = Image.new("RGBA", canvas, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    for line, start, x, y in layout.lines:
+        n = max(0, min(len(line), visible_chars - start))
+        if n:
+            d.text((x, y), line[:n], font=layout.font, fill=_hex(sl.color), anchor="la",
+                   stroke_width=sl.stroke_width, stroke_fill=_hex(sl.stroke_color))
+    return layer
+
+
+def stat_visible(text: str, sl: StatLine, since: float) -> int:
+    """장면 시작 후 since 초에 보이는 글자 수 (원문 위치 기준, 줄바꿈 포함)."""
+    if since < sl.delay:
+        return 0
+    return min(len(text), int((since - sl.delay) * sl.rate) + 1)
+
+
 # ---------------------------------------------------------------- 프레임 렌더러
 
 @dataclass
@@ -390,11 +436,16 @@ class CardRenderer:
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
         self.base, self.head = render_chrome(t, self.project)
-        logo = t.asset_path(c.logo)
-        if logo is None:
-            raise CardModeError(f"채널 로고 이미지가 없습니다: templates/{self.project.channel}/{c.logo}")
+        if self.project.intro_image:  # 프로젝트 인트로 캐릭터
+            intro, intro_box = self.project_dir / self.project.intro_image, c.intro_box or c.logo_box
+            if not intro.exists():
+                raise CardModeError(f"인트로 이미지가 없습니다: {intro}")
+        else:
+            intro, intro_box = t.asset_path(c.logo), c.logo_box
+            if intro is None:
+                raise CardModeError(f"채널 로고 이미지가 없습니다: templates/{self.project.channel}/{c.logo}")
         self.layers: dict[int, MovingLayer] = {
-            0: MovingLayer(logo, c.logo_box, c.intro_motion, t.fps, c.content_top, self.canvas)}
+            0: MovingLayer(intro, intro_box, c.intro_motion, t.fps, c.content_top, self.canvas)}
         for s in self.scenes[1:]:
             if not s.item.image:
                 raise CardModeError(f"[{s.item.rank}위] 카드 이미지가 지정되지 않았습니다")
@@ -412,6 +463,13 @@ class CardRenderer:
                     self.warnings.append(f"자막이 {st.max_lines}줄을 넘어 최소 크기로도 다 들어가지 않습니다: {l.text}")
                     break
         self.warnings = list(dict.fromkeys(self.warnings))
+        self._stats: dict[int, SubtitleLayout] = {}
+        if c.stat_line:
+            for s in self.scenes[1:]:
+                if s.item.stat_line.strip():
+                    self._stats[s.index] = layout_stat(s.item.stat_line, c.stat_line, t.font_path(c.stat_line.font))
+                    if self._stats[s.index].overflow:
+                        self.warnings.append(f"빨간 기록 줄이 {c.stat_line.max_lines}줄을 넘습니다: {s.item.stat_line}")
         self._cache_key = None
         self._cache_frame: Image.Image | None = None
 
@@ -420,7 +478,8 @@ class CardRenderer:
         if key not in self._layouts:
             st = self.t.card.subtitle
             cy = (st.intro_center_y if intro and st.intro_center_y else st.y + st.h / 2)
-            self._layouts[key] = layout_subtitle(self.lines[i].text, st, self._font_path, cy)
+            self._layouts[key] = layout_subtitle(self.lines[i].text, st, self._font_path, cy,
+                                                 st.intro_align if intro else "center")
         return self._layouts[key]
 
     def scene_at(self, sec: float) -> Scene:
@@ -444,16 +503,21 @@ class CardRenderer:
                 break
         if line_i is not None:
             shown = sum(1 for x in self._times[line_i] if x <= sec + 1e-9)
-        return (sc.index, anim, line_i, shown, sc.kind == "intro")
+        stat = 0
+        if sc.index in self._stats:
+            stat = stat_visible(sc.item.stat_line, self.t.card.stat_line, sec - sc.start)
+        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat)
 
     def frame(self, frame_no: int) -> Image.Image:
         key = self.state(frame_no)
         if key == self._cache_key and self._cache_frame is not None:
             return self._cache_frame
-        idx, anim, line_i, shown, intro = key
+        idx, anim, line_i, shown, intro, stat = key
         img = self.base.convert("RGBA")
         self.layers[idx].draw(img, None if anim is None else anim / self.t.fps)
         img.alpha_composite(self.head)
+        if stat:
+            img.alpha_composite(render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas))
         if line_i is not None and shown:
             img.alpha_composite(render_subtitle(self._layout(line_i, intro), shown, self.t.card.subtitle, self.canvas))
         out = img.convert("RGB")
@@ -481,6 +545,9 @@ def build_previews(r: CardRenderer, out_dir: Path) -> SceneBuildResult:
             if s.start <= l.start < s.end:
                 sec = max(sec, min(char_times(l)[-1] + 0.05, s.end - 1 / r.t.fps))
                 break
+        if s.index in r._stats and r.t.card.stat_line:  # 빨간 줄이 다 나온 뒤
+            sl = r.t.card.stat_line
+            sec = max(sec, min(s.start + sl.delay + len(s.item.stat_line) / sl.rate + 0.05, s.end - 1 / r.t.fps))
         path = out_dir / f"scene{s.index:02d}.png"
         r.frame_at(sec).save(path)
         built.append(SceneLayers(scene=s, base=path, preview=path))

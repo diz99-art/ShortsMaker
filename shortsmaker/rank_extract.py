@@ -38,6 +38,8 @@ class RankRow(BaseModel):
     record: str = ""     # 화면·카드 표기 (예: "16연패")
     year: str = ""       # 예: "2010"
     lyric: str = ""      # 근거 가사 (순위 구간 첫 줄)
+    scene: str = ""      # 캐리커처 장면 설명 (악수, 기자회견 등 — 사용자가 고침)
+    stat_line: str = ""  # 스티커형 빨간 기록 줄 (1~2줄, 줄바꿈 '\n')
     start: float | None = None  # 그 순위를 부르기 시작한 시각 (가사 맞추기 결과)
 
 
@@ -189,8 +191,9 @@ def extract_ranks(lines: list[LyricLine] | list[str]) -> list[RankRow]:
         team = find_team(" ".join(block))
         record = _record(head) or next((r for r in (_record(b) for b in block[1:3]) if r), "")
         year = next((m.group(1) for b in block for m in [_YEAR.search(b)] if m), "")
+        stat = display_text(items[i + 1][0]) if i + 1 < nxt else ""  # 기록 줄 초안: 순위 다음 가사 줄
         rows.append(RankRow(rank=rank, team=team.name if team else "", player=_player(head), record=record,
-                            year=year, lyric=items[i][0], start=items[i][1]))
+                            year=year, lyric=items[i][0], start=items[i][1], stat_line=stat))
     # 공동 순위로 설명되지 않는 빠진 순위만 빈 행 (공동 2위 2명이면 3위는 원래 없음)
     found = [r.rank for r in rows]
     for rank in range(1, 6):
@@ -217,6 +220,12 @@ def assign_slots(rows: list[RankRow]) -> list[RankRow]:
 
 def label(rows: list[RankRow], row: RankRow) -> str:
     return ("공동 " if sum(1 for r in rows if r.rank == row.rank) > 1 else "") + f"{row.rank}위"
+
+
+def missing_fields(row: RankRow) -> list[str]:
+    """표에서 사람이 채워야 할 칸. 가사에 구단 이름이 없고 별명('부산의 자존심')만 있으면 팀은 비워 둔다."""
+    names = {"team": "팀", "player": "선수", "record": "기록"}  # 연도는 선택 (없으면 카드에서 빠짐)
+    return [label for field, label in names.items() if not getattr(row, field).strip()]
 
 
 def rows_complete(rows: list[RankRow]) -> list[str]:
