@@ -943,6 +943,7 @@ def _sticker(path: Path, *, mock: bool) -> Image.Image:
 def credits_text(state: AutoState, d: Path) -> str:
     """영상 설명에 넣을 사진 출처 (CC BY / BY-SA 는 저작자·라이선스 표시 필요)."""
     rows = ["[사진 출처]"]
+    commons = False
     for r in state.rows:
         ps = state.players[r.slot]
         if not ps.folder:
@@ -951,10 +952,16 @@ def credits_text(state: AutoState, d: Path) -> str:
             continue
         meta = json.loads((d / ps.folder / "metadata.json").read_text(encoding="utf-8"))
         ph = meta["photo"]
+        if str(ph.get("title", "")).startswith("사용자 제공"):  # 같은 문구가 여러 칸에 반복되지 않게 한 번만
+            rows.append(f"{label(state.rows, r)} {r.player}: 사용자 제공 이미지 (사용 권한은 제작자가 확인)")
+            continue
+        commons = True
         rows.append(f"{label(state.rows, r)} {r.player}: {ph['title']} / 저작자 {ph.get('author') or '미상'} / "
                     f"{ph['license']} {ph.get('license_url', '')} / {ph['source']}".rstrip())
-    rows.append("MOCK 시험용 — 실제 영상에 쓰지 마세요." if state.mock else
-                "캐리커처는 위 사진을 바탕으로 AI로 변형한 2차 저작물입니다.")
+    if state.mock:
+        rows.append("MOCK 시험용 — 실제 영상에 쓰지 마세요.")
+    elif commons:  # 공용 사진을 바탕으로 했을 때만 (직접 그린 그림은 업로드 설명의 '캐리커처:' 줄로)
+        rows.append("캐리커처는 위 사진을 바탕으로 AI로 변형한 2차 저작물입니다.")
     cues, variant = used_sfx(state, d)
     if cues:
         from .sfx import credits_lines
@@ -1095,6 +1102,15 @@ def make_upload(state: AutoState, d: Path) -> dict:
     source = state.data_source_name + (f" {state.data_source_url}" if state.data_source_url else "")
     state.credits = credits_text(state, d)
     draft = upl.build(state.title, state.rows, data_source=source, credits=state.credits, gen_mode=state.gen_mode)
+    bo = state.bonus or {}
+    if bo.get("kind") == "rank":  # 영상 엔딩의 보너스 기록도 설명의 순위 목록 아래에
+        line = (f"번외 {bo['rank']}위 {bo['name']}" + (f" ({bo['team']})" if bo.get("team") else "")
+                + f" — {bo['value']}" + (f" ({bo['year']})" if bo.get("year") else ""))
+        desc = draft["description"]
+        last = max(desc.find(f"{label(state.rows, r)} {r.player}") for r in state.rows)
+        end = desc.find("\n", last) if last >= 0 else -1
+        if end >= 0:
+            draft["description"] = desc[:end + 1] + line + "\n" + desc[end + 1:]
     upl.write(d, draft)
     state.upload = draft
     save_state(state, d)
