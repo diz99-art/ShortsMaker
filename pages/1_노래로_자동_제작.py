@@ -169,7 +169,7 @@ else:
     if title2.strip() and title2.strip() != state.title:
         ap.set_title(state, D, title2)
         st.toast("제목 저장")
-    with st.expander("후킹 문구 · 엔딩 보너스 · 게이지 기준선 (선택)", expanded=bool(state.hook or state.bonus)):
+    with st.expander("후킹 문구 · 엔딩 보너스 · 그래프 기준선 (선택)", expanded=bool(state.hook or state.bonus)):
         e1, e2, e3 = st.columns([2, 3, 1])
         hook_in = e1.text_input("후킹 문구 (첫 2초)", state.hook, key="x_hook", placeholder="50홈런이 6위?!")
         b = state.bonus or {}
@@ -178,7 +178,7 @@ else:
                                    f"{b.get('year', '')}"))
         bonus_in = e2.text_input("엔딩 보너스 (출처에 있는 값만)", b_txt, key="x_bonus",
                                  placeholder="6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025  또는  예고 | 다음 편: …")
-        gauge_in = e3.text_input("게이지 기준선", state.gauge_base, key="x_gauge", placeholder="50홈런")
+        gauge_in = e3.text_input("그래프 기준선", state.gauge_base, key="x_gauge", placeholder="50홈런")
         from shortsmaker.mascot import auto_bubbles
         auto_b = auto_bubbles(state.mood)
         bb = st.columns(3)

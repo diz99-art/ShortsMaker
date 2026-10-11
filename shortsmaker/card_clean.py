@@ -1,0 +1,213 @@
+"""클린 스타일 카드 (시안 A·B) — Pretendard 하나, 단색 글자 + 은은한 그림자, 장식 없음.
+
+- 색: 채널 파랑(#0043C8) + 강조색 하나. 팀 색은 채도를 낮춰 배경 그라데이션에만
+- 1위만 작은 포인트 하나 (A: 순위 아래 강조색 짧은 밑줄, B: 강조색 작은 점)
+- 카드 비율은 941×1162 (화면 너비 75% 로 넣었을 때 아래 '@야구한장 구독'과 여백이 남게)
+
+A 'soft'  : 부드러운 팀 색 그라데이션 판 + 아래 흰 정보판 (둥근 모서리)
+B 'line'  : 흰 카드 + 얇은 테두리, 캐리커처 뒤 흐린 원, 큰 순위 숫자
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
+
+from .card_compose import FONT_BLACK
+from .models import FONTS_DIR
+from .rank_extract import team_colors
+from .scenes import _font, _hex
+
+W, H = 941, 1162
+BLUE = "#0043C8"
+INK = "#14171C"
+GRAY = "#6B7280"
+FONT_BOLD = FONTS_DIR / "Pretendard-Bold.otf"
+FONT_SEMI = FONTS_DIR / "Pretendard-SemiBold.otf"
+LOOKS = {"clean_a": "클린 A (부드러운 판)", "clean_b": "클린 B (흰 카드·라인)"}
+
+
+def _mix(a: str, b: str, f: float) -> tuple[int, int, int]:
+    x, y = _hex(a), _hex(b)
+    return tuple(round(x[i] + (y[i] - x[i]) * f) for i in range(3))
+
+
+def muted(color: str, amount: float = 0.72) -> tuple[int, int, int]:
+    """채도·명도를 낮춘 부드러운 팀 색 (회색빛 흰색과 섞음)."""
+    return _mix(color, "#EEF1F5", amount)
+
+
+def soft_text(text: str, size: int, color, font: Path = FONT_BLACK, shadow: int = 10, alpha: float = 0.22
+              ) -> Image.Image:
+    """단색 글자 + 은은한 그림자 (테두리 없음)."""
+    f = _font(str(font), size)
+    bb = f.getbbox(text)
+    pad = shadow * 3 + 4
+    w, h = bb[2] - bb[0] + 2 * pad, bb[3] - bb[1] + 2 * pad
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    org = (pad - bb[0], pad - bb[1])
+    if shadow:
+        m = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(m).text((org[0], org[1] + shadow // 2), text, font=f, fill=round(255 * alpha))
+        sh = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sh.putalpha(m.filter(ImageFilter.GaussianBlur(shadow / 2)))
+        img.alpha_composite(sh)
+    col = _hex(color) if isinstance(color, str) else tuple(color)
+    ImageDraw.Draw(img).text(org, text, font=f, fill=col + (255,))
+    return img.crop(img.getbbox())
+
+
+def _fit(text: str, size: int, max_w: int, color, font: Path = FONT_BLACK, **kw) -> tuple[Image.Image, int]:
+    im = soft_text(text, size, color, font, **kw)
+    while im.width > max_w and size > 24:
+        size = int(size * 0.92)
+        im = soft_text(text, size, color, font, **kw)
+    return im, size
+
+
+def _vgrad(size: tuple[int, int], top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
+    w, h = size
+    t = np.linspace(0, 1, h)[:, None, None]
+    rgb = np.broadcast_to(np.array(top) + (np.array(bottom) - np.array(top)) * t, (h, w, 3))
+    return Image.fromarray(np.concatenate([rgb, np.full((h, w, 1), 255)], axis=2).astype(np.uint8), "RGBA")
+
+
+def _rounded_mask(size: tuple[int, int], r: int) -> Image.Image:
+    m = Image.new("L", size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, size[0] - 1, size[1] - 1], radius=r, fill=255)
+    return m
+
+
+def _drop_shadow(card: Image.Image, mask: Image.Image, blur: int = 22, alpha: float = 0.16) -> None:
+    sh = Image.new("RGBA", card.size, (0, 0, 0, 0))
+    sh.putalpha(mask.point(lambda v: round(v * alpha)).filter(ImageFilter.GaussianBlur(blur)))
+    card.alpha_composite(sh, (0, 0))
+
+
+def _art(caricature, box: tuple[int, int]) -> Image.Image | None:
+    if caricature is None:
+        return None
+    if isinstance(caricature, Image.Image):
+        art = caricature.convert("RGBA")
+    else:
+        with Image.open(caricature) as im:
+            art = ImageOps.exif_transpose(im).convert("RGBA")
+    art = art.crop(art.getbbox() or (0, 0, *art.size))
+    return ImageOps.contain(art, box, Image.LANCZOS)
+
+
+def question_mark(size: int = 520) -> Image.Image:
+    """보너스 카드 그림 자리: 연한 회색 물음표 (장식 없이)."""
+    return soft_text("?", size, (197, 204, 214), FONT_BLACK, shadow=12, alpha=0.12)
+
+
+def record_image(text: str, size: int) -> Image.Image:
+    return soft_text(text, size, INK, FONT_BLACK, shadow=8, alpha=0.18)
+
+
+def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int, record: str, year: str, team: str,
+                  player: str, accent: str = "#F26A00", top: bool | None = None, tied: bool = False,
+                  rank_label: str | None = None, tag: str = "", omit_record: bool = False, meta: dict | None = None,
+                  layers: dict | None = None) -> Image.Image:
+    """클린 카드 (941×1162, 투명 바깥). tag: 작은 회색 라벨 (보너스 '번외')."""
+    top = rank == 1 if top is None else top
+    primary, _ = team_colors(team)
+    margin = 34                                  # 그림자 자리
+    cw, ch = W - 2 * margin, H - 2 * margin
+    L = {n: Image.new("RGBA", (W, H), (0, 0, 0, 0)) for n in ("back", "art", "front", "text")}
+    mask = Image.new("L", (W, H), 0)
+    mask.paste(_rounded_mask((cw, ch), 44), (margin, margin))
+    _drop_shadow(L["back"], mask)
+    label = rank_label or (("공동 " if tied else "") + f"{rank}위")
+    sub = " · ".join(x for x in (team, year if re.fullmatch(r"\d{4}", year or "") else "") if x)
+
+    if look == "clean_a":
+        panel_h = 360
+        art_h = ch - panel_h
+        panel = Image.new("RGBA", (cw, ch), (255, 255, 255, 255))  # 위: 부드러운 팀 색 그라데이션, 아래: 흰 정보판
+        panel.alpha_composite(_vgrad((cw, art_h), muted(primary, 0.80), muted(primary, 0.62)))
+        panel.putalpha(_rounded_mask((cw, ch), 44))
+        L["back"].alpha_composite(panel, (margin, margin))
+        art = _art(caricature, (cw - 40, art_h - 20))
+        if art is not None:
+            L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + art_h - art.height))
+        x0, y0 = margin + 48, margin + art_h + 40
+        rk, _ = _fit(label, 96, 420, BLUE)
+        L["text"].alpha_composite(rk, (x0, y0))
+        if top:  # 1위만: 순위 아래 강조색 짧은 밑줄
+            ImageDraw.Draw(L["text"]).rounded_rectangle([x0, y0 + rk.height + 12, x0 + 90, y0 + rk.height + 22],
+                                                        radius=5, fill=_hex(accent) + (255,))
+        rec, rsize = _fit(record, 132, cw - 96 - rk.width - 40, INK) if record else (None, 0)
+        if rec is not None:
+            rx, ry = margin + cw - 48 - rec.width, y0 + rk.height - rec.height
+            if not omit_record:
+                L["text"].alpha_composite(rec, (rx, ry))
+            if meta is not None:
+                meta.update(record=record, size=rsize, x=rx, y=ry, h=rec.height, team=team, design=look, rank=rank,
+                            top=top, align="right", right=rx + rec.width)
+        nm, _ = _fit(player or team, 64, cw - 96, INK, FONT_BOLD, shadow=0)
+        L["text"].alpha_composite(nm, (x0, y0 + 150))
+        if sub:
+            sb, _ = _fit(sub, 40, cw - 96, GRAY, FONT_SEMI, shadow=0)
+            L["text"].alpha_composite(sb, (x0, y0 + 150 + nm.height + 18))
+    else:  # clean_b
+        card_bg = Image.new("RGBA", (cw, ch), (255, 255, 255, 255))
+        card_bg.putalpha(_rounded_mask((cw, ch), 44))
+        L["back"].alpha_composite(card_bg, (margin, margin))
+        d = ImageDraw.Draw(L["back"])
+        cx, cy, r = W / 2, margin + ch * 0.40, cw * 0.40
+        blob = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(blob).ellipse([cx - r, cy - r, cx + r, cy + r], fill=muted(primary, 0.70) + (255,))
+        L["back"].alpha_composite(blob.filter(ImageFilter.GaussianBlur(2)))
+        d.rounded_rectangle([margin, margin, margin + cw - 1, margin + ch - 1], radius=44, outline=(222, 226, 232, 255),
+                            width=3)
+        art = _art(caricature, (cw - 80, int(ch * 0.68)))
+        if art is not None:
+            L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + int(ch * 0.74) - art.height))
+        x0 = margin + 48
+        num = re.match(r"^(공동\s*)?(\d+)(위.*)$", label)
+        big = soft_text(num.group(2) if num else label, 220, BLUE, FONT_BLACK, shadow=10, alpha=0.18)
+        L["text"].alpha_composite(big, (x0 - 6, margin + 30))
+        if num:
+            small = soft_text((num.group(1) or "") + num.group(3).strip(), 56, BLUE, FONT_BOLD, shadow=0)
+            L["text"].alpha_composite(small, (x0 + big.width + 8, margin + 30 + big.height - small.height - 10))
+        if top:  # 1위만: 강조색 작은 점
+            ImageDraw.Draw(L["text"]).ellipse([margin + cw - 70, margin + 50, margin + cw - 46, margin + 74],
+                                              fill=_hex(accent) + (255,))
+        y_info = margin + int(ch * 0.76)
+        rec, rsize = _fit(record, 140, cw - 96, INK) if record else (None, 0)
+        if rec is not None:
+            if not omit_record:
+                L["text"].alpha_composite(rec, (x0, y_info))
+            if meta is not None:
+                meta.update(record=record, size=rsize, x=x0, y=y_info, h=rec.height, team=team, design=look,
+                            rank=rank, top=top, align="left")
+        line = f"{player} · {sub}" if player and sub else (player or sub)
+        if line:
+            ln, _ = _fit(line, 46, cw - 96, GRAY, FONT_SEMI, shadow=0)
+            L["text"].alpha_composite(ln, (x0, y_info + (rec.height if rec is not None else 0) + 22))
+    if tag:
+        tg = soft_text(tag, 40, GRAY, FONT_BOLD, shadow=0)
+        pill = Image.new("RGBA", (tg.width + 44, tg.height + 26), (0, 0, 0, 0))
+        ImageDraw.Draw(pill).rounded_rectangle([0, 0, pill.width - 1, pill.height - 1], radius=pill.height // 2,
+                                               fill=(243, 244, 246, 255), outline=(222, 226, 232, 255), width=2)
+        pill.alpha_composite(tg, (22, 13))
+        L["text"].alpha_composite(pill, (margin + cw - pill.width - 40, margin + 40))
+    if layers is not None:
+        layers.update({n: im.copy() for n, im in L.items()})
+    out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for n in ("back", "art", "front", "text"):
+        out.alpha_composite(L[n])
+    return out
+
+
+def clean_bonus(look: str, *, rank: int | None, name: str, team: str, value: str, year: str, text: str = "",
+                kind: str = "rank", accent: str = "#F26A00") -> Image.Image:
+    """보너스 '?' 카드 (클린): 같은 카드 + 회색 물음표 + '번외' 라벨 (도장·기울기 없음)."""
+    if kind == "teaser":
+        return compose_clean(question_mark(), look, rank=rank or 6, record="", year="", team=team, player=text,
+                             rank_label="다음 편", tag="예고", top=False, accent=accent)
+    return compose_clean(question_mark(), look, rank=rank or 6, record=value, year=year, team=team, player=name,
+                         rank_label=f"{rank}위?", tag="번외", top=False, accent=accent)

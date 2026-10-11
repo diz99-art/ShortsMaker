@@ -92,7 +92,7 @@ def test_renderer_draws_mascot_and_chart(tmp_path, t):
     frame = np.asarray(r.frame_at(8.0))
     assert frame[y + msc.SIZE // 2 - 30:y + msc.SIZE // 2 + 30, x + 40:x + msc.SIZE - 40].std() > 10   # 마스코트가 그려짐
     st = r.state(round(29.5 * 30))
-    assert st[14] is not None and st[17][0] == "wave"                 # 그래프 장면 + 손 흔들기
+    assert st[13] is not None and st[16][0] == "wave"                 # 그래프 장면 + 손 흔들기
     assert r._chart_bounds()["right"] < x                              # 그래프가 마스코트 자리를 비움
     bars = fx.chart_bars(p.ordered_items)
     assert [b.value for b in bars] == [15, 14, 13, 12, 11] and bars[-1].top and bars[0].year == "2015"
@@ -145,15 +145,16 @@ def test_depth_frames_change(tmp_path, t):
     r = make_renderer(p, tmp_path, t, SONG)
     assert r._depth and not r.warnings
     a, b = r.frame_at(7.85), r.frame_at(8.9)            # 등장 끝(7.4초) 뒤 패럴랙스 0.4초 vs 1.5초
-    assert r.state(round(8.9 * 30))[15] is not None and a.tobytes() != b.tobytes()
+    assert r.state(round(8.9 * 30))[14] is not None and a.tobytes() != b.tobytes()
 
 
 # ---------------------------------------------------------------- 카드 크기·이름·연출
 
-def test_card_box_90_percent_same_center(t):
+def test_card_box_75_percent_width(t):
     b = t.card.card_box
-    assert (b.w, b.h) == (572, 1017) and b.x + b.w / 2 == 540 and b.y + b.h / 2 == pytest.approx(1335.5, abs=1)
-    assert b.x > 150 + 46                                             # 게이지(x 150~196)와 안 겹침
+    assert b.w == round(t.width * 0.75) and b.x + b.w / 2 == t.width / 2          # 화면 너비 75%, 가운데
+    assert b.y >= t.card.subtitle.y + t.card.subtitle.h                          # 자막 아래
+    assert b.y + b.h <= t.card.footer.button.y + t.card.footer.button.h
 
 
 def test_player_name_doubled(tmp_path):

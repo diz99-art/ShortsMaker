@@ -12,7 +12,7 @@ import random
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from .models import PROJECTS_DIR, Motion
 
@@ -30,10 +30,11 @@ MOTIONS = {"kenburns": "천천히 확대 (켄 번즈)", "float": "위아래 둥�
            "wobble": "살짝 흔들림", "none": "움직임 없음"}
 HOOKS = {"slam": "크게 '쾅' 찍히기", "drop": "위에서 떨어져 튕기기", "pop_words": "단어씩 팡팡"}
 BEATS = {"pulse": "박자마다 카드 펄스", "pulse_flash": "펄스 + 강한 구간 번쩍·흔들림", "off": "비트 효과 없음"}
-COUNTS = {"countup": "기록 숫자 카운트업", "countup_gauge": "카운트업 + 기준선 게이지", "static": "숫자 고정"}
+COUNTS = {"countup": "기록 숫자 카운트업", "static": "숫자 고정"}  # 예전 'countup_gauge'(게이지)는 없앰 → countup
 SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
 PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
 ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
+LOOKS = {"classic": "지금 스타일 (굵은 테두리·장식)", "clean_a": "클린 A (부드러운 판)", "clean_b": "클린 B (흰 카드·라인)"}
 MASCOTS = {"right": "마스코트 오른쪽 아래", "left": "마스코트 왼쪽 아래", "off": "마스코트 없음"}
 DATAGFX = {"bars": "1위 뒤 기록 막대그래프", "bars_years": "막대그래프 + 연도 타임라인", "off": "그래프 없음"}
 DEPTHS = {"pan": "2.5D 옆으로 흐르기", "dolly": "2.5D 다가가기", "off": "입체 없음"}
@@ -46,10 +47,11 @@ CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold
                 "neon": "네온", "breaking": "속보 LIVE"}
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
         "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
-        "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS}
+        "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS,
+        "look": LOOKS}
 OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none", "mascot": "off",
        "datagfx": "off", "depth": "off", "burst": "off"}  # 추천에서 빼는 값
-FIXED = ("design", "mascot")  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰, 마스코트는 기본 오른쪽 아래)
+FIXED = ("design", "mascot", "look")  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰, 마스코트는 기본 오른쪽 아래)
 RECENT = 5
 MIN_DIFF = 3  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
 
@@ -71,6 +73,12 @@ class Variation(BaseModel):
     datagfx: str = "off"
     depth: str = "off"
     burst: str = "off"
+    look: str = "classic"  # 전체 스타일 (클린 시안 A·B)
+
+    @field_validator("count", mode="before")
+    @classmethod
+    def _no_gauge(cls, v: str) -> str:
+        return "countup" if v == "countup_gauge" else v  # 게이지 바는 삭제됨 (예전 기록·프로젝트 호환)
 
     def describe(self) -> str:
         return " · ".join(f"{AXES[k][getattr(self, k)] if k != 'accent' else ACCENTS[self.accent]['label']}"

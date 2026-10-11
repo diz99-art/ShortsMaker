@@ -1,4 +1,4 @@
-"""시청 유지용 효과 — 후킹 문구, 비트 펄스, 기록 카운트업·게이지, 진행 표시, 엔딩 보너스 카드.
+"""시청 유지용 효과 — 후킹 문구, 비트 펄스, 기록 카운트업, 진행 표시, 엔딩 보너스 카드, 그래프, 키워드.
 
 card_mode.CardRenderer 가 프레임마다 부른다. 그리는 함수는 모두 같은 입력이면 같은 그림을 돌려준다
 (렌더러가 상태 값으로 프레임을 재사용하므로).
@@ -156,56 +156,6 @@ def count_frac(since: float) -> float:
     if x >= 1:
         return 1.0
     return 1 - (1 - x) ** 3
-
-
-# ---------------------------------------------------------------- 게이지
-
-@dataclass
-class Gauge:
-    base: float          # 기준선 값 (예: 50)
-    base_label: str      # '50홈런'
-    top: float           # 게이지 맨 위 값
-    x: int
-    y0: int              # 위
-    y1: int              # 아래
-    w: int = 46
-
-
-def make_gauge(base_label: str, values: list[float], content_top: int, footer_y: int) -> Gauge | None:
-    base = record_value(base_label)
-    if base is None or not values:
-        return None
-    top = max(values + [base]) * 1.08
-    return Gauge(base, base_label, top, x=150, y0=content_top + 430, y1=footer_y - 110)
-
-
-def draw_gauge(img: Image.Image, g: Gauge, value: float, team: str, hot: str, font_path: Path) -> None:
-    """세로 게이지: 기록만큼 차오르고, 기준선을 넘은 부분은 강조색."""
-    d = ImageDraw.Draw(img)
-    primary, secondary = team_colors(team)
-    h = g.y1 - g.y0
-
-    def y_of(v: float) -> float:
-        return g.y1 - h * min(max(v / g.top, 0), 1)
-
-    d.rounded_rectangle([g.x - 5, g.y0 - 5, g.x + g.w + 5, g.y1 + 5], radius=(g.w + 10) // 2,
-                        fill=(255, 255, 255, 255), outline=(17, 17, 17, 255), width=5)
-    yb = y_of(g.base)
-    yv = y_of(value)
-    if value > 0:
-        lo = max(yv, yb)
-        d.rounded_rectangle([g.x + 4, lo, g.x + g.w - 4, g.y1 - 4], radius=(g.w - 8) // 2, fill=_hex(primary) + (255,))
-        if yv < yb:  # 기준선을 넘은 부분
-            d.rectangle([g.x + 4, yv, g.x + g.w - 4, yb], fill=_hex(hot) + (255,))
-    # 기준선
-    d.line([g.x - 26, yb, g.x + g.w + 26, yb], fill=(226, 30, 30, 255), width=6)
-    f = _font(str(font_path), 34)
-    d.text((g.x - 32, yb), g.base_label, font=f, fill=(226, 30, 30, 255), anchor="rm",
-           stroke_width=4, stroke_fill=(255, 255, 255))
-    fv = _font(str(font_path), 44)
-    label = f"{value:g}" if value == int(value) else f"{value:.1f}"
-    d.text((g.x + g.w / 2, yv - 14), label, font=fv, fill=(17, 17, 17, 255), anchor="mb",
-           stroke_width=5, stroke_fill=(255, 255, 255))
 
 
 # ---------------------------------------------------------------- 진행 표시
@@ -385,7 +335,7 @@ def chart_bars(items) -> list[ChartBar]:
 
 def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float | None, base_label: str,
                years: bool, hot: str, accent: tuple[str, ...], font_path: Path, top_y: int, bottom_y: int,
-               left: int = 90, right: int | None = None) -> None:
+               left: int = 90, right: int | None = None, clean: bool = False) -> None:
     """막대그래프 (기준선 포함). t: 장면 시작 뒤 초 (막대가 차례로 자람)."""
     if not bars:
         return
@@ -401,7 +351,8 @@ def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float 
     f_val = _font(str(font_path), 48)
     f_name = _font(str(font_path), 40)
     f_small = _font(str(font_path), 32)
-    d.line([left - 20, axis_y, right + 20, axis_y], fill=(17, 17, 17, 255), width=6)
+    d.line([left - 20, axis_y, right + 20, axis_y], fill=(200, 204, 212, 255) if clean else (17, 17, 17, 255),
+           width=3 if clean else 6)
     for i, b in enumerate(bars):
         grow = min(1.0, max(0.0, (t - 0.08 * i) / CHART_GROW))
         grow = 1 - (1 - grow) ** 3
@@ -410,22 +361,28 @@ def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float 
         primary, secondary = team_colors(b.team)
         x0, x1 = cx - bw / 2, cx + bw / 2
         if h > 2:
-            d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=12, fill=_hex(primary) + (255,),
-                                outline=_hex(hot) + (255,) if b.top else (17, 17, 17, 255),
-                                width=10 if b.top else 5)
+            if clean:  # 클린: 테두리 없이 채널 파랑 막대, 1위만 강조색
+                d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=14,
+                                    fill=_hex(hot if b.top else "#9DB4E6") + (255,))
+            else:
+                d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=12, fill=_hex(primary) + (255,),
+                                    outline=_hex(hot) + (255,) if b.top else (17, 17, 17, 255),
+                                    width=10 if b.top else 5)
         val = b.value * grow
         txt = f"{val:.0f}" if b.value == int(b.value) else f"{val:.1f}"
-        d.text((cx, axis_y - h - 12), txt, font=f_val, fill=(17, 17, 17, 255), anchor="mb", stroke_width=5,
-               stroke_fill=(255, 255, 255))
+        d.text((cx, axis_y - h - 12), txt, font=f_val, fill=(17, 17, 17, 255), anchor="mb",
+               stroke_width=0 if clean else 5, stroke_fill=(255, 255, 255))
         d.text((cx, axis_y + 14), b.name, font=f_name, fill=(17, 17, 17, 255), anchor="mt")
         d.text((cx, axis_y + 62), b.label, font=f_small, fill=_hex(hot) + (255,) if b.top else (90, 90, 90, 255),
                anchor="mt")
     if base:
         yb = axis_y - hmax * base / maxv
-        for x in range(left - 20, right + 20, 36):  # 점선
-            d.line([x, yb, x + 20, yb], fill=(226, 30, 30, 255), width=6)
-        d.text((right + 20, yb - 8), base_label, font=f_small, fill=(226, 30, 30, 255), anchor="rb", stroke_width=4,
-               stroke_fill=(255, 255, 255))
+        for x in range(left - 20, right + 10, 36):  # 점선
+            d.line([x, yb, x + 20, yb], fill=(170, 176, 186, 255) if clean else (226, 30, 30, 255),
+                   width=3 if clean else 6)
+        red = (150, 156, 166, 255) if clean else (226, 30, 30, 255)
+        d.text((right + 24, yb), base_label, font=f_small, fill=red, anchor="lm",  # 그래프 오른쪽 바깥
+               stroke_width=0 if clean else 4, stroke_fill=(255, 255, 255))
     if years:  # 연도 타임라인: 축 위에 선수별 점
         ys = [int(b.year) for b in bars if b.year]
         if ys:
@@ -452,18 +409,33 @@ BURST_GAP = 5.0          # 터뜨림 사이 최소 간격
 BURST_MAX = 3
 
 
+KEYWORDS = ("역대 최고", "역대 최다", "역대 최초", "신기록", "최초", "최고", "최다", "최악", "레전드", "전설", "반전", "충격")
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[\s?!.,…~]+", "", t)
+
+
 def pick_bursts(lines, times_of, names: list[str], strong: list[tuple[float, float]],
-                blocked: list[tuple[float, float]]) -> list[tuple[float, str]]:
-    """강한 구간(후렴)에서 숫자·순위·선수 이름을 부르는 순간 (간격 BURST_GAP 이상, 최대 BURST_MAX 번)."""
-    pat = re.compile(r"(공동\s*\d위|\d+위|\d[\d,]*(?:\.\d+)?[가-힣%]*" + "".join(f"|{re.escape(n)}" for n in names if n)
-                     + ")")
+                blocked: list[tuple[float, float]], on_cards: list[str] | None = None) -> list[tuple[float, str]]:
+    """강한 구간(후렴)에서 숫자·순위·핵심 단어('역대 최고' 등)를 부르는 순간. 간격 BURST_GAP 이상, 최대 BURST_MAX 번.
+
+    on_cards: 카드에 이미 크게 나오는 글자(기록·이름·순위·팀·연도) — 같은 말이면 터뜨리지 않는다."""
+    words = sorted(KEYWORDS, key=len, reverse=True)
+    pat = re.compile(r"(공동\s*\d위[?!]*|\d+위[?!]*|\d[\d,]*(?:\.\d+)?[가-힣%]*[?!]*"
+                     + "".join(f"|{re.escape(w)}[?!]*" for w in words)
+                     + "".join(f"|{re.escape(n)}" for n in names if n) + ")")
+    card_words = {_norm(w) for c in (on_cards or []) for w in [c, *c.split()] if w}
     cands = []
     for li, l in enumerate(lines):
         ts = times_of(li)
         for m in pat.finditer(l.text):
+            word = m.group(1)
+            if _norm(word) in card_words:
+                continue  # 카드 숫자·이름과 같은 말은 생략
             t = ts[m.start()] if m.start() < len(ts) else l.start
             if any(a <= t < b for a, b in strong) and not any(a - 0.3 <= t < b for a, b in blocked):
-                cands.append((t, m.group(1)))
+                cands.append((t, word))
     out: list[tuple[float, str]] = []
     for t, word in sorted(cands):
         if len(out) < BURST_MAX and (not out or t - out[-1][0] >= BURST_GAP):
@@ -471,13 +443,48 @@ def pick_bursts(lines, times_of, names: list[str], strong: list[tuple[float, flo
     return out
 
 
-def burst_image(word: str, accent: tuple[str, ...], max_w: int) -> Image.Image:
+def burst_image(word: str, accent: tuple[str, ...], max_w: int, max_h: int | None = None) -> Image.Image:
     size = 260
     im = styled_text(word, size, accent, stroke="#3B0A00", stroke_w=14, outer="#FFFFFF", outer_w=9, skew=0.12)
-    while im.width > max_w and size > 80:
+    while (im.width > max_w or (max_h and im.height > max_h)) and size > 60:
         size = int(size * 0.9)
         im = styled_text(word, size, accent, stroke="#3B0A00", stroke_w=14, outer="#FFFFFF", outer_w=9, skew=0.12)
     return im
+
+
+def clean_burst_image(word: str, accent: str, max_w: int, max_h: int) -> Image.Image:
+    """클린: 채널 파랑 굵은 글씨 + 강조색 밑줄 하이라이트."""
+    return marker_text(word, "#0043C8", accent, max_w, max_h, size=170)
+
+
+def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | None = None, size: int = 150
+                ) -> Image.Image:
+    """굵은 글씨 + 아래쪽 절반에 형광펜처럼 깔린 강조색 띠 (줄마다)."""
+    from .card_clean import soft_text
+    lines = [l.strip() for l in re.split(r"\n| / ", text) if l.strip()][:2] or [text]
+    while True:
+        imgs = [soft_text(l, size, color, shadow=8, alpha=0.15) for l in lines]
+        tw = max(i.width for i in imgs)
+        th = sum(i.height for i in imgs) + 24 * (len(imgs) - 1)
+        if (tw <= max_w and (not max_h or th + 20 <= max_h)) or size <= 50:
+            break
+        size = int(size * 0.92)
+    out = Image.new("RGBA", (tw + 40, th + 20), (0, 0, 0, 0))
+    d = ImageDraw.Draw(out)
+    y = 0
+    for im in imgs:
+        x = (out.width - im.width) // 2
+        hy = y + im.height * 0.55
+        d.rounded_rectangle([x - 14, hy, x + im.width + 14, y + im.height + 8], radius=10,
+                            fill=_hex(accent) + (110,))
+        out.alpha_composite(im, (x, y))
+        y += im.height + 24
+    return out
+
+
+def clean_hook_image(text: str, accent: str, width: int) -> Image.Image:
+    """클린 후킹: 폭발 도형 대신 굵은 글씨 + 강조색 밑줄 하이라이트."""
+    return marker_text(text, "#14171C", accent, width - 120, size=150)
 
 
 def burst_frame(style: str, t: float) -> tuple[float, float, float]:

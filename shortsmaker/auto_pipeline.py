@@ -102,7 +102,7 @@ class AutoState(BaseModel):
     variation: dict | None = None
     hook: str = ""                         # 후킹 문구 (첫 0~2초)
     bonus: dict | None = None              # 엔딩 보너스 (models.Bonus)
-    gauge_base: str = ""                   # 게이지 기준선 ('50홈런')
+    gauge_base: str = ""                   # 막대그래프 기준선 ('50홈런')
     mood: str = ""                         # 카드 분위기 (card_design.MOODS)
     bubbles: dict[str, str] = Field(default_factory=dict)  # 마스코트 말풍선 (사람이 준 것, 빈 칸은 자동)
     mood_reason: str = ""
@@ -348,7 +348,7 @@ def set_title(state: AutoState, d: Path, title: str) -> None:
 
 def set_extras(state: AutoState, d: Path, *, hook: str | None = None, bonus: dict | None | Literal[False] = False,
                gauge_base: str | None = None, bubbles: dict[str, str] | None = None) -> None:
-    """후킹 문구·엔딩 보너스·게이지 기준선 (None/False 는 그대로 둠, bonus=None 은 지움). 보너스 값은 출처에 있는 값만."""
+    """후킹 문구·엔딩 보너스·그래프 기준선 (None/False 는 그대로 둠, bonus=None 은 지움). 보너스 값은 출처에 있는 값만."""
     from .models import Bonus
     changes = {}
     if hook is not None and hook.strip() != state.hook:
@@ -360,7 +360,7 @@ def set_extras(state: AutoState, d: Path, *, hook: str | None = None, bonus: dic
     if gauge_base is not None and gauge_base.strip() != state.gauge_base:
         g = gauge_base.strip()
         if g and not re.search(r"\d", g):
-            raise FlowError("게이지 기준선에 숫자가 없습니다 (예: 50홈런)")
+            raise FlowError("그래프 기준선에 숫자가 없습니다 (예: 50홈런)")
         changes["gauge_base"] = state.gauge_base = g
     if bubbles is not None:
         from .mascot import SLOTS, bubble_problem
@@ -888,8 +888,17 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
             kw = dict(rank=r.rank, record=r.record, year=r.year, team=r.team, player=r.player, mock=state.mock,
                       tied=label(state.rows, r).startswith("공동"),
                       rank_fill=ACCENTS[Variation.model_validate(state.variation).accent]["rank"])
-            design = Variation.model_validate(state.variation).design
-            if design:  # 분위기별 카드 디자인 (팀 색, 1위는 더 화려하게)
+            vv = Variation.model_validate(state.variation)
+            design = vv.design
+            if vv.look in ("clean_a", "clean_b"):  # 클린 스타일 (단색 글자·장식 없음, 1위만 작은 포인트)
+                from functools import partial
+
+                from .card_clean import compose_clean
+                kw.pop("rank_fill")
+                kw.pop("mock")
+                make = partial(compose_clean, look=vv.look, accent=ACCENTS[vv.accent]["stat"])
+                design = vv.look  # 층(2.5D) 저장도 같이
+            elif design:  # 분위기별 카드 디자인 (팀 색, 1위는 더 화려하게)
                 from functools import partial
 
                 from .card_design import compose_designed

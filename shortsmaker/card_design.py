@@ -1021,6 +1021,9 @@ def record_text_for(design: str | None, text: str, size: int, team: str, rank: i
                     top: bool | None = None) -> Image.Image:
     """카운트업용 기록 글자 (카드와 같은 디자인 효과)."""
     from .card_compose import record_text
+    if design in ("clean_a", "clean_b"):
+        from .card_clean import record_image
+        return record_image(text, size)
     if not design or design not in DESIGNS:
         return record_text(text, size, team)
     p, s = team_colors(team)

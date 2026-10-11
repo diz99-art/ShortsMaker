@@ -423,7 +423,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                                                        volume=MIX_GAIN[kind]), names[kind])
     return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
             "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."
-            + (" 비트 펄스·기록 카운트업·게이지는 CapCut 초안에 없습니다 (MP4 에만)." if v.beat != "off" or v.count != "static"
+            + (" 비트 펄스·기록 카운트업은 CapCut 초안에 없습니다 (MP4 에만)." if v.beat != "off" or v.count != "static"
                else "")
             + (" 2.5D 입체·마스코트 까딱은 CapCut 초안에 없습니다." if v.depth != "off" or v.mascot != "off" else "")]
 

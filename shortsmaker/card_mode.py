@@ -234,11 +234,10 @@ def chart_start(project: Project, top_start: float, b_start: float | None, fps: 
 
 
 def hook_length(project: Project, scenes: list[Scene]) -> float:
-    """후킹 문구 시간. 인트로가 짧으면 줄인다 (로고·제목이 1초는 보이게). 문구가 없으면 0."""
+    """후킹 문구 시간: 인트로 전체 (후킹 다음 로고 인트로 없이 바로 5위). 문구가 없으면 0 (로고 인트로)."""
     if not project.hook.strip() or not scenes:
         return 0.0
-    room = scenes[0].duration - 1.0
-    return round(min(HOOK_LEN, room), 2) if room >= 1.0 else 0.0
+    return round(scenes[0].duration, 3) if scenes[0].duration >= 1.0 else 0.0  # 후킹 → 바로 5위 (로고 인트로 없음)
 
 
 def sfx_cues(project: Project, t: Template, scenes: list[Scene]) -> list[Cue]:
@@ -506,10 +505,10 @@ def render_subtitle(layout: SubtitleLayout, visible_chars: int, st: TypingSubtit
     sx, sy = st.shadow_offset
     shadow = Image.new("RGBA", canvas, (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
-    alpha = round(255 * st.shadow_opacity)
+    sh_a = round(255 * st.shadow_opacity)  # (예전에는 alpha 를 덮어써서 줄 떠오르기 투명도가 안 먹었음)
     for s, x, y in parts:
-        sd.text((x + sx, y + sy), s, font=font, fill=_hex(st.shadow_color) + (alpha,), anchor="la",
-                stroke_width=st.stroke_width, stroke_fill=_hex(st.shadow_color) + (alpha,))
+        sd.text((x + sx, y + sy), s, font=font, fill=_hex(st.shadow_color) + (sh_a,), anchor="la",
+                stroke_width=st.stroke_width, stroke_fill=_hex(st.shadow_color) + (sh_a,))
     if st.shadow_blur > 0:
         shadow = shadow.filter(ImageFilter.GaussianBlur(st.shadow_blur))
     layer.alpha_composite(shadow)
@@ -603,10 +602,20 @@ class CardRenderer:
     warnings: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        self.v = Variation.model_validate(self.project.variation or {})
+        self.clean = self.v.look in ("clean_a", "clean_b")
+        if self.clean:  # 클린: 자막은 단색 + 은은한 그림자 (두꺼운 테두리 없음), 흔들림은 1위만
+            st0 = self.t.card.subtitle
+            st0 = st0.model_copy(update=dict(color="#14171C", stroke_width=0, shadow_offset=(0, 5),
+                                             shadow_color="#000000", shadow_opacity=0.16, shadow_blur=6))
+            self.t = self.t.model_copy(update={"card": self.t.card.model_copy(update={"subtitle": st0})})
+            calm = {"beat": "pulse" if self.v.beat != "off" else "off",
+                    "motion": self.v.motion if self.v.motion in ("kenburns", "float", "none") else "kenburns",
+                    "ending": {"punch": "stamp", "slide": "slide", "pop": "pop"}.get(self.v.transition, "stamp")}
+            self.v = self.v.model_copy(update=calm)
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
         self.base, self.head = render_chrome(t, self.project)
-        self.v = Variation.model_validate(self.project.variation or {})
         card_m, card_dx, self.flash = transition_motion(self.v.transition, c.card_motion)
         intro_m, intro_dx = intro_motion(self.v.intro, c.intro_motion)
         self.title_card = render_title_card(t, self.project) if self.v.intro == "title_card" else None
@@ -659,8 +668,11 @@ class CardRenderer:
         self.hook_len = hook_length(self.project, self.scenes)
         if self.project.hook.strip() and not self.hook_len:
             self.warnings.append("인트로가 짧아 후킹 문구를 넣지 못했습니다")
-        self.hook_img = (fx.hook_image(self.project.hook, self.accent_rank, self.stat_color or "#EB1B1B", t.width)
-                         if self.hook_len else None)
+        self.hook_img = None
+        if self.hook_len:
+            self.hook_img = (fx.clean_hook_image(self.project.hook, self.stat_color or "#F26A00", t.width) if self.clean
+                             else fx.hook_image(self.project.hook, self.accent_rank, self.stat_color or "#EB1B1B",
+                                                t.width))
         if self.project.bonus is not None and not any(s.kind == "bonus" for s in self.scenes):
             self.warnings.append("1위 장면 뒤 시간이 모자라 보너스 장면을 넣지 못했습니다 (영상 끝을 '반주 끝까지'로 해 보세요)")
         # 비트 (카드 펄스·마스코트 까딱·키워드 터뜨리기가 같이 씀)
@@ -672,16 +684,6 @@ class CardRenderer:
             except Exception as e:  # noqa: BLE001 — 비트 분석이 안 되면 효과만 빼고 렌더
                 self.warnings.append(f"비트 분석 실패로 비트 효과를 뺐습니다: {e}")
         self.beats = self.beatmap if self.v.beat != "off" else None   # 카드 펄스용
-        # 게이지
-        self.gauge = None
-        if self.v.count == "countup_gauge" and self.project.gauge_base:
-            vals = [x for x in (fx.record_value(i.value) for i in self.project.items) if x is not None]
-            floor = c.footer.button.y
-            if self.v.mascot == "left":  # 왼쪽 마스코트 위에서 게이지가 끝나게
-                floor = min(floor, c.footer.button.y + c.footer.button.h - msc.SIZE + 60)
-            self.gauge = fx.make_gauge(self.project.gauge_base, vals, c.content_top, floor)
-            if self.gauge is None:
-                self.warnings.append(f"게이지 기준선 '{self.project.gauge_base}'에서 숫자를 찾지 못했습니다")
         self._label_font = t.font_path("black")
         self.cues = sfx_cues(self.project, t, self.scenes)
         if self.v.depth != "off" and not self._depth:
@@ -720,8 +722,11 @@ class CardRenderer:
         if self.v.burst != "off":
             strong = self.beatmap.strong if self.beatmap is not None else []
             blocked = [(sc.start, sc.end) for sc in self.scenes if sc.kind in ("intro", "chart", "bonus")]
-            self.bursts = fx.pick_bursts(self.lines, lambda i: char_times(self.lines[i]),
-                                         [i.name for i in self.project.items], strong, blocked)
+            on_cards = [x for i in self.project.items
+                        for x in (i.value, i.name, f"{i.shown_rank}위", i.description or "")] + \
+                       ([self.project.bonus.value, self.project.bonus.name] if self.project.bonus else [])
+            self.bursts = fx.pick_bursts(self.lines, lambda i: char_times(self.lines[i]), [], strong, blocked,
+                                         on_cards=on_cards)
         self._cache_key = None
         self._cache_frame: Image.Image | None = None
 
@@ -731,6 +736,11 @@ class CardRenderer:
                                           c.card_motion)
         art = self.project_dir / bo.image if bo.image and (self.project_dir / bo.image).is_file() else None
         self.bonus_off: MovingLayer | None = None
+        if self.clean:  # 클린: 같은 카드 + 회색 물음표 + '번외' (도장·기울기·깜빡임 없음)
+            from .card_clean import clean_bonus
+            card = clean_bonus(self.v.look, rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year,
+                               text=bo.text, kind=bo.kind, accent=self.stat_color or "#F26A00")
+            return MovingLayer(card, c.card_box, motion, t.fps, c.content_top, self.canvas, dx=dx)
         if self.v.design:  # 영상 카드와 같은 디자인 + 반전 ('6위?!', '근데…', 기울기, 조명 꺼짐)
             from .card_design import compose_bonus
             kw = dict(rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year, text=bo.text, art=art)
@@ -752,7 +762,8 @@ class CardRenderer:
             m = self._counts[idx]
             card = m["base_img"].copy()
             rec = record_text_for(m.get("design"), text, m["size"], m.get("team", ""), m.get("rank", 5), m.get("top"))
-            card.alpha_composite(rec, (m["x"], m["y"] + m["h"] - rec.height))
+            x = m["right"] - rec.width if m.get("align") == "right" else m["x"]  # 오른쪽 정렬 기록 (클린 A)
+            card.alpha_composite(rec, (x, m["y"] + m["h"] - rec.height))
             if len(self._count_layers) > 40:
                 self._count_layers.clear()
             self._count_layers[key] = self.layers[idx].variant(card)
@@ -829,18 +840,13 @@ class CardRenderer:
         pulse = None
         if card_scene and self.beats is not None and anim is None:
             pulse = fx.pulse_state(self.beats, sec, fps, self.v.beat == "pulse_flash")
-        # 기록 카운트업 (게이지도 같은 값으로)
+        # 기록 카운트업
         count = None
         if sc.kind == "bonus" and getattr(self, "bonus_off", None) is not None and since >= 0:
             count = "off" if fx.bonus_flicker(since / fps) else None   # 디자인별 반전: 꺼졌다 켜짐
         if sc.index in self._counts and since >= 0:
             frac = fx.count_frac(since / fps)
             count = fx.count_text(self._counts[sc.index]["record"], frac) if frac < 1 else None
-        gauge_v = None
-        if self.gauge is not None and sc.kind == "rank":
-            val = fx.record_value(sc.item.value) or 0.0
-            cur = val * fx.count_frac(max(since, 0) / fps) if since >= 0 else 0.0
-            gauge_v = float(round(cur)) if val == int(val) else round(cur, 1)  # 정수 기록은 정수로 올라감
         # 진행 표시
         prog = None
         if self.v.progress != "none":
@@ -886,14 +892,14 @@ class CardRenderer:
             mas = (self.mascot.expr_at(sec), ang if abs(ang) >= 0.3 else 0.0,
                    None if bub is None else (bub[0], min(round(bub[1] * fps), 4)))
         return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise, idle, hook, pulse, count,
-                gauge_v, prog, chart, depth, burst, mas)
+                prog, chart, depth, burst, mas)
 
     def frame(self, frame_no: int) -> Image.Image:
         key = self.state(frame_no)
         if key == self._cache_key and self._cache_frame is not None:
             return self._cache_frame
-        (idx, anim, line_i, shown, intro, stat, flash, rise, idle, hook, pulse, count, gauge_v, prog, chart, depth,
-         burst, mas) = key
+        (idx, anim, line_i, shown, intro, stat, flash, rise, idle, hook, pulse, count, prog, chart, depth, burst,
+         mas) = key
         fps = self.t.fps
         img = self.base.convert("RGBA")
         sc = self.scenes[idx]
@@ -907,7 +913,7 @@ class CardRenderer:
             fx.draw_chart(img, self.chart_bars, chart / fps, base=self.chart_base, base_label=self.project.gauge_base,
                           years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
                           accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
-                          bottom_y=c.footer.button.y - 30, **self._chart_bounds())
+                          bottom_y=c.footer.button.y - 30, clean=self.clean, **self._chart_bounds())
         else:
             transform = None
             if idle is not None:
@@ -932,8 +938,6 @@ class CardRenderer:
                 self._draw_fitted(img, self.layers[idx], self._depth_card(idx, depth / fps, count), transform)
             else:
                 layer.draw(img, None if anim is None else anim / fps, transform)
-        if gauge_v is not None:
-            fx.draw_gauge(img, self.gauge, gauge_v, sc.item.description, self.stat_color or "#EB1B1B", self._label_font)
         if flash is not None or pflash:  # 흰 섬광이 사라짐 (구분선 아래만). 1위 번쩍은 TOP_FLASH 초
             a = 0.0
             if flash is not None:
@@ -943,8 +947,6 @@ class CardRenderer:
             white = Image.new("RGBA", self.canvas, (255, 255, 255, 0))
             white.paste((255, 255, 255, round(255 * a)), (0, self.t.card.content_top, self.canvas[0], self.canvas[1]))
             img.alpha_composite(white)
-        if burst is not None:
-            self._draw_burst(img, burst[0], burst[1] / fps)
         img.alpha_composite(self.head)
         if mas is not None:
             self._draw_mascot(img, mas)
@@ -959,7 +961,9 @@ class CardRenderer:
                 self._sub_cache[ck] = render_stat(self._stats[idx], stat, self.t.card.stat_line, self.canvas,
                                                   self.stat_color)
             img.alpha_composite(self._sub_cache[ck])
-        if line_i is not None and shown:
+        if burst is not None:  # 키워드는 자막 자리에 크게 (카드와 안 겹치게), 그동안 자막은 쉼
+            self._draw_burst(img, burst[0], burst[1] / fps)
+        elif line_i is not None and shown:
             ck = ("sub", line_i, shown, intro, rise)  # 그림이 프레임마다 움직여도 자막 레이어는 다시 쓰기
             if ck not in self._sub_cache:
                 if len(self._sub_cache) > 64:
@@ -996,7 +1000,8 @@ class CardRenderer:
                                            m.get("rank", 5), m.get("top"))
                     rec = full.resize((max(1, round(full.width * k)), max(1, round(full.height * k))), Image.LANCZOS)
                     self._sub_cache[key] = rec
-                im.alpha_composite(rec, (round(m["x"] * k), round((m["y"] + m["h"]) * k) - rec.height))
+                x = m["right"] * k - rec.width if m.get("align") == "right" else m["x"] * k
+                im.alpha_composite(rec, (round(x), round((m["y"] + m["h"]) * k) - rec.height))
             sc_, dx = moves[n]
             if abs(sc_ - 1) > 1e-3:
                 w, h = round(size[0] * sc_), round(size[1] * sc_)
@@ -1023,26 +1028,33 @@ class CardRenderer:
 
     def _draw_burst(self, img: Image.Image, i: int, t: float) -> None:
         if i not in self._burst_imgs:
-            self._burst_imgs[i] = fx.burst_image(self.bursts[i][1], self.accent_rank, self.canvas[0] - 80)
+            word, st_ = self.bursts[i][1], self.t.card.subtitle
+            self._burst_imgs[i] = (fx.clean_burst_image(word, self.stat_color or "#F26A00", st_.w + 160, st_.h + 40)
+                                   if self.clean else
+                                   fx.burst_image(word, self.accent_rank, st_.w + 160, max_h=st_.h + 40))
         src = self._burst_imgs[i]
-        s, ang, alpha = fx.burst_frame(self.v.burst, t)
+        s, ang, alpha = fx.burst_frame("zoom" if self.clean else self.v.burst, t)
         im = src.resize((max(1, round(src.width * s)), max(1, round(src.height * s))), Image.BICUBIC)
         if ang:
             im = im.rotate(ang, resample=Image.BICUBIC, expand=True)
         if alpha < 1:
             im.putalpha(im.getchannel("A").point(lambda v: round(v * alpha)))
-        c = self.t.card
-        cy = (c.content_top + c.footer.button.y) / 2 + 60
+        st_ = self.t.card.subtitle
+        cy = st_.y + st_.h / 2
         MovingLayer._paste(img, im, round(self.canvas[0] / 2 - im.width / 2), round(cy - im.height / 2))
 
     def _chart_bounds(self) -> dict:
         """그래프 좌우 끝: 마스코트 자리는 비워 둔다 (말풍선과 겹치지 않게)."""
+        label_w = 0  # 기준선 글씨는 그래프 오른쪽 바깥에 (1위 막대 숫자와 안 겹치게)
+        if self.chart_base and self.project.gauge_base:
+            label_w = round(_font(str(self._label_font), 32).getlength(self.project.gauge_base)) + 30
+        right = self.canvas[0] - 50 - label_w
         if self.mascot is None:
-            return {"left": 90, "right": self.canvas[0] - 90}
+            return {"left": 90, "right": right}
         x, _ = self._mascot_box()
         if self.v.mascot == "left":
-            return {"left": x + msc.SIZE + 40, "right": self.canvas[0] - 90}
-        return {"left": 90, "right": x - 40}
+            return {"left": x + msc.SIZE + 40, "right": right}
+        return {"left": 90, "right": min(right, x - 40)}
 
     def _mascot_box(self) -> tuple[int, int]:
         """마스코트 왼쪽 위 좌표. 오른쪽(기본)/왼쪽 아래, 자막(위쪽)·카드와 안 겹치게."""
@@ -1076,8 +1088,18 @@ class CardRenderer:
             img.alpha_composite(b, (max(0, bx), max(0, y - b.height + 20)))
 
     def _draw_hook(self, img: Image.Image, t: float) -> None:
-        """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간."""
+        """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음)."""
         c = self.t.card
+        if self.clean:
+            h = self.hook_img
+            k = min(1.0, t / 0.3)
+            a = fx.hook_alpha(t, self.hook_len) * k
+            im = h if a >= 1 else h.copy()
+            if a < 1:
+                im.putalpha(im.getchannel("A").point(lambda v: round(v * a)))
+            cy = (c.content_top + c.footer.button.y) / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 40
+            MovingLayer._paste(img, im, round(self.canvas[0] / 2 - im.width / 2), round(cy - im.height / 2))
+            return
         h = self.hook_img
         cx = self.canvas[0] / 2
         cy = (c.content_top + c.footer.button.y) / 2 + 40

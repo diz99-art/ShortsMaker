@@ -193,7 +193,8 @@ def test_capcut_card_draft(tmp_path, t):
     starts = [round(s["target_timerange"]["start"] / 1e6, 3) for s in tracks["로고·카드"]["segments"]]
     assert starts == [0.0] + [round(s + 1 / FPS, 3) for s in (6, 10, 14, 18, 22)]  # 빈 프레임 1개 뒤
     card = tracks["로고·카드"]["segments"][1]
-    assert card["clip"]["transform"]["y"] == pytest.approx((960 - (770 + 565)) / 960, abs=1e-3)
+    box = t.card.card_box
+    assert card["clip"]["transform"]["y"] == pytest.approx((960 - (box.y + box.h / 2)) / 960, abs=1e-3)
     assert card["common_keyframes"]
     assert len(tracks["자막"]["segments"]) == len(SONG)
 
