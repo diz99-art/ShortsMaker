@@ -34,7 +34,8 @@ COUNTS = {"countup": "기록 숫자 카운트업", "static": "숫자 고정"}  #
 SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
 PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
 ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
-LOOKS = {"classic": "지금 스타일 (굵은 테두리·장식)", "clean_a": "클린 A (부드러운 판)", "clean_b": "클린 B (흰 카드·라인)"}
+LOOKS = {"clean_a": "클린 A (기본)", "clean_b": "클린 B (흰 카드·라인)", "classic": "화려한 스타일 (예전, 선택)"}
+DEFAULT_LOOK = "clean_a"   # 새 영상 기본 스타일 (2026-10-11 사용자 결정). 예전 프로젝트는 look 이 없으면 classic
 MASCOTS = {"right": "마스코트 오른쪽 아래", "left": "마스코트 왼쪽 아래", "off": "마스코트 없음"}
 DATAGFX = {"bars": "1위 뒤 기록 막대그래프", "bars_years": "막대그래프 + 연도 타임라인", "off": "그래프 없음"}
 DEPTHS = {"pan": "2.5D 옆으로 흐르기", "dolly": "2.5D 다가가기", "off": "입체 없음"}
@@ -73,7 +74,7 @@ class Variation(BaseModel):
     datagfx: str = "off"
     depth: str = "off"
     burst: str = "off"
-    look: str = "classic"  # 전체 스타일 (클린 시안 A·B)
+    look: str = "classic"  # 전체 스타일. 새 영상은 suggest() 가 DEFAULT_LOOK(클린 A) — 값이 없는 예전 기록은 classic
 
     @field_validator("count", mode="before")
     @classmethod
@@ -136,7 +137,8 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
     rnd = random.Random(seed)
     past = recent(root, exclude)
     choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES if k not in FIXED}
-    combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}, mascot="right") for _ in range(4000)]
+    combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}, mascot="right", look=DEFAULT_LOOK)
+              for _ in range(4000)]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]
     counts = {(k, getattr(r, k)) for r in past for k in AXES}
     ok.sort(key=lambda c: (sum((k, getattr(c, k)) in counts for k in AXES), rnd.random()))

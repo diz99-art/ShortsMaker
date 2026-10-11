@@ -334,7 +334,12 @@ def render_chrome(t: Template, project: Project) -> tuple[Image.Image, Image.Ima
     pf = _font(str(t.font_path(p.font)), p.size)
     tx = p.x + p.h * 0.32
     hd.text((tx, p.y + p.h / 2), p.text, font=pf, fill=_hex(p.text_color), anchor="lm")
-    _seam_icon(hd, tx + pf.getlength(p.text) + p.h * 0.22, p.y + p.h / 2, p.h * 0.56, _hex(p.icon_color))
+    ix = tx + pf.getlength(p.text) + p.h * 0.22
+    if p.icon == "seam":
+        _seam_icon(hd, ix, p.y + p.h / 2, p.h * 0.56, _hex(p.icon_color))
+    elif p.icon == "dot":
+        r_ = p.h * 0.13
+        hd.ellipse([ix, p.y + p.h / 2 - r_, ix + 2 * r_, p.y + p.h / 2 + r_], fill=_hex(p.icon_color))
 
     box = c.title
     lines, tfont = _title_lines(project.title, c, t.font_path(box.font))
@@ -602,7 +607,9 @@ class CardRenderer:
     warnings: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.v = Variation.model_validate(self.project.variation or {})
+        vd = dict(self.project.variation or {})
+        vd.setdefault("look", self.t.card.default_look)  # 정보한장 등: 템플릿 기본 스타일
+        self.v = Variation.model_validate(vd)
         self.clean = self.v.look in ("clean_a", "clean_b")
         if self.clean:  # 클린: 자막은 단색 + 은은한 그림자 (두꺼운 테두리 없음), 흔들림은 1위만
             st0 = self.t.card.subtitle
@@ -610,8 +617,7 @@ class CardRenderer:
                                              shadow_color="#000000", shadow_opacity=0.16, shadow_blur=6))
             self.t = self.t.model_copy(update={"card": self.t.card.model_copy(update={"subtitle": st0})})
             calm = {"beat": "pulse" if self.v.beat != "off" else "off",
-                    "motion": self.v.motion if self.v.motion in ("kenburns", "float", "none") else "kenburns",
-                    "ending": {"punch": "stamp", "slide": "slide", "pop": "pop"}.get(self.v.transition, "stamp")}
+                    "motion": self.v.motion if self.v.motion in ("kenburns", "float", "none") else "kenburns"}
             self.v = self.v.model_copy(update=calm)
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
@@ -732,8 +738,9 @@ class CardRenderer:
 
     def _bonus_layer(self) -> MovingLayer:
         c, t, bo = self.t.card, self.t, self.project.bonus
-        motion, dx, _ = transition_motion({"stamp": "punch", "slide": "slide", "pop": "pop"}.get(self.v.ending, "punch"),
-                                          c.card_motion)
+        kind = (self.v.transition if self.clean  # 클린: 보너스도 카드와 같은 전환 (영상당 1종류)
+                else {"stamp": "punch", "slide": "slide", "pop": "pop"}.get(self.v.ending, "punch"))
+        motion, dx, _ = transition_motion(kind, c.card_motion)
         art = self.project_dir / bo.image if bo.image and (self.project_dir / bo.image).is_file() else None
         self.bonus_off: MovingLayer | None = None
         if self.clean:  # 클린: 같은 카드 + 회색 물음표 + '번외' (도장·기울기·깜빡임 없음)
@@ -1091,7 +1098,12 @@ class CardRenderer:
         """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음)."""
         c = self.t.card
         if self.clean:
-            h = self.hook_img
+            step = round(fx.hook_wipe(t) * 12)  # 밑줄 진행 (12단계로 캐시)
+            key = ("hook", step)
+            if key not in self._sub_cache:
+                self._sub_cache[key] = fx.clean_hook_image(self.project.hook, self.stat_color or "#F26A00",
+                                                           self.canvas[0], progress=step / 12)
+            h = self._sub_cache[key]
             k = min(1.0, t / 0.3)
             a = fx.hook_alpha(t, self.hook_len) * k
             im = h if a >= 1 else h.copy()
@@ -1135,6 +1147,9 @@ class CardRenderer:
 
 
 def make_renderer(project: Project, project_dir: Path, t: Template, lines: list[LyricLine]) -> CardRenderer:
+    if t.card.auto_cards:  # 정보한장: 항목으로 클린 카드 자동 합성
+        from .info_cards import prepare_cards
+        project = prepare_cards(project, project_dir, t)
     scenes = card_timeline(project, t, lines)
     return CardRenderer(project, project_dir, t, scenes, lines)
 

@@ -457,11 +457,18 @@ def clean_burst_image(word: str, accent: str, max_w: int, max_h: int) -> Image.I
     return marker_text(word, "#0043C8", accent, max_w, max_h, size=170)
 
 
-def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | None = None, size: int = 150
-                ) -> Image.Image:
-    """굵은 글씨 + 아래쪽 절반에 형광펜처럼 깔린 강조색 띠 (줄마다)."""
+def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | None = None, size: int = 150,
+                progress: float = 1.0, split: bool = False) -> Image.Image:
+    """굵은 글씨 + 아래쪽 절반에 형광펜처럼 깔린 강조색 띠 (줄마다).
+    progress: 띠가 왼쪽에서 오른쪽으로 그어진 정도 (0~1, 줄마다 차례로)."""
     from .card_clean import soft_text
     lines = [l.strip() for l in re.split(r"\n| / ", text) if l.strip()][:2] or [text]
+    if split and len(lines) == 1 and " " in lines[0]:  # 한 줄로는 줄여야 하면 가운데 띄어쓰기에서 두 줄로
+        one = soft_text(lines[0], size, color, shadow=8, alpha=0.15)
+        if one.width > max_w:
+            words = lines[0].split(" ")
+            cut = min(range(1, len(words)), key=lambda i: abs(len(" ".join(words[:i])) - len(" ".join(words[i:]))))
+            lines = [" ".join(words[:cut]), " ".join(words[cut:])]
     while True:
         imgs = [soft_text(l, size, color, shadow=8, alpha=0.15) for l in lines]
         tw = max(i.width for i in imgs)
@@ -472,19 +479,32 @@ def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | Non
     out = Image.new("RGBA", (tw + 40, th + 20), (0, 0, 0, 0))
     d = ImageDraw.Draw(out)
     y = 0
-    for im in imgs:
+    n = len(imgs)
+    for k, im in enumerate(imgs):
         x = (out.width - im.width) // 2
         hy = y + im.height * 0.55
-        d.rounded_rectangle([x - 14, hy, x + im.width + 14, y + im.height + 8], radius=10,
-                            fill=_hex(accent) + (110,))
+        p = min(1.0, max(0.0, progress * n - k))  # 줄마다 차례로 그어짐
+        if p > 0:
+            x1 = x - 14 + (im.width + 28) * p
+            d.rounded_rectangle([x - 14, hy, max(x - 13, x1), y + im.height + 8], radius=10,
+                                fill=_hex(accent) + (110,))
         out.alpha_composite(im, (x, y))
         y += im.height + 24
     return out
 
 
-def clean_hook_image(text: str, accent: str, width: int) -> Image.Image:
-    """클린 후킹: 폭발 도형 대신 굵은 글씨 + 강조색 밑줄 하이라이트."""
-    return marker_text(text, "#14171C", accent, width - 120, size=150)
+HOOK_WIPE = (0.25, 0.5)   # 클린 후킹: 밑줄이 그어지기 시작하는 시각, 걸리는 시간
+
+
+def clean_hook_image(text: str, accent: str, width: int, progress: float = 1.0) -> Image.Image:
+    """클린 후킹: 폭발 도형 대신 굵은 글씨(예전의 1.3배) + 강조색 밑줄이 왼쪽→오른쪽으로 그어짐."""
+    return marker_text(text, "#14171C", accent, width - 80, size=195, progress=progress, split=True)
+
+
+def hook_wipe(t: float) -> float:
+    a, d = HOOK_WIPE
+    x = min(1.0, max(0.0, (t - a) / d))
+    return 1 - (1 - x) ** 3
 
 
 def burst_frame(style: str, t: float) -> tuple[float, float, float]:

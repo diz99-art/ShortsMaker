@@ -87,3 +87,45 @@ def test_look_axis():
     assert set(var.LOOKS) == {"classic", "clean_a", "clean_b"} and "look" in var.FIXED
     assert var.Variation().look == "classic"
     assert var.Variation.model_validate({"count": "countup_gauge"}).count == "countup"   # 게이지 삭제
+
+
+def test_default_look_is_clean_a(tmp_path):
+    assert var.DEFAULT_LOOK == "clean_a" and var.suggest(tmp_path, seed=3).look == "clean_a"
+    assert "classic" in var.LOOKS                                     # 화려한 스타일은 선택 옵션으로
+
+
+def test_clean_a_rank_size_and_top_color(art):
+    from shortsmaker.card_clean import BLUE
+    five = np.asarray(compose_clean(art, "clean_a", rank=5, record="52홈런", year="2014", team="넥센 히어로즈",
+                                    player="박병호"))
+    blue = (five[..., 0] < 20) & (np.abs(five[..., 1].astype(int) - 67) < 15) & (five[..., 2] > 180)
+    ys = np.where(blue.any(axis=1))[0]
+    assert ys.max() - ys.min() > 85                                   # 순위 글씨가 기록과 비슷한 크기 (예전 약 70px)
+
+
+def test_hook_two_lines_and_wipe():
+    full = fx.clean_hook_image("50홈런이 6위?!", "#F26A00", 1080, progress=1.0)
+    none = fx.clean_hook_image("50홈런이 6위?!", "#F26A00", 1080, progress=0.0)
+    assert full.height > 300 and full.width <= 1000                   # 두 줄로 크게
+    a, b = np.asarray(full), np.asarray(none)
+    oranged = lambda x: ((x[..., 0] > 230) & (x[..., 1] < 130) & (x[..., 3] > 60) & (x[..., 3] < 160)).sum()  # 반투명 주황 띠
+    assert oranged(a) > 5000 and oranged(b) == 0                      # 밑줄이 그어지는 효과
+    assert fx.hook_wipe(0.0) == 0 and fx.hook_wipe(1.0) == 1
+
+
+def test_info_v2_auto_cards(tmp_path):
+    from shortsmaker.models import Project, load_template
+    for r_ in (5, 4, 3, 2, 1):
+        Image.new("RGB", (600, 560), (40 * r_, 90, 160)).save(tmp_path / f"img{r_}.png")
+    p = Project.model_validate(dict(channel="info_v2", title="세계 인구 TOP 5", duration=30,
+                                    lyrics=[l.model_dump() for l in SONG],
+                                    items=[{"rank": r_, "name": f"나라{r_}", "value": f"{r_}억 명", "image": f"img{r_}.png"}
+                                           for r_ in (5, 4, 3, 2, 1)]))
+    t2 = load_template("info_v2")
+    r = make_renderer(p, tmp_path, t2, SONG)
+    assert r.v.look == "clean_a" and t2.card.pill.text == "정보한장"
+    assert all(s.item.image.startswith("cards_auto/") for s in r.scenes[1:])
+    first = sorted((tmp_path / "cards_auto").glob("card*.png"))
+    make_renderer(p, tmp_path, t2, SONG)                               # 입력이 같으면 다시 만들지 않음
+    assert sorted((tmp_path / "cards_auto").glob("card*.png")) == first
+    assert r.frame_at(8.0).getpixel((540, 1100)) != r.frame_at(0.5).getpixel((540, 1100))

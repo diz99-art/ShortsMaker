@@ -269,6 +269,7 @@ class PillLogo(Box):
     border_width: int = 4
     border_color: str = "#111111"
     icon_color: str = "#E23B2E"  # 오른쪽 야구공 실밥 ')(' 모양
+    icon: Literal["seam", "dot", "none"] = "seam"  # 정보한장은 dot
 
 
 class Rule(BaseModel):
@@ -373,6 +374,8 @@ class CardLayout(BaseModel):
     subtitle: TypingSubtitle
     stat_line: StatLine | None = None  # 스티커형 빨간 기록 줄
     rank_word: str = "{rank}위"        # 가사에서 장면 전환 시점을 찾을 낱말
+    auto_cards: bool = False           # 항목(이름·값·이미지)으로 클린 카드를 자동 합성 (정보한장)
+    default_look: str = "classic"      # 프로젝트 연출에 look 이 없을 때 쓰는 스타일
 
 
 class Template(BaseModel):

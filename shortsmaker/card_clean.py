@@ -1,7 +1,7 @@
 """클린 스타일 카드 (시안 A·B) — Pretendard 하나, 단색 글자 + 은은한 그림자, 장식 없음.
 
 - 색: 채널 파랑(#0043C8) + 강조색 하나. 팀 색은 채도를 낮춰 배경 그라데이션에만
-- 1위만 작은 포인트 하나 (A: 순위 아래 강조색 짧은 밑줄, B: 강조색 작은 점)
+- 1위만 작은 포인트 하나 (A: 순위 글씨가 강조색, B: 강조색 작은 점)
 - 카드 비율은 941×1162 (화면 너비 75% 로 넣었을 때 아래 '@야구한장 구독'과 여백이 남게)
 
 A 'soft'  : 부드러운 팀 색 그라데이션 판 + 아래 흰 정보판 (둥근 모서리)
@@ -98,6 +98,28 @@ def _art(caricature, box: tuple[int, int]) -> Image.Image | None:
     return ImageOps.contain(art, box, Image.LANCZOS)
 
 
+def _load(img) -> Image.Image | None:
+    if img is None:
+        return None
+    if isinstance(img, Image.Image):
+        return img
+    with Image.open(img) as im:
+        return ImageOps.exif_transpose(im).copy()
+
+
+def _opaque(img) -> bool:
+    im = _load(img)
+    if im is None:
+        return False
+    if im.mode not in ("RGBA", "LA", "P"):
+        return True
+    return im.convert("RGBA").getchannel("A").getextrema()[0] >= 250
+
+
+def _cover(img, size: tuple[int, int]) -> Image.Image:
+    return ImageOps.fit(_load(img).convert("RGBA"), size, Image.LANCZOS)
+
+
 def question_mark(size: int = 520) -> Image.Image:
     """보너스 카드 그림 자리: 연한 회색 물음표 (장식 없이)."""
     return soft_text("?", size, (197, 204, 214), FONT_BLACK, shadow=12, alpha=0.12)
@@ -130,16 +152,27 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
         panel.alpha_composite(_vgrad((cw, art_h), muted(primary, 0.80), muted(primary, 0.62)))
         panel.putalpha(_rounded_mask((cw, ch), 44))
         L["back"].alpha_composite(panel, (margin, margin))
-        art = _art(caricature, (cw - 40, art_h - 20))
-        if art is not None:
-            L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + art_h - art.height))
-        x0, y0 = margin + 48, margin + art_h + 40
-        rk, _ = _fit(label, 96, 420, BLUE)
+        if _opaque(caricature):  # 배경 있는 그림(나라 카드 등): 위 칸을 꽉 채움 (모서리 둥글게)
+            cover = _cover(caricature, (cw, art_h))
+            m = Image.new("L", (cw, art_h), 0)
+            ImageDraw.Draw(m).rounded_rectangle([0, 0, cw - 1, art_h + 60], radius=44, fill=255)
+            cover.putalpha(m)
+            L["art"].alpha_composite(cover, (margin, margin))
+        else:
+            art = _art(caricature, (cw - 40, art_h - 20))
+            if art is not None:
+                L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + art_h - art.height))
+        x0, y0 = margin + 48, margin + art_h + 34
+        # 순위와 기록을 비슷한 크기로 한 줄에 (폰에서 한눈에). 1위만 순위 글씨가 강조색
+        size, avail = 132, cw - 96 - 44
+        while True:
+            rk = soft_text(label, size, accent if top else BLUE)
+            rec = soft_text(record, size, INK) if record else None
+            if rk.width + (rec.width if rec is not None else 0) <= avail or size <= 48:
+                break
+            size = int(size * 0.94)
         L["text"].alpha_composite(rk, (x0, y0))
-        if top:  # 1위만: 순위 아래 강조색 짧은 밑줄
-            ImageDraw.Draw(L["text"]).rounded_rectangle([x0, y0 + rk.height + 12, x0 + 90, y0 + rk.height + 22],
-                                                        radius=5, fill=_hex(accent) + (255,))
-        rec, rsize = _fit(record, 132, cw - 96 - rk.width - 40, INK) if record else (None, 0)
+        rsize = size
         if rec is not None:
             rx, ry = margin + cw - 48 - rec.width, y0 + rk.height - rec.height
             if not omit_record:
@@ -147,11 +180,12 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
             if meta is not None:
                 meta.update(record=record, size=rsize, x=rx, y=ry, h=rec.height, team=team, design=look, rank=rank,
                             top=top, align="right", right=rx + rec.width)
+        ny = y0 + rk.height + 30
         nm, _ = _fit(player or team, 64, cw - 96, INK, FONT_BOLD, shadow=0)
-        L["text"].alpha_composite(nm, (x0, y0 + 150))
+        L["text"].alpha_composite(nm, (x0, ny))
         if sub:
             sb, _ = _fit(sub, 40, cw - 96, GRAY, FONT_SEMI, shadow=0)
-            L["text"].alpha_composite(sb, (x0, y0 + 150 + nm.height + 18))
+            L["text"].alpha_composite(sb, (x0, ny + nm.height + 16))
     else:  # clean_b
         card_bg = Image.new("RGBA", (cw, ch), (255, 255, 255, 255))
         card_bg.putalpha(_rounded_mask((cw, ch), 44))

@@ -487,7 +487,12 @@ else:
         opts = var.AXES[k]
         extra[k] = col.selectbox(label_, list(opts), index=list(opts).index(getattr(cur, k)), format_func=opts.get,
                                  key=f"v_{k}")
-    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, design=cur.design, **extra)
+    looks = list(var.LOOKS)
+    cur_look = cur.look if state.variation and "look" in state.variation else var.DEFAULT_LOOK
+    lk = st.selectbox("스타일", looks, index=looks.index(cur_look), format_func=var.LOOKS.get, key="v_look",
+                      help="기본은 클린 A. 예전 화려한 스타일은 선택해서만 씀 (분위기별 카드 디자인은 화려한 스타일에서만)")
+    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, design=cur.design, look=lk,
+                         **extra)
     bad = var.conflicts(pick, D.parent, exclude=state.slug)
     for b_ in bad:
         st.warning(b_)
@@ -503,7 +508,7 @@ else:
         st.success("연출: " + var.Variation.model_validate(state.variation).describe())
 
     if not sticker:
-        st.subheader("②-1 카드 디자인 (분위기별 3종)")
+        st.subheader("②-1 카드 디자인 (분위기별 3종 — 화려한 스타일에서만 쓰임)")
         from shortsmaker.card_design import DESIGNS, MOODS
         m1, m2 = st.columns([1, 3])
         if m1.button("분위기 자동 판단 (claude -p)", key="mood_auto"):

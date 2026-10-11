@@ -1,0 +1,50 @@
+"""정보한장(info_v2): 항목(이름·값·설명·이미지)으로 클린 카드를 자동 합성한다.
+
+야구한장은 '노래로 자동 제작'이 캐리커처로 카드를 만들지만, 정보 TOP 5 는 나라·물건 이미지(배경 있음)가 대부분이라
+렌더할 때 항목 값으로 바로 카드를 만든다. 결과는 projects/<이름>/cards_auto/ 에 두고, 입력이 같으면 다시 만들지 않는다.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+from .card_clean import compose_clean
+from .models import Project, Template
+from .variation import ACCENTS, Variation
+
+
+def prepare_cards(project: Project, project_dir: Path, t: Template) -> Project:
+    vd = dict(project.variation or {})
+    vd.setdefault("look", t.card.default_look)
+    v = Variation.model_validate(vd)
+    look = v.look if v.look in ("clean_a", "clean_b") else "clean_a"
+    accent = ACCENTS.get(v.accent, ACCENTS["red_gold"])["stat"]
+    out = project_dir / "cards_auto"
+    out.mkdir(exist_ok=True)
+    items = []
+    for it in project.items:
+        src = project_dir / it.image if it.image and (project_dir / it.image).is_file() else None
+        if src is not None and src.parent.name == "cards_auto":
+            src = None  # 이미 자동 카드로 바뀐 프로젝트를 다시 넣은 경우
+        tied = sum(1 for o in project.items if o.shown_rank == it.shown_rank) > 1
+        key = json.dumps([look, accent, it.shown_rank, it.rank, it.name, it.value, it.description, tied,
+                          str(src), src.stat().st_mtime if src else 0], ensure_ascii=False)
+        h = hashlib.sha1(key.encode()).hexdigest()[:10]
+        card_p = out / f"card{it.rank}_{h}.png"
+        if not card_p.exists():
+            kw = dict(rank=it.shown_rank, record=it.value, year="", team="", player=it.name, tied=tied,
+                      accent=accent, top=it.shown_rank == 1)
+            compose_clean(src, look, **kw).save(card_p)
+            meta, layers = {}, {}
+            compose_clean(src, look, **kw, omit_record=True, meta=meta, layers=layers).save(
+                out / f"card{it.rank}_{h}_base.png")
+            meta["base"] = f"cards_auto/card{it.rank}_{h}_base.png"
+            meta["layers"] = {}
+            for n, im in layers.items():
+                im.save(out / f"card{it.rank}_{h}_L_{n}.png")
+                meta["layers"][n] = f"cards_auto/card{it.rank}_{h}_L_{n}.png"
+            card_p.with_suffix(".json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        items.append(it.model_copy(update={"image": f"cards_auto/{card_p.name}"}))
+    vd["look"] = look
+    return project.model_copy(update={"items": items, "variation": vd})
