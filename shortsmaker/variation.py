@@ -34,9 +34,17 @@ COUNTS = {"countup": "기록 숫자 카운트업", "countup_gauge": "카운트�
 SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
 PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
 ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
+# 카드 디자인 (분위기별 3종, shortsmaker/card_design.py). '' 은 예전 붓 터치 카드
+CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold_rays": "금색 광선", "medal": "메달·리본",
+                "fall": "추락 그래프", "rain": "어두운 비", "glass": "금 간 유리", "bills": "지폐 비", "coins": "금화 더미",
+                "receipt": "계약서 영수증", "vs_split": "VS 분할", "lightning": "번개", "flames": "불꽃 대결",
+                "newspaper": "신문 지면", "film": "옛날 필름", "polaroid": "빛바랜 사진", "scoreboard": "전광판",
+                "neon": "네온", "breaking": "속보 LIVE"}
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
-        "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS}
+        "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
+        "design": CARD_DESIGNS}
 OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none"}  # 추천에서 빼는 값
+FIXED = ("design",)  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰 따로 추천)
 RECENT = 5
 MIN_DIFF = 3  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
 
@@ -53,6 +61,7 @@ class Variation(BaseModel):
     sfx: str = "off"
     progress: str = "none"
     ending: str = "stamp"  # 보너스 장면 등장 (보너스가 없으면 쓰지 않음)
+    design: str = ""       # 카드 디자인 (비우면 예전 붓 터치 카드)
 
     def describe(self) -> str:
         return " · ".join(f"{AXES[k][getattr(self, k)] if k != 'accent' else ACCENTS[self.accent]['label']}"
@@ -94,11 +103,22 @@ def conflicts(v: Variation, root: Path = PROJECTS_DIR, exclude: str | None = Non
     return out
 
 
+def suggest_design(candidates: list[str], root: Path = PROJECTS_DIR, exclude: str | None = None) -> str:
+    """분위기 디자인 후보(추천 순서) 중 최근 5편에서 쓰지 않은 첫 번째. 모두 썼으면 가장 오래전에 쓴 것."""
+    if not candidates:
+        return ""
+    used = [r.design for r in recent(root, exclude)]
+    fresh = [c for c in candidates if c not in used]
+    if fresh:
+        return fresh[0]
+    return max(candidates, key=lambda c: used.index(c))
+
+
 def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | None = None) -> Variation:
     """최근 5편과 충분히 다른 조합 중 하나 (덜 쓰인 요소를 우선). '끄기' 값은 추천하지 않는다."""
     rnd = random.Random(seed)
     past = recent(root, exclude)
-    choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES}
+    choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES if k not in FIXED}
     combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}) for _ in range(4000)]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]
     counts = {(k, getattr(r, k)) for r in past for k in AXES}

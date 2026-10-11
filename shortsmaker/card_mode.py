@@ -682,10 +682,10 @@ class CardRenderer:
     def _count_layer(self, idx: int, text: str) -> MovingLayer:
         key = (idx, text)
         if key not in self._count_layers:
-            from .card_compose import record_text
+            from .card_design import record_text_for
             m = self._counts[idx]
             card = m["base_img"].copy()
-            rec = record_text(text, m["size"], m.get("team", ""))
+            rec = record_text_for(m.get("design"), text, m["size"], m.get("team", ""), m.get("rank", 5), m.get("top"))
             card.alpha_composite(rec, (m["x"], m["y"] + m["h"] - rec.height))
             if len(self._count_layers) > 40:
                 self._count_layers.clear()

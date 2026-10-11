@@ -61,7 +61,8 @@ def compare_lyrics(sung: str, rows: list[RankRow]) -> list[str]:
 
 def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: str, template: str = ap.CHANNEL,
               root: Path = PROJECTS_DIR, accept_mismatch: bool = False, aligner=None, output_dir: Path = OUTPUT_DIR,
-              capcut_root: Path | None = None, progress: ProgressFn | None = None) -> QuickResult:
+              capcut_root: Path | None = None, progress: ProgressFn | None = None,
+              use_claude: bool = True) -> QuickResult:
     report = progress or (lambda f, m: None)
     if not data.ok:
         return QuickResult("stopped", "양식", "붙여 넣은 양식에 틀린 줄이 있습니다", data.errors, slug=slug)
@@ -124,6 +125,9 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             except Exception as e:  # noqa: BLE001
                 return QuickResult("stopped", "그림", f"{ap.row_label(state, slot)} 그림을 읽을 수 없습니다: {e}", slug=slug)
 
+    if not state.mood:
+        report(0.53, "분위기 판단 (카드 디자인)")
+        ap.detect_mood(state, d, use_claude=use_claude)
     if state.variation is None:
         report(0.55, "연출 자동 추천")
         ap.choose_variation(state, d, ap.suggest_variation(state, d), reason="빠른 제작 자동 추천")

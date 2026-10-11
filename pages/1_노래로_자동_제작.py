@@ -479,7 +479,7 @@ else:
         opts = var.AXES[k]
         extra[k] = col.selectbox(label_, list(opts), index=list(opts).index(getattr(cur, k)), format_func=opts.get,
                                  key=f"v_{k}")
-    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, **extra)
+    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, design=cur.design, **extra)
     bad = var.conflicts(pick, D.parent, exclude=state.slug)
     for b_ in bad:
         st.warning(b_)
@@ -493,6 +493,40 @@ else:
             _err(e)
     if state.variation:
         st.success("연출: " + var.Variation.model_validate(state.variation).describe())
+
+    if not sticker:
+        st.subheader("②-1 카드 디자인 (분위기별 3종)")
+        from shortsmaker.card_design import DESIGNS, MOODS
+        m1, m2 = st.columns([1, 3])
+        if m1.button("분위기 자동 판단 (claude -p)", key="mood_auto"):
+            with st.spinner("분위기 판단 중"):
+                ap.detect_mood(state, D)
+            st.rerun()
+        moods = list(MOODS)
+        mood = m2.selectbox("분위기", moods, index=moods.index(state.mood) if state.mood in moods else 0,
+                            format_func=MOODS.get, key="mood_pick")
+        if state.mood:
+            m2.caption(f"판단: {MOODS[state.mood]} ({'claude' if state.mood_via == 'claude' else '키워드 규칙' if state.mood_via == 'rules' else '사람'}) — {state.mood_reason}")
+        if mood != state.mood and st.button("이 분위기로", key="mood_set"):
+            ap.set_mood(state, D, mood, "사람이 고름", "user")
+            st.rerun()
+        cur_design = (state.variation or {}).get("design", "")
+        if st.button("디자인 미리보기 만들기", key="design_prev"):
+            with st.spinner("미리보기 그리는 중"):
+                ss.design_prev = {k: im.resize((300, 533)) for k, im in ap.design_previews(state, D, mood).items()}
+        prev = ss.get("design_prev") or {}
+        if prev:
+            cols = st.columns(len(prev))
+            for col, (key, im) in zip(cols, prev.items()):
+                col.image(im, caption=DESIGNS[key].label + (" (지금)" if key == cur_design else ""))
+                if col.button("이 디자인으로", key=f"design_{key}", disabled=key == cur_design):
+                    try:
+                        ap.set_design(state, D, key)
+                        st.rerun()
+                    except ap.FlowError as e:
+                        _err(e)
+        st.caption("지금 카드 디자인: " + (DESIGNS[cur_design].label if cur_design in DESIGNS else "기본 붓 터치")
+                   + " · 바꾸면 카드를 다시 합성해야 합니다")
 
     st.subheader("③ " + ("스티커 정리" if sticker else "카드 합성 (구단 로고 없이 팀 색·이름, 순위 글자는 강조색)"))
     if st.button("합성" if not state.cards_done else "다시 합성", key="cards", disabled=state.variation is None):

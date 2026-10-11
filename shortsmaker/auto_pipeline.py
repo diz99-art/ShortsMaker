@@ -102,6 +102,9 @@ class AutoState(BaseModel):
     hook: str = ""                         # 후킹 문구 (첫 0~2초)
     bonus: dict | None = None              # 엔딩 보너스 (models.Bonus)
     gauge_base: str = ""                   # 게이지 기준선 ('50홈런')
+    mood: str = ""                         # 카드 분위기 (card_design.MOODS)
+    mood_reason: str = ""
+    mood_via: str = ""                     # claude | rules | user
     no_logo: dict[int, bool] = Field(default_factory=dict)  # 자리별 '로고·유니폼 글씨 없음' 확인
     suno: dict = Field(default_factory=dict)  # 곡 파일 태그의 Suno 정보 (id, created)
     suno_paid: bool = False
@@ -782,7 +785,65 @@ def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "au
 # ---------------------------------------------------------------- 5'. 연출 (영상마다 다르게)
 
 def suggest_variation(state: AutoState, d: Path) -> Variation:
-    return suggest(d.parent, exclude=state.slug)
+    """랜덤 연출 + 분위기에 맞는 카드 디자인 (추천 순서 중 최근 5편에서 안 쓴 첫 번째)."""
+    v = suggest(d.parent, exclude=state.slug)
+    if state.mood:
+        from .card_design import designs_for
+        from .variation import suggest_design
+        v = v.model_copy(update={"design": suggest_design(designs_for(state.mood), d.parent, exclude=state.slug)})
+    return v
+
+
+def _memos(d: Path) -> list[str]:
+    for e in reversed(plog.read_log(d)):
+        if e.get("event") == "quick_input":
+            return list(e.get("memos") or [])
+    return []
+
+
+def detect_mood(state: AutoState, d: Path, *, use_claude: bool = True, runner=None) -> str:
+    """제목·주제·메모·표로 분위기 판단 (claude -p, 실패하면 키워드 규칙). 정한 분위기를 저장·기록한다."""
+    import subprocess
+
+    from .mood import detect_mood as _detect
+    topic = load_brief(state.brief, d.parent).get("topic", "") if state.brief else ""
+    res = _detect(state.title, topic, _memos(d), [r.model_dump() for r in state.rows], use_claude=use_claude,
+                  runner=runner or subprocess.run)
+    set_mood(state, d, res.mood, res.reason, res.via)
+    return res.mood
+
+
+def set_mood(state: AutoState, d: Path, mood: str, reason: str = "", via: str = "user") -> None:
+    from .card_design import MOODS
+    if mood not in MOODS:
+        raise FlowError(f"분위기는 {', '.join(MOODS)} 중 하나입니다")
+    state.mood, state.mood_reason, state.mood_via = mood, reason, via
+    save_state(state, d)
+    plog.append(d, "mood_set", mood=mood, reason=reason, via=via)
+
+
+def set_design(state: AutoState, d: Path, design: str) -> None:
+    """카드 디자인만 바꾼다 (다른 연출 요소는 그대로, 카드는 다시 합성)."""
+    from .card_design import DESIGNS
+    if design and design not in DESIGNS:
+        raise FlowError(f"알 수 없는 카드 디자인: {design}")
+    v = Variation.model_validate(state.variation or suggest_variation(state, d).model_dump())
+    choose_variation(state, d, v.model_copy(update={"design": design}), reason="카드 디자인 변경")
+
+
+def design_previews(state: AutoState, d: Path, mood: str) -> dict[str, Image.Image]:
+    """분위기의 디자인 3종을 1위 그림으로 미리보기 (그림이 아직 없으면 빈 자리)."""
+    from .card_design import compose_designed, designs_for
+    top = next((r for r in state.rows if r.slot == 1), None)
+    art = None
+    if top is not None and state.players.get(1) and state.players[1].approved:
+        art = d / state.players[1].approved
+    out = {}
+    for key in designs_for(mood):
+        out[key] = compose_designed(art, key, rank=top.rank if top else 1, record=top.record if top else "",
+                                    year=top.year if top else "", team=top.team if top else "",
+                                    player=top.player if top else "", mock=state.mock)
+    return out
 
 
 def choose_variation(state: AutoState, d: Path, v: Variation, *, reason: str = "") -> list[str]:
@@ -817,9 +878,18 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
             kw = dict(rank=r.rank, record=r.record, year=r.year, team=r.team, player=r.player, mock=state.mock,
                       tied=label(state.rows, r).startswith("공동"),
                       rank_fill=ACCENTS[Variation.model_validate(state.variation).accent]["rank"])
-            card = compose_card(d / ps.approved, **kw)
+            design = Variation.model_validate(state.variation).design
+            if design:  # 분위기별 카드 디자인 (팀 색, 1위는 더 화려하게)
+                from functools import partial
+
+                from .card_design import compose_designed
+                kw.pop("rank_fill")
+                make = partial(compose_designed, design=design)
+            else:
+                make = compose_card
+            card = make(d / ps.approved, **kw)
             meta: dict = {}  # 카운트업용: 기록 글자를 뺀 바탕 카드 + 글자 위치
-            base = compose_card(d / ps.approved, **kw, omit_record=True, meta=meta)
+            base = make(d / ps.approved, **kw, omit_record=True, meta=meta)
             save_card(base, d / "cards" / f"card{r.slot}_base.png")
             meta["base"] = f"cards/card{r.slot}_base.png"
             (d / "cards" / f"card{r.slot}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")

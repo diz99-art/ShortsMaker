@@ -176,10 +176,11 @@ def test_run_quick_end_to_end(hr, tmp_path):
                      capcut_root=tmp_path)
     assert stop.status == "stopped" and stop.stage == "가사·표 대조" and stop.issues
     done = run_quick(q, None, images, slug="q2", root=root, aligner=hr_aligner, accept_mismatch=True,
-                     output_dir=tmp_path, capcut_root=tmp_path)       # 이어서 하기 (곡 다시 안 올려도 됨)
+                     output_dir=tmp_path, capcut_root=tmp_path, use_claude=False)  # 이어서 하기 (곡 다시 안 올려도 됨)
     assert done.status == "done" and Path(done.output).name == "q2_DRAFT.mp4"
     state = ap.load_state(root / "q2")
     assert state.title.startswith("50홈런도") and state.data_source_name == "뉴시스" and state.variation
     assert [r.player for r in state.rows] == ["박병호", "박병호", "심정수", "이승엽", "이승엽"]
+    assert state.mood == "record" and state.variation["design"] == "stadium"   # 분위기 → 추천 1순위 디자인
     events = [e["event"] for e in plog.read_log(root / "q2")]
     assert "quick_input" in events and "quick_mismatch_accepted" in events and events[-1] == "render"
