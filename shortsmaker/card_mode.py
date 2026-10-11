@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegError, _f, ffmpeg_bin
 from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
@@ -1172,8 +1172,53 @@ class CardRenderer:
         self._bubble_xy[key] = (bx, best[0])
         return self._bubble_xy[key]
 
+    def _hook_card(self) -> Image.Image | None:
+        """후킹 그림: 카드 자리에 둥근 모서리 + 은은한 그림자 (카드 크기로 한 번만 만듦)."""
+        if not self.project.hook_image:
+            return None
+        if getattr(self, "_hook_card_img", None) is None:
+            from PIL import ImageOps
+            src = self.project_dir / self.project.hook_image
+            if not src.is_file():
+                self.warnings.append(f"후킹 그림 파일이 없습니다: {self.project.hook_image}")
+                self._hook_card_img = False
+                return None
+            box = self.t.card.card_box
+            with Image.open(src) as im:
+                art = ImageOps.contain(im.convert("RGBA"), (box.w, box.h), Image.LANCZOS)
+            m = Image.new("L", art.size, 0)
+            ImageDraw.Draw(m).rounded_rectangle([0, 0, art.width - 1, art.height - 1], radius=40, fill=255)
+            art.putalpha(ImageChops.multiply(art.getchannel("A"), m))
+            pad = 30
+            out = Image.new("RGBA", (art.width + 2 * pad, art.height + 2 * pad), (0, 0, 0, 0))
+            sh = Image.new("RGBA", out.size, (0, 0, 0, 0))
+            sh.putalpha(Image.new("L", out.size, 0))
+            sm = Image.new("L", out.size, 0)
+            sm.paste(m.point(lambda v: round(v * 0.18)), (pad, pad + 8))
+            sh.putalpha(sm.filter(ImageFilter.GaussianBlur(14)))
+            out.alpha_composite(sh)
+            out.alpha_composite(art, (pad, pad))
+            self._hook_card_img = out
+        return self._hook_card_img or None
+
     def _draw_hook(self, img: Image.Image, t: float) -> None:
-        """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음)."""
+        """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음).
+        후킹 그림이 있으면 카드 자리에 그림을 두고, 문구는 그 아래쪽에 흰 판을 깔아 겹쳐 읽히게."""
+        c = self.t.card
+        card = self._hook_card()
+        if card is not None:
+            k = min(1.0, t / 0.35)
+            s_ = 0.94 + 0.06 * (1 - (1 - k) ** 3)
+            im = card.resize((max(1, round(card.width * s_)), max(1, round(card.height * s_))), Image.BICUBIC)
+            if k < 1:
+                im.putalpha(im.getchannel("A").point(lambda v: round(v * k)))
+            box = c.card_box
+            MovingLayer._paste(img, im, round(box.x + box.w / 2 - im.width / 2), round(box.y + box.h / 2 - im.height / 2))
+            self._draw_hook_text(img, t, with_image=True)
+            return
+        self._draw_hook_text(img, t, with_image=False)
+
+    def _draw_hook_text(self, img: Image.Image, t: float, *, with_image: bool) -> None:
         c = self.t.card
         if self.clean:
             step = round(fx.hook_wipe(t) * 12)  # 밑줄 진행 (12단계로 캐시)
@@ -1188,11 +1233,21 @@ class CardRenderer:
             if a < 1:
                 im.putalpha(im.getchannel("A").point(lambda v: round(v * a)))
             cy = (c.content_top + c.footer.button.y) / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 40
+            if with_image:  # 그림 아래쪽에 흰 판 + 문구
+                box = c.card_box
+                cy = box.y + box.h - im.height / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 30
+                panel = Image.new("RGBA", (im.width + 60, im.height + 30), (0, 0, 0, 0))
+                ImageDraw.Draw(panel).rounded_rectangle([0, 0, panel.width - 1, panel.height - 1], radius=36,
+                                                        fill=(255, 255, 255, round(235 * a)))
+                MovingLayer._paste(img, panel, round(self.canvas[0] / 2 - panel.width / 2),
+                                   round(cy - panel.height / 2))
             MovingLayer._paste(img, im, round(self.canvas[0] / 2 - im.width / 2), round(cy - im.height / 2))
             return
         h = self.hook_img
         cx = self.canvas[0] / 2
         cy = (c.content_top + c.footer.button.y) / 2 + 40
+        if with_image:
+            cy = c.card_box.y + c.card_box.h - h.height / 2 - 20
         if self.v.hook == "pop_words":  # 단어씩: 왼쪽부터 가려 둔 부분을 연다
             n = max(1, len(self.project.hook.split()))
             k = min(n, int(t / 0.2) + 1)
@@ -1228,7 +1283,7 @@ def make_renderer(project: Project, project_dir: Path, t: Template, lines: list[
     if t.card.auto_cards:  # 정보한장: 항목으로 클린 카드 자동 합성
         from .info_cards import prepare_cards
         project = prepare_cards(project, project_dir, t)
-    if t.card.hook_from_title and not project.hook.strip():  # 로고 인트로 없이 후킹(제목 첫 줄) → 바로 5위
+    if (t.card.hook_from_title or project.hook_image) and not project.hook.strip():  # 로고 없이 후킹(제목 첫 줄) → 5위
         project = project.model_copy(update={"hook": project.title.split("\n")[0].strip()})
     scenes = card_timeline(project, t, lines)
     return CardRenderer(project, project_dir, t, scenes, lines)

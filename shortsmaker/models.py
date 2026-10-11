@@ -106,6 +106,7 @@ class Project(BaseModel):
     intro_image: str | None = None  # 카드 모드 인트로 캐릭터 (프로젝트 폴더 기준). 없으면 템플릿 채널 로고
     variation: dict | None = None   # 카드 모드 연출 {transition, accent, subtitle, intro, …} (shortsmaker/variation.py)
     hook: str = ""                  # 첫 0~2초 후킹 문구 ('50홈런이 6위?!'). 비우면 로고 인트로만
+    hook_image: str | None = None   # 후킹 장면 그림 (프로젝트 폴더 기준). 후킹 문구 뒤 카드 자리에
     bonus: Bonus | None = None      # 1위 뒤 엔딩 보너스 장면
     gauge_base: str = ""            # 막대그래프 기준선 ('50홈런'). 비우면 기준선 없이 (예전 게이지 바는 삭제됨)
     bubbles: dict[str, str] = Field(default_factory=dict)  # 마스코트 말풍선 {intro, top, ending} (3~8글자)

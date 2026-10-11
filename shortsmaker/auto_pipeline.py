@@ -77,6 +77,7 @@ class AutoState(BaseModel):
     template: str = CHANNEL
     gen_mode: Literal["manual", "openai", "mock"] = "manual"
     intro_image: str | None = None  # 인트로 캐릭터 (프로젝트 폴더 기준, 배경 제거됨)
+    hook_image: str | None = None   # 후킹 장면 그림 (배경 그대로)
     watch_since: float | None = None  # 다운로드 폴더 지켜보기 시작 시각
     end_mode: Literal["lyrics", "music"] = "lyrics"  # 마지막 가사 + 2초 (기본) / 반주 끝까지
     mock: bool = True
@@ -783,6 +784,21 @@ def confirm_no_logo(state: AutoState, d: Path, slot: int, ok: bool) -> None:
     plog.append(d, "no_logo_checked", slot=slot, who=row_label(state, slot), ok=ok)
 
 
+def set_hook_image(state: AutoState, d: Path, data: bytes) -> Path:
+    """후킹 장면에 쓸 그림 (배경을 지우지 않고 그대로). 후킹 문구와 함께 카드 자리에 나온다."""
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            img = im.convert("RGBA")
+    except Exception as e:  # noqa: BLE001
+        raise FlowError(f"후킹 그림을 읽을 수 없습니다: {e}") from e
+    path = d / "hook.png"
+    img.save(path)
+    state.hook_image = "hook.png"
+    save_state(state, d)
+    plog.append(d, "hook_image_set", size=list(img.size))
+    return path
+
+
 def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "auto") -> Path:
     png, _ = _cutout(data, method)
     path = d / "intro.png"
@@ -994,6 +1010,7 @@ def build_project(state: AutoState, d: Path) -> Project:
     source = state.data_source_name + (f" ({state.data_source_url})" if state.data_source_url else "")
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
                                       "items": items, "intro_image": state.intro_image, "variation": state.variation,
+                                      "hook_image": state.hook_image,
                                       "hook": state.hook, "bonus": state.bonus, "gauge_base": state.gauge_base,
                                       "bubbles": auto_bubbles(state.mood, state.bubbles), "mood": state.mood,
                                       "source_note": f"출처: {source}" if source else "",

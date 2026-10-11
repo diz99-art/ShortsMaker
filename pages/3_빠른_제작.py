@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -15,7 +16,7 @@ import streamlit as st
 from shortsmaker import auto_pipeline as ap
 from shortsmaker import manual_prompt as mp
 from shortsmaker.models import PROJECTS_DIR
-from shortsmaker.quick import run_quick
+from shortsmaker.quick import new_slug as quick_new_slug, run_quick
 from shortsmaker.quick_parse import EXAMPLE, parse_quick, request_prompt
 from shortsmaker.rank_extract import label
 
@@ -89,29 +90,41 @@ if files:
                 order[pos], order[to] = order[to], order[pos]
                 st.rerun()
 
+# ---------------------------------------------------------------- 후킹 그림
+st.header("④ 후킹 그림 (선택)")
+hook_file = st.file_uploader("첫 장면에 후킹 문구와 함께 나올 그림 1장", type=["png", "jpg", "jpeg", "webp"],
+                             key="q_hook_img")
+if hook_file:
+    st.image(hook_file.getvalue(), width=220)
+
 # ---------------------------------------------------------------- 만들기
-st.header("④ 만들기")
+st.header("⑤ 만들기")
 c1, c2 = st.columns(2)
 tpl = c1.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="q_tpl")
-default_slug = re.sub(r"[^\w가-힣]+", "_", (data.title.split("\n")[-1] if data and data.title else "quick")).strip("_")[:40]
-slug = c2.text_input("프로젝트 이름", default_slug, key="q_slug")
+# 프로젝트 이름: 비우면 이번 답변의 제목으로 (예전 값이 칸에 남아 'quick' 으로 렌더되던 문제 방지)
+name_in = c2.text_input("프로젝트 이름 (비우면 제목으로 자동, 항상 새 폴더)", "", key="q_slug_in")
+auto_name = re.sub(r"[^\w가-힣]+", "_", (data.title.split("\n")[-1] if data and data.title else "")).strip("_")[:40]
+c2.caption(f"만들 폴더: projects/{quick_new_slug(name_in.strip() or auto_name or 'quick', ROOT)}")
 ready = bool(data and data.ok and song and files and len(files) == len(data.rows))
 if not ready:
     st.caption("답변 양식 오류가 없고, 곡과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)이 있으면 열립니다")
 
 
-def _go(accept: bool) -> None:
+def _go(accept: bool, resume_slug: str | None = None) -> None:
     images = [files[i].getvalue() for i in ss.q_order]
     bar = st.progress(0.0)
+    started = time.time()
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / song.name
         path.write_bytes(song.getvalue())
-        res = run_quick(data, path, images, slug=slug, template=tpl, root=ROOT, accept_mismatch=accept,
+        res = run_quick(data, path, images, slug=resume_slug or name_in.strip() or auto_name or "quick", template=tpl,
+                        root=ROOT, accept_mismatch=accept, resume=resume_slug is not None,
+                        hook_image=hook_file.getvalue() if hook_file else None,
                         progress=lambda f, m: bar.progress(min(f, 1.0), m))
-    ss.q_result = res
+    ss.q_result, ss.q_started = res, started
 
 
-if st.button("시험 렌더까지 만들기", key="q_go", type="primary", disabled=not ready):
+if st.button("시험 렌더까지 만들기 (새 프로젝트)", key="q_go", type="primary", disabled=not ready):
     _go(False)
 res = ss.get("q_result")
 if res:
@@ -122,13 +135,20 @@ if res:
         if res.stage == "가사·표 대조":
             a, b = st.columns(2)
             if a.button("표대로 계속", key="q_accept", type="primary"):
-                _go(True)
+                _go(True, resume_slug=res.slug)   # 방금 멈춘 그 프로젝트만 이어서
                 st.rerun()
             b.caption("고치려면 답변을 수정한 뒤 다시 '시험 렌더까지 만들기'")
     else:
-        st.success(f"시험 렌더 완료 → '노래로 자동 제작'에서 프로젝트 '{res.slug}'를 불러와 로고 확인·Suno 확인·수익화용 렌더를 이어서 하세요")
-        if res.output and Path(res.output).exists():
-            st.video(res.output)
-            st.write(f"`{res.output}`")
+        out = Path(res.output) if res.output else None
+        fresh = out is not None and out.exists() and out.stat().st_mtime >= ss.get("q_started", 0) - 1
+        st.markdown("## 이번에 만든 파일")
+        st.markdown(f"### 🎬 `{res.output}`")
+        st.markdown(f"### 📁 `{ROOT / res.slug}`")
+        if not fresh:
+            st.error("영상 파일이 이번에 새로 만들어지지 않았습니다 (수정 시각이 이번 제작보다 이릅니다). 다시 만들어 주세요.")
+        else:
+            st.caption(f"만든 시각: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(out.stat().st_mtime))}")
+            st.video(str(out))
+        st.success(f"'노래로 자동 제작'에서 프로젝트 '{res.slug}'를 불러와 로고 확인·Suno 확인·수익화용 렌더를 이어서 하세요")
         for w in res.issues:
             st.caption(w)

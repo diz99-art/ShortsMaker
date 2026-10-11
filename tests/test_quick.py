@@ -176,7 +176,8 @@ def test_run_quick_end_to_end(hr, tmp_path):
                      capcut_root=tmp_path)
     assert stop.status == "stopped" and stop.stage == "가사·표 대조" and stop.issues
     done = run_quick(q, None, images, slug="q2", root=root, aligner=hr_aligner, accept_mismatch=True,
-                     output_dir=tmp_path, capcut_root=tmp_path, use_claude=False)  # 이어서 하기 (곡 다시 안 올려도 됨)
+                     output_dir=tmp_path, capcut_root=tmp_path, use_claude=False,
+                     resume=True)  # 멈춘 그 프로젝트만 이어서 (곡 다시 안 올려도 됨)
     assert done.status == "done" and Path(done.output).name == "q2_DRAFT.mp4"
     state = ap.load_state(root / "q2")
     assert state.title.startswith("50홈런도") and state.data_source_name == "뉴시스" and state.variation
@@ -184,3 +185,20 @@ def test_run_quick_end_to_end(hr, tmp_path):
     assert state.mood == "record" and state.variation["design"] == "stadium"   # 분위기 → 추천 1순위 디자인
     events = [e["event"] for e in plog.read_log(root / "q2")]
     assert "quick_input" in events and "quick_mismatch_accepted" in events and events[-1] == "render"
+
+
+def test_quick_always_new_folder_and_hook_image(hr, tmp_path):
+    """같은 이름의 예전 프로젝트가 있어도 새 폴더를 만든다 (예전 영상을 다시 렌더하던 버그)."""
+    song, root = hr
+    q = parse_quick(EXAMPLE)
+    images = [_png(c) for c in ("#800020", "#800021", "#87CEEB", "#0000FF", "#0000FE")]
+    old = root / "quick"
+    old.mkdir(parents=True)
+    (old / ap.STATE_FILE).write_text("{}", encoding="utf-8")                # 예전 프로젝트
+    res = run_quick(q, song, images, slug="quick", root=root, aligner=hr_aligner, output_dir=tmp_path,
+                    capcut_root=tmp_path, use_claude=False, hook_image=_png("#FFD700"))
+    assert res.status == "done" and res.slug == "quick_2" and Path(res.output).name == "quick_2_DRAFT.mp4"
+    assert (old / ap.STATE_FILE).read_text(encoding="utf-8") == "{}"         # 예전 것은 그대로
+    p = ap.load_project(root / "quick_2" / "project.json")[0]
+    assert p.title.startswith("50홈런도") and p.hook_image == "hook.png" and (root / "quick_2" / "hook.png").exists()
+    assert [it.name for it in p.ordered_items] == ["박병호", "박병호", "심정수", "이승엽", "이승엽"]

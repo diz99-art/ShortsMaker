@@ -1,7 +1,9 @@
 """빠른 제작: 양식 답변 + 곡 + 그림 5장 → 버튼 하나로 시험 렌더까지.
 
 곡 등록 → 가사 맞추기 → 가사와 표 대조 → 표 확정 → 그림 넣기(배경 제거) → 연출 자동 추천 → 합성 → 시험 렌더(_DRAFT).
-문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다. 다시 부르면 끝난 단계는 건너뛰고 이어서 한다.
+문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다.
+항상 새 프로젝트 폴더를 만든다 (같은 이름이 있으면 _2, _3 …). 멈춘 프로젝트를 '이어서' 할 때만 resume=True 로
+같은 폴더를 다시 쓴다 — 예전 프로젝트를 새 자료로 착각해 다시 렌더하는 일이 없게.
 수익화용 렌더(권리 체크리스트)와 업로드 초안은 '노래로 자동 제작' 화면에서 이어서 한다 (같은 프로젝트).
 """
 from __future__ import annotations
@@ -59,10 +61,19 @@ def compare_lyrics(sung: str, rows: list[RankRow]) -> list[str]:
     return issues
 
 
+def new_slug(base: str, root: Path = PROJECTS_DIR) -> str:
+    """같은 이름의 프로젝트가 있으면 _2, _3 … 을 붙인 새 이름."""
+    base = re.sub(r"[^\w가-힣]+", "_", base).strip("_")[:40] or "quick"
+    slug, k = base, 2
+    while (root / slug).exists():
+        slug, k = f"{base}_{k}", k + 1
+    return slug
+
+
 def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: str, template: str = ap.CHANNEL,
               root: Path = PROJECTS_DIR, accept_mismatch: bool = False, aligner=None, output_dir: Path = OUTPUT_DIR,
               capcut_root: Path | None = None, progress: ProgressFn | None = None,
-              use_claude: bool = True) -> QuickResult:
+              use_claude: bool = True, resume: bool = False, hook_image: bytes | None = None) -> QuickResult:
     report = progress or (lambda f, m: None)
     if not data.ok:
         return QuickResult("stopped", "양식", "붙여 넣은 양식에 틀린 줄이 있습니다", data.errors, slug=slug)
@@ -70,9 +81,11 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         return QuickResult("stopped", "그림", f"그림이 {len(images)}장입니다 ({len(data.rows)}장 필요, 순위 순서대로)",
                            slug=slug)
 
+    if not resume:  # 언제나 새 폴더 (예전 프로젝트를 덮어쓰거나 이어서 렌더하지 않음)
+        slug = new_slug(slug, root)
     d = root / slug
-    if (d / ap.STATE_FILE).exists():
-        state = ap.load_state(d)                      # 이어서 하기
+    if resume and (d / ap.STATE_FILE).exists():
+        state = ap.load_state(d)                      # 멈췄던 이 프로젝트를 이어서
     else:
         if song is None:
             return QuickResult("stopped", "곡", "곡 파일이 필요합니다", slug=slug)
@@ -83,6 +96,8 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             return QuickResult("stopped", "곡", str(e), slug=slug)
         ap.set_data_source(state, d, data.source_name, data.source_url)
         ap.set_extras(state, d, hook=data.hook, bonus=data.bonus, gauge_base=data.gauge_base, bubbles=data.bubbles)
+        if hook_image:
+            ap.set_hook_image(state, d, hook_image)
         plog.append(d, "quick_input", title=data.title, rows=[r.model_dump() for r in data.rows], memos=data.memos,
                     source=f"{data.source_name} {data.source_url}", hook=data.hook, bonus=data.bonus,
                     gauge_base=data.gauge_base)
