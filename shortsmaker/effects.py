@@ -496,9 +496,9 @@ def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | Non
 HOOK_WIPE = (0.25, 0.5)   # 클린 후킹: 밑줄이 그어지기 시작하는 시각, 걸리는 시간
 
 
-def clean_hook_image(text: str, accent: str, width: int, progress: float = 1.0) -> Image.Image:
+def clean_hook_image(text: str, accent: str, width: int, progress: float = 1.0, size: int = 195) -> Image.Image:
     """클린 후킹: 폭발 도형 대신 굵은 글씨(예전의 1.3배) + 강조색 밑줄이 왼쪽→오른쪽으로 그어짐."""
-    return marker_text(text, "#14171C", accent, width - 80, size=195, progress=progress, split=True)
+    return marker_text(text, "#14171C", accent, width - 80, size=size, progress=progress, split=True)
 
 
 def hook_wipe(t: float) -> float:

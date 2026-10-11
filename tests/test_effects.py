@@ -205,5 +205,6 @@ def test_variation_axes(tmp_path):
     for i in range(3):
         var.record(f"p{i}", var.suggest(tmp_path, seed=i), tmp_path)
     s = var.suggest(tmp_path, seed=9)
-    assert all(getattr(s, k) != v for k, v in var.OFF.items())       # 추천은 효과를 끄지 않음
+    assert all(getattr(s, k) != v for k, v in var.OFF.items() if k not in var.CALM)   # 추천은 효과를 끄지 않음
+    assert all(getattr(s, k) == v for k, v in var.CALM.items())      # 움직임 효과(비트·그림 움직임·2.5D)는 늘 꺼짐
     assert not var.conflicts(s, tmp_path)

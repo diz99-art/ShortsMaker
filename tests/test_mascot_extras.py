@@ -173,4 +173,4 @@ def test_new_axes_in_variation():
     old = var.Variation.model_validate({"transition": "slide"})
     assert (old.mascot, old.datagfx, old.depth, old.burst) == ("off", "off", "off", "off")
     s = var.suggest(seed=1, root=__import__("pathlib").Path("/nonexistent"))
-    assert s.mascot == "right" and s.datagfx != "off" and s.depth != "off" and s.burst != "off"
+    assert s.mascot == "right" and s.datagfx != "off" and s.burst != "off" and s.depth == "off"   # 2.5D 는 끔

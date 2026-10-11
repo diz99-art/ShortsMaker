@@ -35,6 +35,7 @@ from . import effects as fx
 from . import mascot as msc
 from .effects import BONUS_LEN, BONUS_MIN_TOP, CHART_LEN, HOOK_IMPACT, HOOK_LEN
 from .sfx import Cue, mix_filter
+from .variation import INOUT_LEN
 from .variation import (ACCENTS, FLASH, LINE_RISE, TITLE_CARD, TOP_FLASH, TOP_GAIN, TOP_SHAKE, Variation, idle_transform,
                         intro_motion, top_shake, transition_motion)
 
@@ -616,13 +617,14 @@ class CardRenderer:
             st0 = st0.model_copy(update=dict(color="#14171C", stroke_width=0, shadow_offset=(0, 5),
                                              shadow_color="#000000", shadow_opacity=0.16, shadow_blur=6))
             self.t = self.t.model_copy(update={"card": self.t.card.model_copy(update={"subtitle": st0})})
-            calm = {"beat": "pulse" if self.v.beat != "off" else "off",
-                    "motion": self.v.motion if self.v.motion in ("kenburns", "float", "none") else "kenburns"}
-            self.v = self.v.model_copy(update=calm)
+            from .variation import CALM
+            self.v = self.v.model_copy(update=dict(CALM))  # 비트 펄스·그림 움직임·2.5D 없음, 카드는 인·아웃만
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
         self.base, self.head = render_chrome(t, self.project)
         card_m, card_dx, self.flash = transition_motion(self.v.transition, c.card_motion)
+        if self.clean:
+            self.flash = 0.0  # 클린: 흰 섬광 없음 (인·아웃 효과만)
         intro_m, intro_dx = intro_motion(self.v.intro, c.intro_motion)
         self.title_card = render_title_card(t, self.project) if self.v.intro == "title_card" else None
         self.stat_color = ACCENTS.get(self.v.accent, {}).get("stat")
@@ -692,6 +694,7 @@ class CardRenderer:
         self.beats = self.beatmap if self.v.beat != "off" else None   # 카드 펄스용
         self._label_font = t.font_path("black")
         self._masks: dict[int, Image.Image | None] = {}
+        self._rest: dict[int, Image.Image] = {}   # 클린 카드 제자리 그림 (레이어별)
         self._bubble_xy: dict[tuple[int, int], tuple[int, int]] = {}
         self.cues = sfx_cues(self.project, t, self.scenes)
         if self.v.depth != "off" and not self._depth:
@@ -806,7 +809,8 @@ class CardRenderer:
         key = (i, intro)
         if key not in self._layouts:
             st = self.t.card.subtitle
-            cy = (st.intro_center_y if intro and st.intro_center_y else st.y + st.h / 2)
+            # 인트로 전용 자막 위치는 로고 인트로용. 후킹으로 시작하면 늘 같은 자막 자리(2줄)를 쓴다
+            cy = (st.intro_center_y if intro and st.intro_center_y and not self.hook_len else st.y + st.h / 2)
             self._layouts[key] = layout_subtitle(self.lines[i].text, st, self._font_path, cy,
                                                  st.intro_align if intro else "center")
         return self._layouts[key]
@@ -845,12 +849,17 @@ class CardRenderer:
         card_scene = sc.kind in ("rank", "bonus")
         flash = since if card_scene and self.flash and 0 <= since < round(self.flash * fps) else None
         top = sc.kind == "rank" and sc.item.shown_rank == 1
-        if top and 0 <= since < round(TOP_FLASH * fps):  # 1위: 번쩍
+        if top and 0 <= since < round(TOP_FLASH * fps) and not self.clean:  # 1위: 번쩍 (클린은 없음)
             flash = since if flash is None else flash
-        # 그림 움직임: 등장 효과가 끝난 뒤부터 장면 끝까지 프레임마다 (1위는 흔들림도)
+        # 그림 움직임: 등장 효과가 끝난 뒤부터 장면 끝까지 프레임마다 (1위는 흔들림도). 클린은 없음
         idle = None
-        if card_scene and (self.v.motion != "none" or top):
+        if card_scene and (self.v.motion != "none" or top) and not self.clean:
             idle = since
+        if self.clean and card_scene:  # 클린: 카드는 나타날 때·사라질 때만 페이드 + 살짝 미끄러지기
+            n = max(1, round(INOUT_LEN * fps))
+            to_end = round(sc.end * fps) - frame_no
+            anim = ("in", since) if 0 <= since < n else (("out", to_end) if 0 < to_end <= n and
+                                                        sc.kind != "bonus" else None)
         # 비트 펄스: 카드가 다 들어온 뒤
         pulse = None
         if card_scene and self.beats is not None and anim is None:
@@ -902,7 +911,8 @@ class CardRenderer:
         # 마스코트
         mas = None
         if self.mascot is not None:
-            ang = round(msc.bob_angle(self.beatmap, sec), 1) if self.mascot.bobbing(sec) else 0.0
+            ang = (round(msc.bob_angle(self.beatmap, sec), 1)
+                   if self.mascot.bobbing(sec) and not self.clean else 0.0)  # 클린: 까딱 없이 표정만
             bub = self.mascot.bubble_at(sec)
             mas = (self.mascot.expr_at(sec), ang if abs(ang) >= 0.3 else 0.0,
                    None if bub is None else (bub[0], min(round(bub[1] * fps), 4)))
@@ -949,7 +959,9 @@ class CardRenderer:
                 layer = self.bonus_off
             else:
                 layer = self._count_layer(idx, count) if count is not None else self.layers[idx]
-            if depth is not None:  # 2.5D: 층을 따로 밀고 당겨서 합친 카드
+            if self.clean:  # 클린: 제자리 카드 + 인·아웃
+                self._draw_inout(img, layer, anim)
+            elif depth is not None:  # 2.5D: 층을 따로 밀고 당겨서 합친 카드
                 self._draw_fitted(img, self.layers[idx], self._depth_card(idx, depth / fps, count), transform)
             else:
                 layer.draw(img, None if anim is None else anim / fps, transform)
@@ -1026,6 +1038,39 @@ class CardRenderer:
                 ox = oy = 0
             MovingLayer._paste(out, im, ox + round(dx * k), oy)
         return out
+
+    def _draw_inout(self, img: Image.Image, layer: MovingLayer, anim) -> None:
+        """클린 카드: 제자리(배율 1)에 두고, 나타날 때·사라질 때만 0.3초 페이드 + 살짝 미끄러지기."""
+        key = id(layer)
+        rest = self._rest.get(key)
+        if rest is None:
+            rest = layer._place(1.0)[0]
+            self._rest[key] = rest
+        n = max(1, round(INOUT_LEN * self.t.fps))
+        p, dx, dy, s_ = 1.0, 0.0, 0.0, 1.0
+        if anim is not None:
+            phase, k = anim
+            x = min(1.0, (k + (1 if phase == "in" else 0)) / n)
+            e = 1 - (1 - x) ** 3  # 끝에서 느려짐
+            p = e
+            gap = 1 - e
+            sign = 1 if phase == "in" else -1
+            if self.v.inout == "fade_side":
+                dx = 70 * gap * sign
+            elif self.v.inout == "fade_zoom":
+                s_ = 1 - 0.05 * gap
+            else:
+                dy = 50 * gap * sign
+        im = rest
+        if abs(s_ - 1) > 1e-3:
+            im = rest.resize((max(1, round(rest.width * s_)), max(1, round(rest.height * s_))), Image.BICUBIC)
+        if p < 1:
+            im = im.copy()
+            im.putalpha(im.getchannel("A").point(lambda v: round(v * p)))
+        lay = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
+        MovingLayer._paste(lay, im, round(layer.cx - im.width / 2 + dx), round(layer.cy - im.height / 2 + dy))
+        lay.paste((0, 0, 0, 0), (0, 0, self.canvas[0], self.t.card.content_top))
+        img.alpha_composite(lay)
 
     def _draw_fitted(self, img: Image.Image, layer: MovingLayer, small: Image.Image,
                      transform: tuple[float, float, float, float] | None) -> None:
@@ -1172,84 +1217,107 @@ class CardRenderer:
         self._bubble_xy[key] = (bx, best[0])
         return self._bubble_xy[key]
 
-    def _hook_card(self) -> Image.Image | None:
-        """후킹 그림: 카드 자리에 둥근 모서리 + 은은한 그림자 (카드 크기로 한 번만 만듦)."""
-        if not self.project.hook_image:
-            return None
-        if getattr(self, "_hook_card_img", None) is None:
-            from PIL import ImageOps
-            src = self.project_dir / self.project.hook_image
-            if not src.is_file():
-                self.warnings.append(f"후킹 그림 파일이 없습니다: {self.project.hook_image}")
-                self._hook_card_img = False
-                return None
-            box = self.t.card.card_box
-            with Image.open(src) as im:
-                art = ImageOps.contain(im.convert("RGBA"), (box.w, box.h), Image.LANCZOS)
-            m = Image.new("L", art.size, 0)
-            ImageDraw.Draw(m).rounded_rectangle([0, 0, art.width - 1, art.height - 1], radius=40, fill=255)
-            art.putalpha(ImageChops.multiply(art.getchannel("A"), m))
-            pad = 30
-            out = Image.new("RGBA", (art.width + 2 * pad, art.height + 2 * pad), (0, 0, 0, 0))
-            sh = Image.new("RGBA", out.size, (0, 0, 0, 0))
-            sh.putalpha(Image.new("L", out.size, 0))
-            sm = Image.new("L", out.size, 0)
-            sm.paste(m.point(lambda v: round(v * 0.18)), (pad, pad + 8))
-            sh.putalpha(sm.filter(ImageFilter.GaussianBlur(14)))
-            out.alpha_composite(sh)
-            out.alpha_composite(art, (pad, pad))
-            self._hook_card_img = out
-        return self._hook_card_img or None
+    def _hook_slots(self, text_h: int) -> tuple[float, tuple[int, int, int, int]]:
+        """후킹 그림이 있을 때 배치: 위에서부터 가사 자막(2줄 자리) → 후킹 문구 → 그림. 서로 겹치지 않게.
+        (문구 가운데 y, 그림 상자 x0, y0, x1, y1)."""
+        c = self.t.card
+        st_ = c.subtitle
+        top = st_.y + st_.h + 56                      # 자막 자리(2줄, 그림자 포함) 아래로 여유를 두고
+        text_cy = top + text_h / 2
+        floor = c.footer.button.y - 24
+        if self.mascot is not None:                   # 오른쪽 아래 한장이 위까지만
+            floor = min(floor, self._mascot_box()[1] - 10)
+        box = c.card_box
+        return text_cy, (box.x, round(top + text_h + 24), box.x + box.w, round(floor))
 
     def _draw_hook(self, img: Image.Image, t: float) -> None:
         """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음).
-        후킹 그림이 있으면 카드 자리에 그림을 두고, 문구는 그 아래쪽에 흰 판을 깔아 겹쳐 읽히게."""
-        c = self.t.card
-        card = self._hook_card()
-        if card is not None:
-            k = min(1.0, t / 0.35)
-            s_ = 0.94 + 0.06 * (1 - (1 - k) ** 3)
-            im = card.resize((max(1, round(card.width * s_)), max(1, round(card.height * s_))), Image.BICUBIC)
-            if k < 1:
-                im.putalpha(im.getchannel("A").point(lambda v: round(v * k)))
-            box = c.card_box
-            MovingLayer._paste(img, im, round(box.x + box.w / 2 - im.width / 2), round(box.y + box.h / 2 - im.height / 2))
-            self._draw_hook_text(img, t, with_image=True)
+        후킹 그림이 있으면 위에서부터 자막 → 문구 → 그림 순서로 겹치지 않게 (그림은 남은 자리에 맞춰 작게)."""
+        src = self._hook_src()
+        if src is None:
+            self._draw_hook_text(img, t, with_image=False)
             return
-        self._draw_hook_text(img, t, with_image=False)
+        text_h = self._hook_text_height()
+        _, (x0, y0, x1, y1) = self._hook_slots(text_h)
+        key = ("hookimg", x1 - x0, y1 - y0)
+        card = self._sub_cache.get(key)
+        if card is None:
+            card = self._rounded_card(src, (x1 - x0, y1 - y0))
+            self._sub_cache[key] = card
+        k = min(1.0, t / 0.35)
+        im = card
+        if k < 1:
+            im = card.copy()
+            im.putalpha(im.getchannel("A").point(lambda v: round(v * k)))
+        dy = round((1 - (1 - (1 - k) ** 3)) * 30)
+        MovingLayer._paste(img, im, round((x0 + x1) / 2 - im.width / 2), round((y0 + y1) / 2 - im.height / 2) + dy)
+        self._draw_hook_text(img, t, with_image=True)
+
+    def _hook_src(self) -> Image.Image | None:
+        if not self.project.hook_image:
+            return None
+        if getattr(self, "_hook_src_img", None) is None:
+            p = self.project_dir / self.project.hook_image
+            if not p.is_file():
+                self.warnings.append(f"후킹 그림 파일이 없습니다: {self.project.hook_image}")
+                self._hook_src_img = False
+            else:
+                with Image.open(p) as im:
+                    self._hook_src_img = im.convert("RGBA")
+        return self._hook_src_img or None
+
+    def _hook_text_height(self) -> int:
+        if self.clean:
+            return fx.clean_hook_image(self.project.hook, self.stat_color or "#F26A00", self.canvas[0],
+                                       size=self._hook_size()).height
+        return self.hook_img.height
+
+    def _hook_size(self) -> int:
+        return 130 if self.project.hook_image else 195  # 그림이 있으면 문구를 줄여 그림 자리를 남김
+
+    @staticmethod
+    def _rounded_card(src: Image.Image, box: tuple[int, int]) -> Image.Image:
+        from PIL import ImageOps
+        art = ImageOps.contain(src, (max(1, box[0] - 40), max(1, box[1] - 30)), Image.LANCZOS)
+        m = Image.new("L", art.size, 0)
+        ImageDraw.Draw(m).rounded_rectangle([0, 0, art.width - 1, art.height - 1], radius=32, fill=255)
+        art.putalpha(ImageChops.multiply(art.getchannel("A"), m))
+        pad = 24
+        out = Image.new("RGBA", (art.width + 2 * pad, art.height + 2 * pad), (0, 0, 0, 0))
+        sm = Image.new("L", out.size, 0)
+        sm.paste(m.point(lambda v: round(v * 0.18)), (pad, pad + 8))
+        sh = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        sh.putalpha(sm.filter(ImageFilter.GaussianBlur(12)))
+        out.alpha_composite(sh)
+        out.alpha_composite(art, (pad, pad))
+        return out
 
     def _draw_hook_text(self, img: Image.Image, t: float, *, with_image: bool) -> None:
         c = self.t.card
         if self.clean:
             step = round(fx.hook_wipe(t) * 12)  # 밑줄 진행 (12단계로 캐시)
-            key = ("hook", step)
+            key = ("hook", step, self._hook_size())
             if key not in self._sub_cache:
                 self._sub_cache[key] = fx.clean_hook_image(self.project.hook, self.stat_color or "#F26A00",
-                                                           self.canvas[0], progress=step / 12)
+                                                           self.canvas[0], progress=step / 12, size=self._hook_size())
             h = self._sub_cache[key]
             k = min(1.0, t / 0.3)
             a = fx.hook_alpha(t, self.hook_len) * k
             im = h if a >= 1 else h.copy()
             if a < 1:
                 im.putalpha(im.getchannel("A").point(lambda v: round(v * a)))
-            cy = (c.content_top + c.footer.button.y) / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 40
-            if with_image:  # 그림 아래쪽에 흰 판 + 문구
-                box = c.card_box
-                # 그림 아래쪽, 단 마스코트(오른쪽 아래 구석) 위로 올려 문구가 가려지지 않게
-                floor = (self._mascot_box()[1] - 20) if self.mascot is not None else box.y + box.h - 40
-                cy = min(box.y + box.h - 40, floor) - im.height / 2 + (1 - (1 - (1 - k) ** 3)) * 30
-                panel = Image.new("RGBA", (im.width + 60, im.height + 30), (0, 0, 0, 0))
-                ImageDraw.Draw(panel).rounded_rectangle([0, 0, panel.width - 1, panel.height - 1], radius=36,
-                                                        fill=(255, 255, 255, round(235 * a)))
-                MovingLayer._paste(img, panel, round(self.canvas[0] / 2 - panel.width / 2),
-                                   round(cy - panel.height / 2))
+            rise = (1 - (1 - (1 - k) ** 3)) * 30
+            if with_image:  # 자막 자리 바로 아래 (그림 위)
+                cy = self._hook_slots(h.height)[0] + rise
+            else:
+                cy = (c.content_top + c.footer.button.y) / 2 - 40 + rise
             MovingLayer._paste(img, im, round(self.canvas[0] / 2 - im.width / 2), round(cy - im.height / 2))
             return
         h = self.hook_img
         cx = self.canvas[0] / 2
         cy = (c.content_top + c.footer.button.y) / 2 + 40
-        if with_image:
-            cy = c.card_box.y + c.card_box.h - h.height / 2 - 20
+        if with_image:  # 자막 자리 바로 아래 (그림 위)
+            cy = self._hook_slots(h.height)[0]
         if self.v.hook == "pop_words":  # 단어씩: 왼쪽부터 가려 둔 부분을 연다
             n = max(1, len(self.project.hook.split()))
             k = min(n, int(t / 0.2) + 1)

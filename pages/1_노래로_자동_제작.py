@@ -476,13 +476,14 @@ else:
                       format_func=var.SUBTITLES.get, key="v_sb")
     it = v4.selectbox("인트로", list(var.INTROS), index=list(var.INTROS).index(cur.intro),
                       format_func=var.INTROS.get, key="v_it")
-    mo = v5.selectbox("그림 움직임", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
+    mo = v5.selectbox("그림 움직임 (화려한 스타일만)", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
                       format_func=var.MOTIONS.get, key="v_mo", help="1위는 더 강하게 + 등장 때 번쩍·흔들림")
     extra = {}
-    axes_ui = [("hook", "후킹 등장"), ("beat", "비트 맞춤"), ("count", "기록 숫자"), ("sfx", "효과음"),
+    axes_ui = [("hook", "후킹 등장"), ("beat", "비트 맞춤 (화려한 스타일만)"), ("count", "기록 숫자"), ("sfx", "효과음"),
                ("progress", "진행 표시"), ("ending", "보너스 등장"), ("mascot", "마스코트 한장이"),
-               ("datagfx", "1위 뒤 그래프"), ("depth", "2.5D 입체"), ("burst", "키워드 터뜨리기")]
-    cols_ui = st.columns(5) + st.columns(5)
+               ("datagfx", "1위 뒤 그래프"), ("depth", "2.5D 입체 (화려한 스타일만)"), ("burst", "키워드 터뜨리기"),
+               ("inout", "카드 인·아웃 (클린)")]
+    cols_ui = st.columns(6) + st.columns(5)
     for col, (k, label_) in zip(cols_ui, axes_ui):
         opts = var.AXES[k]
         extra[k] = col.selectbox(label_, list(opts), index=list(opts).index(getattr(cur, k)), format_func=opts.get,

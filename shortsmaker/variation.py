@@ -34,6 +34,9 @@ COUNTS = {"countup": "기록 숫자 카운트업", "static": "숫자 고정"}  #
 SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
 PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
 ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
+INOUTS = {"fade_up": "페이드 + 아래에서 살짝", "fade_side": "페이드 + 옆에서 살짝", "fade_zoom": "페이드 + 살짝 커지며"}
+INOUT_LEN = 0.3     # 카드 인·아웃 시간(초)
+CALM = {"beat": "off", "motion": "none", "depth": "off"}  # 클린 스타일: 움직임 효과 없음 (사용자 결정 2026-10-12)
 LOOKS = {"clean_a": "클린 A (기본)", "clean_b": "클린 B (흰 카드·라인)", "classic": "화려한 스타일 (예전, 선택)"}
 DEFAULT_LOOK = "clean_a"   # 새 영상 기본 스타일 (2026-10-11 사용자 결정). 예전 프로젝트는 look 이 없으면 classic
 MASCOTS = {"right": "마스코트 오른쪽 아래", "left": "마스코트 왼쪽 아래", "off": "마스코트 없음"}
@@ -49,7 +52,7 @@ CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
         "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
         "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS,
-        "look": LOOKS}
+        "look": LOOKS, "inout": INOUTS}
 OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none", "mascot": "off",
        "datagfx": "off", "depth": "off", "burst": "off"}  # 추천에서 빼는 값
 FIXED = ("design", "mascot", "look")  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰, 마스코트는 기본 오른쪽 아래)
@@ -74,6 +77,7 @@ class Variation(BaseModel):
     datagfx: str = "off"
     depth: str = "off"
     burst: str = "off"
+    inout: str = "fade_up"  # 클린 스타일 카드 인·아웃 (페이드 + 살짝 미끄러지기)
     look: str = "classic"  # 전체 스타일. 새 영상은 suggest() 가 DEFAULT_LOOK(클린 A) — 값이 없는 예전 기록은 classic
 
     @field_validator("count", mode="before")
@@ -137,6 +141,7 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
     rnd = random.Random(seed)
     past = recent(root, exclude)
     choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES if k not in FIXED}
+    choices.update({k: [v] for k, v in CALM.items()})  # 움직임 효과는 고르지 않음 (인·아웃 방식만 바뀜)
     combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}, mascot="right", look=DEFAULT_LOOK)
               for _ in range(4000)]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]

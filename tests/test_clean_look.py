@@ -76,7 +76,7 @@ def test_clean_renderer_and_chart_label(tmp_path, t, art):
                      variation={"look": "clean_a", "beat": "pulse_flash", "motion": "wobble", "datagfx": "bars",
                                 "mascot": "right"})
     r = make_renderer(p, tmp_path, t, SONG)
-    assert r.clean and r.v.beat == "pulse" and r.v.motion == "kenburns"   # 흔들림·번쩍 없음 (1위만)
+    assert r.clean and (r.v.beat, r.v.motion, r.v.depth) == ("off", "none", "off") and r.flash == 0   # 움직임 없음
     assert r.t.card.subtitle.stroke_width == 0                        # 자막 테두리 없음
     bounds = r._chart_bounds()
     assert bounds["right"] < t.width - 50 - 60                        # 기준선 글씨 자리를 오른쪽에 남김
@@ -186,3 +186,44 @@ def test_info_v2_hook_from_title_mascot_folder_and_placeholder_block(tmp_path):
     assert not any("임시" in e for e in pre_render(p, tmp_path, require_rights=False).errors)  # 시험 렌더는 됨
     del data["items"][0]["image"]
     assert any("그림이 없습니다" in e for e in pre_render(Project.model_validate(data), tmp_path).errors)
+
+
+
+def test_clean_cards_only_fade_in_and_out(tmp_path, t, art):
+    for r_ in (5, 4, 3, 2, 1):
+        compose_clean(art, "clean_a", rank=r_, record=f"{50 + r_}홈런", year="2003", team="삼성 라이온즈",
+                      player="선수").save(tmp_path / f"card{r_}.png")
+    p = make_project(tmp_path, items=[{"rank": r_, "name": f"선수{r_}", "value": f"{50 + r_}홈런",
+                                       "image": f"card{r_}.png"} for r_ in (5, 4, 3, 2, 1)],
+                     variation={"look": "clean_a", "beat": "pulse_flash", "motion": "wobble", "depth": "pan",
+                                "inout": "fade_up", "mascot": "right"})
+    r = make_renderer(p, tmp_path, t, SONG)
+    fps = t.fps
+    sc = next(s for s in r.scenes if s.kind == "rank")
+    assert r.state(round(sc.start * fps) + 2)[1][0] == "in"
+    mid = round((sc.start + sc.end) / 2 * fps)
+    assert r.state(mid)[1] is None and r.frame(mid).tobytes() == r.frame(mid + 10).tobytes()   # 가운데는 정지
+    assert r.state(round(sc.end * fps) - 3)[1][0] == "out"
+    assert r.state(mid)[-1][1] == 0.0                                  # 한장이 까딱 없음
+    for _ in range(3):
+        v = var.suggest(tmp_path, seed=_)
+        assert (v.beat, v.motion, v.depth) == ("off", "none", "off") and v.inout in var.INOUTS
+
+
+def test_hook_layout_no_overlap(tmp_path, t):
+    Image.new("RGB", (941, 1672), (30, 60, 120)).save(tmp_path / "hook.png")
+    make_cards_simple(tmp_path)
+    p = make_project(tmp_path, hook="우승 반지 8개를 가진 선수는?!", hook_image="hook.png",
+                     variation={"look": "clean_a", "mascot": "right"})
+    r = make_renderer(p, tmp_path, t, SONG)
+    h = r._hook_text_height()
+    cy, (x0, y0, x1, y1) = r._hook_slots(h)
+    st_ = t.card.subtitle
+    assert cy - h / 2 > st_.y + st_.h + 30                              # 자막 자리(2줄) 아래에 문구
+    assert y0 >= cy + h / 2                                             # 문구 아래에 그림
+    assert y1 <= r._mascot_box()[1]                                     # 그림은 한장이 위까지
+
+
+def make_cards_simple(d):
+    for r_ in (5, 4, 3, 2, 1):
+        Image.new("RGBA", (941, 1162), (200, 200, 200, 255)).save(d / f"card{r_}.png")
