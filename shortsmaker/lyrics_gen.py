@@ -27,7 +27,8 @@ class LyricsGenError(RuntimeError):
 class Version(BaseModel):
     name: str
     angle: str = ""  # 이 버전의 관점 (반전 중심, 비교 중심 …)
-    lyrics: str
+    lyrics: str      # 노래용 (숫자는 한글로 읽는 대로: '오십육 홈런') → Suno 에 복사
+    subtitles: str = ""  # 자막용 (같은 줄, 숫자만 아라비아: '56홈런') → 영상 자막
 
 
 class Draft(BaseModel):
@@ -60,6 +61,9 @@ def build_prompt(topic: str, title: str, rows: list[dict], source: str, *, avoid
 1. 위 데이터에 있는 숫자·이름·팀만 쓴다. 데이터에 없는 기록·연도·사실·다른 구단은 절대 지어내지 않는다.
    숫자는 노래로 부르기 쉽게 한글로 읽어 써도 된다 (예: 152억 → 백오십이억). 값은 바꾸지 않는다.
    비교할 때 데이터 숫자끼리의 차이(예: 152억 - 150억 = 이억 차이)는 써도 된다. 그 밖의 새 숫자는 쓰지 않는다.
+   가사는 두 벌로 준다: "lyrics"(노래용, 숫자를 한글로 읽는 대로: 오십육 홈런, 이천십오 년)와
+   "subtitles"(자막용, lyrics 와 줄·태그가 똑같고 숫자만 아라비아 숫자: 56홈런, 2015년).
+   사람·팀 이름과 일반 낱말(이승엽, 이번, 사이 등)은 자막용에서도 그대로 둔다.
 2. 단순한 순위 나열 금지. 각 버전마다 다음을 모두 넣는다:
    - 반전 (예: '하지만', '알고 보면', 예상과 다른 결과)
    - 해설·관점 (왜 이 기록이 대단한지, 무엇을 의미하는지)
@@ -71,25 +75,63 @@ def build_prompt(topic: str, title: str, rows: list[dict], source: str, *, avoid
 
 답은 아래 JSON 하나만 출력 (설명·코드블록 표시 없이):
 {{"title": "Suno에 넣을 곡 제목", "style": "Suno Style 문구 (영어, 장르·분위기·BPM)",
- "versions": [{{"name": "버전 이름", "angle": "이 버전의 관점 한 줄", "lyrics": "[Intro]\\n...\\n[Verse]\\n..."}}]}}"""
+ "versions": [{{"name": "버전 이름", "angle": "이 버전의 관점 한 줄", "lyrics": "[Intro]\\n...\\n[Verse]\\n...",
+   "subtitles": "[Intro]\\n...(lyrics 와 같은 줄 수, 숫자만 아라비아)"}}]}}"""
 
 
-def parse_response(text: str) -> Draft:
-    """모델 답(앞뒤 설명·```json 블록 포함 가능)에서 JSON 을 꺼낸다."""
+def parse_response(text: str, rows: list[dict] | None = None) -> Draft:
+    """모델 답(앞뒤 설명·```json 블록 포함 가능)에서 JSON 을 꺼낸다.
+
+    자막용이 없거나 노래용과 줄이 맞지 않으면 자동 규칙(숫자 자동 변환)으로 만든다.
+    """
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise LyricsGenError("답에서 JSON 을 찾지 못했습니다. 프롬프트의 형식대로 다시 받아 붙여 넣으세요")
     try:
-        return Draft.model_validate(json.loads(m.group(0)))
+        draft = Draft.model_validate(json.loads(m.group(0)))
     except (ValueError, TypeError) as e:
         raise LyricsGenError(f"답 JSON 형식이 다릅니다: {e}") from e
+    for v in draft.versions:
+        if pair_problems(v.lyrics, v.subtitles, rows or []):
+            v.subtitles = auto_subtitles(v.lyrics, rows or [])
+    return draft
+
+
+def _names(rows: list[dict]) -> list[str]:
+    return [x for r in rows for x in (r.get("player"), r.get("team")) if x]
+
+
+def auto_subtitles(lyrics: str, rows: list[dict]) -> str:
+    """노래용 가사 → 자막용 (줄마다 숫자 자동 변환, 태그·빈 줄 그대로)."""
+    from .rank_extract import display_text
+    nums = [int(n) for r in rows for n in re.findall(r"\d+", str(r.get("record") or "").replace(",", ""))]
+    return "\n".join(l if l.strip().startswith("[") else display_text(l, _names(rows), nums)
+                     for l in lyrics.splitlines())
+
+
+def pair_problems(lyrics: str, subtitles: str, rows: list[dict]) -> list[str]:
+    """노래용·자막용 두 벌이 줄 단위로 맞는지: 줄 수, 태그 위치, 이름이 그대로인지."""
+    a, b = lyrics.strip().splitlines(), subtitles.strip().splitlines()
+    if not subtitles.strip():
+        return ["자막용 가사가 없습니다"]
+    if len(a) != len(b):
+        return [f"줄 수가 다릅니다 (노래용 {len(a)}줄, 자막용 {len(b)}줄)"]
+    out = []
+    for no, (x, y) in enumerate(zip(a, b), start=1):
+        if x.strip().startswith("[") != y.strip().startswith("["):
+            out.append(f"{no}번째 줄: 태그 위치가 다릅니다")
+        for n in _names(rows):
+            if n in x and n not in y:
+                out.append(f"{no}번째 줄: 자막용에 '{n}'이(가) 없습니다")
+    return out
 
 
 def claude_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subprocess.run) -> Draft:
+def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subprocess.run,
+                         rows: list[dict] | None = None) -> Draft:
     """`claude -p` (도구 없이, 세션 저장 없이). 실패하면 LyricsGenError — 화면은 수동 모드로 넘어간다."""
     if runner is subprocess.run and not claude_available():
         raise LyricsGenError("claude 명령을 찾을 수 없습니다 (Claude Code 설치·로그인 확인)")
@@ -108,32 +150,38 @@ def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subproce
         body = envelope.get("result", "")
     except ValueError:
         body = proc.stdout
-    return parse_response(body)
+    return parse_response(body, rows)
 
 
 def check_versions(draft: Draft, rows: list[dict], history) -> list[LyricsReport]:
     return [check_lyrics_text(v.lyrics, rows, history=history) for v in draft.versions]
 
 
-def brief_markdown(title: str, style: str, lyrics: str, *, topic: str = "", source: str = "") -> str:
+def brief_markdown(title: str, style: str, lyrics: str, *, topic: str = "", source: str = "",
+                   subtitles: str = "") -> str:
     return "\n".join([
         f"# {title}", "",
         "## 제목 (Title)", "", title, "",
         "## Style", "", style, "",
-        "## Lyrics", "", lyrics.strip(), "",
+        "## Lyrics (노래용 — Suno 에 이것을 붙여 넣기)", "", lyrics.strip(), "",
+        *(["## 자막용 (영상 자막에 자동으로 쓰임, Suno 에 넣지 않음)", "", subtitles.strip(), ""] if subtitles.strip() else []),
         "---", f"주제: {topic}" if topic else "", f"데이터 출처: {source}" if source else "",
         "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).", "",
     ])
 
 
 def save_brief(folder: Path, title: str, style: str, lyrics: str, report: LyricsReport, *, topic: str = "",
-               source: str = "", overlaps_confirmed: bool = False) -> Path:
+               source: str = "", overlaps_confirmed: bool = False, subtitles: str = "",
+               rows: list[dict] | None = None) -> Path:
     """검사기를 통과한 가사만 저장. 겹침 경고가 있으면 사람이 확인해야 저장."""
     if not report.passed:
         raise LyricsGenError("가사 검사를 통과하지 못해 저장할 수 없습니다: " + "; ".join(report.errors[:3]))
     if report.overlaps and not overlaps_confirmed:
         raise LyricsGenError("이전 영상과 겹치는 표현이 있습니다. 확인 체크 후 저장하세요")
+    if subtitles.strip() and (probs := pair_problems(lyrics, subtitles, rows or [])):
+        raise LyricsGenError("노래용·자막용 가사가 줄 단위로 맞지 않습니다: " + "; ".join(probs[:3]))
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "suno_brief.md"
-    path.write_text(brief_markdown(title, style, lyrics, topic=topic, source=source), encoding="utf-8")
+    path.write_text(brief_markdown(title, style, lyrics, topic=topic, source=source, subtitles=subtitles),
+                    encoding="utf-8")
     return path

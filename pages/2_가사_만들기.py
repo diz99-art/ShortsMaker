@@ -16,8 +16,8 @@ import streamlit as st
 from shortsmaker import manual_prompt as mp
 from shortsmaker import production_log as plog
 from shortsmaker.lyrics_check import check_lyrics_text, history_lyrics
-from shortsmaker.lyrics_gen import (DEFAULT_STYLE, Draft, LyricsGenError, build_prompt, claude_available,
-                                    generate_with_claude, parse_response, save_brief)
+from shortsmaker.lyrics_gen import (DEFAULT_STYLE, Draft, LyricsGenError, auto_subtitles, build_prompt, claude_available,
+                                    generate_with_claude, pair_problems, parse_response, save_brief)
 from shortsmaker.models import PROJECTS_DIR
 from shortsmaker.rank_extract import RankRow, label, rows_complete
 
@@ -141,7 +141,7 @@ g1, g2 = st.columns(2)
 if g1.button("Claude 로 3가지 만들기 (claude -p)", key="gen_claude", type="primary", disabled=not claude_available()):
     with st.spinner("claude -p 로 가사 생성 중 (1분 안팎)"):
         try:
-            d = generate_with_claude(prompt)
+            d = generate_with_claude(prompt, rows=b["rows"])
             b["draft"] = d.model_dump()
             log("lyrics_generated", via="claude -p", versions=len(d.versions))
             st.rerun()
@@ -155,7 +155,7 @@ with st.expander("수동 모드: 프롬프트 복사 → claude.ai·ChatGPT 에 
     pasted = st.text_area("받은 답(JSON) 붙여 넣기", "", height=160, key="pasted")
     if st.button("붙여 넣은 답 읽기", key="parse") and pasted.strip():
         try:
-            d = parse_response(pasted)
+            d = parse_response(pasted, b["rows"])
             b["draft"] = d.model_dump()
             log("lyrics_generated", via="manual", versions=len(d.versions))
             st.rerun()
@@ -175,7 +175,17 @@ v = draft.versions[choice]
 st.caption(f"관점: {v.angle}")
 sname = st.text_input("Suno 곡 제목", draft.title, key=f"st{choice}")
 style = st.text_input("Style", draft.style or DEFAULT_STYLE, key=f"sy{choice}")
-text = st.text_area("가사 (고쳐도 됩니다)", v.lyrics, height=420, key=f"ly{choice}")
+la, lb = st.columns(2)
+text = la.text_area("노래용 가사 (Suno 에 넣음 · 숫자는 한글로 읽는 대로)", v.lyrics, height=420, key=f"ly{choice}")
+sub_key = f"sub{choice}"
+if sub_key not in ss:
+    ss[sub_key] = v.subtitles or auto_subtitles(v.lyrics, b["rows"])
+if lb.button("숫자 자동 변환 (노래용 → 자막용)", key=f"auto{choice}"):
+    ss[sub_key] = auto_subtitles(text, b["rows"])
+subs = lb.text_area("자막용 가사 (영상 자막 · 같은 줄, 숫자만 아라비아)", height=420, key=sub_key)
+pair_errs = pair_problems(text, subs, b["rows"])
+for e in pair_errs:
+    lb.error(e)
 report = check_lyrics_text(text, b["rows"], history=hist)
 cA, cB = st.columns(2)
 with cA:
@@ -188,12 +198,14 @@ with cB:
         st.warning(w)
     st.caption(f"통계: {report.stats}")
 ack = st.checkbox("이전 영상과 겹치는 표현을 확인했습니다", key=f"ack{choice}") if report.overlaps else True
-if st.button("Suno 용으로 저장", key="save_brief", type="primary", disabled=not (report.passed and ack)):
+if st.button("Suno 용으로 저장", key="save_brief", type="primary",
+             disabled=not (report.passed and ack and not pair_errs)):
     try:
         path = save_brief(BRIEFS / NAME, sname, style, text, report, topic=b["topic"],
-                          source=f"{b['source_name']} {b['source_url']}", overlaps_confirmed=bool(ack))
+                          source=f"{b['source_name']} {b['source_url']}", overlaps_confirmed=bool(ack),
+                          subtitles=subs, rows=b["rows"])
         edited_flag = text.strip() != v.lyrics.strip()
-        b.update(chosen=choice, chosen_lyrics=text, suno_title=sname, suno_style=style)
+        b.update(chosen=choice, chosen_lyrics=text, chosen_subtitles=subs, suno_title=sname, suno_style=style)
         log("lyrics_chosen", version=v.name, edited_by_human=edited_flag, report=report.as_dict())
         st.success(f"저장: {path}")
     except LyricsGenError as e:
@@ -207,6 +219,7 @@ if brief_md.exists():
         mp.copy_to_clipboard(b.get("suno_title", ""))
     if k2.button("Style 복사", key="cp_s"):
         mp.copy_to_clipboard(b.get("suno_style", ""))
-    if k3.button("가사 복사", key="cp_l"):
+    if k3.button("노래용 가사 복사 (Suno)", key="cp_l"):
         mp.copy_to_clipboard(b.get("chosen_lyrics", ""))
-    st.caption("Suno 유료 플랜으로 곡을 만든 뒤, '노래로 자동 제작'에서 곡을 올리고 이 브리프를 연결하세요.")
+    st.caption("Suno 유료 플랜으로 곡을 만든 뒤, '노래로 자동 제작'에서 곡을 올리고 이 브리프를 연결하세요. "
+               "브리프를 연결하면 자막은 자막용 가사(아라비아 숫자)로 나옵니다.")

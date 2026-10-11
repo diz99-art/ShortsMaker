@@ -71,8 +71,24 @@ def korean_to_int(word: str) -> int | None:
 
 _KNUM = re.compile(f"[{NUM_CHARS}]+")
 
+# 고유어 숫자 (열 이상만 바꾼다: '서른한 개'→'31개'. '세 개', '한 번'은 읽기 쉬워 그대로)
+NATIVE_TENS = {"열": 10, "스물": 20, "스무": 20, "서른": 30, "마흔": 40, "쉰": 50, "예순": 60, "일흔": 70,
+               "여든": 80, "아흔": 90}
+NATIVE_ONES = {"하나": 1, "한": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5, "여섯": 6,
+               "일곱": 7, "여덟": 8, "아홉": 9}
+_NATIVE = re.compile("(" + "|".join(sorted(NATIVE_TENS, key=len, reverse=True)) + ")("
+                     + "|".join(sorted(NATIVE_ONES, key=len, reverse=True)) + ")?")
 
 PARTICLES = set("은는이가을를의도만에과와로째")
+# 자막 표기에서 숫자로 바꾸는 단위 (이 단위 바로 앞의 숫자만 바꾼다)
+DISPLAY_UNITS = sorted(set(RECORD_UNITS + ["위", "년", "시즌", "번"]), key=len, reverse=True)
+# 숫자 글자로 시작하고 바로 뒤에 단위 글자가 붙어 헷갈리는 흔한 낱말
+COMMON_WORDS = ("이번", "사회", "육회", "일개", "이년", "구회")
+
+
+def _is_year(word: str, value: int | None) -> bool:
+    """'이천십오'→2015, '일구팔오'→1985 처럼 연도로 읽은 숫자."""
+    return value is not None and 1900 <= value <= 2099 and ("천" in word or len(word) == 4)
 
 
 def _protected(text: str, protect) -> tuple[str, list[str]]:
@@ -90,52 +106,88 @@ def _restore(text: str, kept: list[str]) -> str:
     return re.sub("\ue000(\\d+)\ue001", lambda m: kept[int(m.group(1))], text)
 
 
-def normalize_numbers(text: str, protect=()) -> str:
+def normalize_numbers(text: str, protect=(), numbers=()) -> str:
     """가사 속 한글 숫자를 아라비아 숫자로 ('십육 연패'→'16연패', '오십육 홈런'→'56홈런', '이천십 년'→'2010년').
 
-    - 숫자 뒤에 기록 단위나 '위'·'년'이 올 때만 바꾼다 (일반 낱말 속 '이', '사' 등은 그대로)
+    - 단위(홈런·개·년·위·승·경기·번·회 …) 바로 앞의 숫자만 바꾼다 (일반 낱말 속 '이', '사' 등은 그대로)
+    - 연도로 읽은 숫자('이천십오', '일구팔오')는 단위가 없어도 '2015'
+    - numbers: 표의 기록 숫자. 같은 값이면 단위 없이 불러도 바꾼다 ('2위 이승엽 삼성 오십사'→'… 54')
+    - 고유어는 열 이상만 ('서른한 개'→'31개', '세 개'는 그대로)
     - 사람·팀 이름은 절대 바꾸지 않는다: protect 로 받은 이름과 구단 사전의 이름은 미리 빼 둔다 ('이승엽'→그대로)
     - 단위 바로 뒤에 조사가 아닌 한글이 이어지면 낱말의 일부로 본다 ('이승엽', '이승리')
+    - 한 글자 숫자는 단위와 붙어 있을 때만 ('이 경기'의 '이'는 '이것'이라는 뜻일 수 있다)
     - '억'·'만'으로 끝나는 한 글자 숫자('백억', '이억')는 그대로, 두 글자 이상('백오십이억')만 '152억'
     """
     teams, _ = load_teams()
     team_names = [n for t in teams for n in (t.name, *t.aliases)]
     work, kept = _protected(text, list(protect) + team_names)
+    wanted = {int(n) for n in numbers if int(n) >= 10}
 
-    def repl(m: re.Match) -> str:
+    def unit_after(rest: str) -> tuple[str | None, str, bool]:
+        """(뒤따르는 단위, 단위 뒤 한 글자, 숫자와 단위 사이 공백 여부)."""
+        for u in DISPLAY_UNITS:
+            m = re.match(r"(\s*)" + re.escape(u), rest)
+            if m:
+                return u, rest[m.end():m.end() + 1], bool(m.group(1))
+        return None, "", False
+
+    def word_like(ch: str) -> bool:
+        return bool(ch and re.match(r"[가-힣]", ch) and ch not in PARTICLES)
+
+    def hangul_before(src: str, m: re.Match) -> bool:
+        return bool(re.match(r"[가-힣]", src[max(0, m.start() - 1):m.start()]))
+
+    def sino(m: re.Match) -> str:
         word = m.group(0)
-        before = work[max(0, m.start() - 1):m.start()]
-        if before and re.match(r"[가-힣]", before):
+        if hangul_before(work, m) or any(work.startswith(c, m.start()) for c in COMMON_WORDS):
             return word
         rest = work[m.end():]
         if word[-1] in BIG_UNITS and len(word) > 1:  # '백오십이억' → '152억' (단위는 살린다)
-            nxt = rest[:1]
-            if len(word) < 3 or (nxt and re.match(r"[가-힣]", nxt) and nxt not in PARTICLES):
+            if len(word) < 3 or word_like(rest[:1]):
                 return word
             head = korean_to_int(word[:-1])
             return f"{head}{word[-1]}" if head is not None else word
-        unit = next((u for u in sorted(RECORD_UNITS + ["위", "년", "시즌"], key=len, reverse=True)
-                     if re.match(r"\s*" + re.escape(u), rest)), None)
-        if unit is None:
-            return word
-        after = rest[re.match(r"\s*" + re.escape(unit), rest).end():][:1]
-        if after and re.match(r"[가-힣]", after) and after not in PARTICLES:
-            return word  # 단위가 아니라 낱말의 일부 ('이승엽'의 '승')
         value = korean_to_int(word)
         if value is None:
             return word
-        return str(value)
+        unit, after, spaced = unit_after(rest)
+        if _is_year(word, value):
+            return word if unit is None and word_like(rest[:1]) else str(value)
+        if all(c in DIGITS for c in word) and len(word) > 1:
+            return word  # '사이', '오일' 처럼 한 자리씩 이어진 글자는 연도(4자리)가 아니면 숫자로 보지 않는다
+        if unit is not None:
+            inning = unit == "회" and after in ("말", "초")  # '십 회말' → '10회말'
+            return word if (word_like(after) and not inning) or (word in DIGITS and spaced) else str(value)
+        if value in wanted and len(word) > 1 and not word_like(rest[:1]):
+            return str(value)
+        return word
 
-    out = _KNUM.sub(repl, work)
-    # '16 연패' → '16연패' (숫자와 단위 사이 공백 제거, '억 원' 같은 단위 안 공백은 유지)
-    units = "|".join(re.escape(u) for u in sorted(RECORD_UNITS + ["위", "년"], key=len, reverse=True))
-    out = re.sub(rf"(\d)\s+({units})", r"\1\2", out)
+    work = _KNUM.sub(sino, work)
+
+    def native(m: re.Match) -> str:
+        if hangul_before(work, m):
+            return m.group(0)
+        unit, after, spaced = unit_after(work[m.end():])
+        if unit is None or word_like(after):
+            return m.group(0)
+        return str(NATIVE_TENS[m.group(1)] + (NATIVE_ONES[m.group(2)] if m.group(2) else 0))
+
+    out = _NATIVE.sub(native, work)
+    # '16 연패' → '16연패' (숫자와 단위 사이 공백 제거). 연도는 '년'만 붙인다 ('2026 홈런 전쟁')
+    units = "|".join(re.escape(u) for u in DISPLAY_UNITS)
+
+    def glue(g: re.Match) -> str:
+        if re.fullmatch(r"(19|20)\d\d", g.group(1)) and g.group(2) != "년":
+            return g.group(0)
+        return g.group(1) + g.group(2)
+
+    out = re.sub(rf"(?<![\d.])(\d+)\s+({units})", glue, out)
     return _restore(out, kept)
 
 
-def display_text(text: str, protect=()) -> str:
+def display_text(text: str, protect=(), numbers=()) -> str:
     """자막 표시용: 숫자 정리 + 부르는 말 → 표기 ('케이비오'→'KBO', '탑파이브'→'TOP 5'). 이름은 바꾸지 않는다."""
-    t = normalize_numbers(text, protect)
+    t = normalize_numbers(text, protect, numbers)
     for a, b in [("케이비오", "KBO"), ("탑파이브", "TOP 5"), ("탑 파이브", "TOP 5"), ("탑텐", "TOP 10")]:
         t = t.replace(a, b)
     return t

@@ -19,6 +19,7 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable
@@ -49,6 +50,44 @@ def _norm(s: str) -> str:
 def char_times(line: LyricLine) -> list[float]:
     """줄의 글자마다 나타나는 시각. 문장 부호는 앞 글자와, 공백은 다음 글자와 함께 나타난다.
 
+    자막 표기가 부른 가사와 다르면(line.sung: '오십육 홈런' → 자막 '56홈런') 부른 가사로 글자 시각을 구한 뒤
+    같은 글자는 그 시각을, 바뀐 부분('오십육 '→'56')은 원래 부른 구간 안에서 고르게 나눠 쓴다.
+    """
+    if line.sung and line.sung != line.text:
+        return _mapped_times(line)
+    return _own_times(line)
+
+
+def _mapped_times(line: LyricLine) -> list[float]:
+    src = line.model_copy(update={"text": line.sung, "sung": ""})
+    st = _own_times(src)
+    n = len(src.text)
+    tail = max([line.end] + [w.end for w in line.words]) if line.words else line.end
+    word_ends = sorted(w.end for w in line.words)
+    ends = []  # 부른 글자마다 끝나는 시각: 다음 글자 시각 (단어 끝을 넘지 않게)
+    for i in range(n):
+        nxt = st[i + 1] if i + 1 < n else tail
+        cap = next((e for e in word_ends if e >= st[i]), tail)
+        ends.append(max(st[i], min(nxt, cap) if not src.text[i].isspace() else nxt))
+    chars = list(line.text)
+    times = [line.start] * len(chars)
+    for op, i1, i2, j1, j2 in SequenceMatcher(None, src.text, line.text, autojunk=False).get_opcodes():
+        if op == "equal":
+            times[j1:j2] = st[i1:i2]
+            continue
+        if j1 == j2:
+            continue
+        a = st[i1] if i1 < n else tail
+        b = ends[i2 - 1] if i2 > i1 else a
+        vis = [j for j in range(j1, j2) if _norm(chars[j])]
+        for k, j in enumerate(vis):
+            times[j] = a + (b - a) * k / len(vis)
+    return _settle(chars, set(j for j, c in enumerate(chars) if _norm(c)), times, line.start)
+
+
+def _own_times(line: LyricLine) -> list[float]:
+    """char_times 의 기본: 자막 글자를 부른 단어 구간에 비율로 나눈다.
+
     단어 타이밍(words)이 있으면 그 안에서 글자를 나눈다: 화면 글자(글자·숫자만) k번째를
     단어들의 글자 수 누적 비율로 대응시켜 해당 단어 구간 안에서 보간한다.
     (화면 글자가 부른 가사와 조금 달라도 — 예: '케이비오'→'KBO' — 비율로 맞춘다.)
@@ -77,15 +116,18 @@ def char_times(line: LyricLine) -> list[float]:
         span = max(line.end - line.start, 1e-3)
         for k, ci in enumerate(visible):
             times[ci] = line.start + span * k / n
-    # 문장 부호는 바로 앞 글자와 함께, 공백은 다음 글자와 함께 나타난다
-    counted = set(visible)
+    return _settle(chars, set(visible), times, line.start)
+
+
+def _settle(chars: list[str], counted: set[int], times: list[float], start: float) -> list[float]:
+    """문장 부호는 바로 앞 글자와 함께, 공백은 다음 글자와 함께 나타나게 하고 단조 증가로 맞춘다."""
     for i, ch in enumerate(chars):
         if i not in counted and not ch.isspace():
-            times[i] = times[i - 1] if i else line.start
+            times[i] = times[i - 1] if i else start
     nxt = None
     for i in range(len(chars) - 1, -1, -1):
         if chars[i].isspace():
-            times[i] = nxt if nxt is not None else times[i - 1] if i else line.start
+            times[i] = nxt if nxt is not None else times[i - 1] if i else start
         else:
             nxt = times[i]
     # 단조 증가 보장

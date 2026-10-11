@@ -61,6 +61,7 @@ class LyricLine(BaseModel):
     end: float
     text: str
     words: list[Word] = Field(default_factory=list)  # 자동 맞추기 결과 (없으면 줄 구간을 글자 수로 나눔)
+    sung: str = ""  # 실제로 부른 가사 (자막 표기가 다를 때 글자 시각을 이 원문 기준으로 나눈다: '오십육 홈런'→'56홈런')
 
     @model_validator(mode="after")
     def _end_after_start(self) -> "LyricLine":

@@ -215,7 +215,25 @@ else:
         elif state.lyrics_ack:
             st.caption("✅ 가사 검사 결과 확인함")
 
-        with st.expander("자막 표기 고치기 (시간은 그대로)"):
+        with st.expander("자막 표기 고치기 (시간은 그대로)", expanded=bool(ss.get("num_preview"))):
+            st.caption("노래는 한글 숫자로 부르고 자막은 아라비아 숫자로 보입니다. 단위(홈런·개·년·위·승·경기·번·회 …) "
+                       "앞 숫자와 연도('이천십오'), 표의 기록 숫자만 바꾸고 사람·팀 이름과 일반 낱말은 그대로 둡니다.")
+            if st.button("숫자 자동 변환", key="subs_num"):
+                ss.num_preview = ap.number_preview(state, D)
+            prev = ss.get("num_preview")
+            if prev is not None:
+                if not prev:
+                    st.success("바꿀 줄이 없습니다")
+                else:
+                    pv = st.data_editor(pd.DataFrame([{"적용": True, "시작": round(c["start"], 2), "지금": c["from"],
+                                                       "바뀔 표기": c["to"]} for c in prev]),
+                                        hide_index=True, disabled=["시작", "지금", "바뀔 표기"], key="num_pv")
+                    if st.button("고른 줄 바꾸기", key="subs_num_apply", type="primary"):
+                        picked = [c for c, ok in zip(prev, pv["적용"].tolist()) if ok]
+                        n = ap.apply_number_preview(state, D, picked)
+                        ss.num_preview = None
+                        st.toast(f"{n}줄 바꿨습니다")
+                        st.rerun()
             proj = load_project(D / "project.json")[0]
             sub = st.data_editor(pd.DataFrame([{"시작": l.start, "자막": l.text} for l in proj.lyrics]), hide_index=True,
                                  disabled=["시작"], key="subs")

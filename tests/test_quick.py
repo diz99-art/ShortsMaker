@@ -43,7 +43,8 @@ def test_numbers_never_touch_names(text, expected):
 
 
 def test_protect_list_and_extract_keeps_names():
-    assert normalize_numbers("구승엽 구 승", ["구승엽"]) == "구승엽 9승"
+    assert normalize_numbers("구승엽 구승", ["구승엽"]) == "구승엽 9승"
+    assert normalize_numbers("이 경기") == "이 경기"                 # 띄어 쓴 한 글자 숫자는 그대로 (이 = 이것)
     rows = extract_ranks(HR_SONG.splitlines())
     assert [r.player for r in rows if r.rank in (2, 1)] == ["이승엽", "이승엽"]
 

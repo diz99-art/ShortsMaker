@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -310,12 +311,7 @@ def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str 
         state.merge_record_lines = merge_record_lines
     project = _project(state, d)
     # 자막은 매번 실제로 부른 가사 원문에서 새로 만든다 (이미 다듬은 자막을 또 다듬지 않음 — 예: '2승엽' 방지)
-    sung = d / "lyrics_sung.json"
-    base = ([LyricLine.model_validate(x) for x in json.loads(sung.read_text(encoding="utf-8"))]
-            if sung.exists() else project.lyrics)
-    base = [l if l.end <= state.duration else l.model_copy(update={"end": state.duration})
-            for l in base if l.start < state.duration]
-    lines = subtitle_lines(base, state.rows, state.merge_record_lines)
+    lines = subtitle_lines(_sung_base(state, d), state.rows, state.merge_record_lines, brief_subtitles(state, d))
     save_project(project.model_copy(update={"title": state.title, "lyrics": lines}), d)
     for r in state.rows:  # 표가 바뀌면 사진 검색어도 새로
         ps = state.players[r.slot]
@@ -356,25 +352,104 @@ def swap_slots(state: AutoState, d: Path, a: int, b: int) -> None:
                 images={"a": state.players[a].approved, "b": state.players[b].approved})
 
 
-def subtitle_lines(lines: list[LyricLine], rows: list[RankRow], merge: bool) -> list[LyricLine]:
-    """자막 표시: 한글 숫자·'케이비오' 정리. merge 면 'N위, 팀' 줄과 바로 뒤 기록 줄을 한 자막으로."""
+def record_numbers(rows: list[RankRow]) -> list[int]:
+    """표의 기록 숫자 (단위 없이 불러도 자막에서 숫자로 바꾼다: '오십사' → 54)."""
+    return [int(n) for r in rows for n in re.findall(r"\d+", r.record.replace(",", ""))]
+
+
+def norm_line(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text)
+
+
+def subtitle_lines(lines: list[LyricLine], rows: list[RankRow], merge: bool,
+                   sub_map: dict[str, str] | None = None) -> list[LyricLine]:
+    """자막 표시: 한글 숫자·'케이비오' 정리. merge 면 'N위, 팀' 줄과 바로 뒤 기록 줄을 한 자막으로.
+
+    sub_map(부른 줄 → 자막용 줄, 가사 브리프에서)이 있으면 그 표기를 먼저 쓰고, 없는 줄만 자동 규칙으로 바꾼다.
+    부른 원문은 LyricLine.sung 에 남겨 글자 시각을 원래 부른 구간 안에서 나눈다.
+    """
     records = {r.record for r in rows if r.record}
     names = [x for r in rows for x in (r.player, r.team) if x]  # 이름 속 한글 숫자는 바꾸지 않음 ('이승엽')
+    nums = record_numbers(rows)
+    sub_map = sub_map or {}
+
+    def show(text: str) -> str:
+        return sub_map.get(norm_line(text)) or display_text(text, names, nums)
+
     out: list[LyricLine] = []
     i = 0
     while i < len(lines):
         cur = lines[i]
-        text = display_text(cur.text, names)
+        sung = cur.sung or cur.text
+        text = show(sung)
         if merge and i + 1 < len(lines):
-            nxt = display_text(lines[i + 1].text, names)
+            nsung = lines[i + 1].sung or lines[i + 1].text
+            nxt = show(nsung)
             if "위" in text and any(rec in nxt for rec in records) and "위" not in nxt:
                 out.append(LyricLine(start=cur.start, end=lines[i + 1].end, text=f"{text} {nxt}",
-                                     words=cur.words + lines[i + 1].words))
+                                     words=cur.words + lines[i + 1].words, sung=f"{sung} {nsung}"))
                 i += 2
                 continue
-        out.append(cur.model_copy(update={"text": text}))
+        out.append(cur.model_copy(update={"text": text, "sung": sung}))
         i += 1
     return out
+
+
+def brief_subtitles(state: AutoState, d: Path) -> dict[str, str]:
+    """연결한 가사 브리프의 노래용→자막용 줄 대응 (없으면 빈 사전)."""
+    if not state.brief:
+        return {}
+    try:
+        b = load_brief(state.brief, d.parent)
+    except FlowError:
+        return {}
+    return pair_map(b.get("chosen_lyrics", ""), b.get("chosen_subtitles", ""))
+
+
+def pair_map(sung: str, subs: str) -> dict[str, str]:
+    a = [l.strip() for l in sung.splitlines() if l.strip() and not l.strip().startswith("[")]
+    b = [l.strip() for l in subs.splitlines() if l.strip() and not l.strip().startswith("[")]
+    if not b or len(a) != len(b):
+        return {}
+    return {norm_line(x): y for x, y in zip(a, b)}
+
+
+def _sung_base(state: AutoState, d: Path) -> list[LyricLine]:
+    sung = d / "lyrics_sung.json"
+    base = ([LyricLine.model_validate(x) for x in json.loads(sung.read_text(encoding="utf-8"))]
+            if sung.exists() else _project(state, d).lyrics)
+    return [l if l.end <= state.duration else l.model_copy(update={"end": state.duration})
+            for l in base if l.start < state.duration]
+
+
+def number_preview(state: AutoState, d: Path) -> list[dict]:
+    """'숫자 자동 변환' 미리보기: 지금 자막과 규칙대로 바꾼 자막이 다른 줄 (시간은 그대로)."""
+    _need_table(state)
+    project = _project(state, d)
+    auto = subtitle_lines(_sung_base(state, d), state.rows, state.merge_record_lines, brief_subtitles(state, d))
+    if len(auto) != len(project.lyrics):  # 줄 구성이 달라졌으면 시작 시각으로 맞춘다
+        by_start = {round(l.start, 2): l for l in auto}
+        auto = [by_start.get(round(l.start, 2), l) for l in project.lyrics]
+    return [{"line": i, "start": l.start, "from": l.text, "to": a.text, "sung": a.sung}
+            for i, (l, a) in enumerate(zip(project.lyrics, auto)) if a.text != l.text]
+
+
+def apply_number_preview(state: AutoState, d: Path, changes: list[dict]) -> int:
+    """미리보기에서 고른 줄만 자동 표기로 바꾼다. 바뀐 줄 수.
+
+    부른 원문(sung)이 없는 옛 자막 줄은 함께 채워 둔다 (글자 시각을 부른 구간 안에서 나누도록)."""
+    project = _project(state, d)
+    lines = list(project.lyrics)
+    by_start = {round(l.start, 2): l for l in _sung_base(state, d)}
+    for i, l in enumerate(lines):
+        src = by_start.get(round(l.start, 2))
+        if not l.sung and src is not None and norm_line(display_text(src.text)) == norm_line(display_text(l.text)):
+            lines[i] = l.model_copy(update={"sung": src.text})
+    for c in changes:
+        lines[c["line"]] = lines[c["line"]].model_copy(update={"text": c["to"], "sung": c["sung"]})
+    save_project(project.model_copy(update={"lyrics": lines}), d)
+    plog.append(d, "subtitles_numbers", changes=[{k: c[k] for k in ("line", "from", "to")} for c in changes])
+    return len(changes)
 
 
 def _need_table(state: AutoState) -> None:
