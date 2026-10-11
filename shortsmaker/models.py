@@ -376,6 +376,8 @@ class CardLayout(BaseModel):
     rank_word: str = "{rank}위"        # 가사에서 장면 전환 시점을 찾을 낱말
     auto_cards: bool = False           # 항목(이름·값·이미지)으로 클린 카드를 자동 합성 (정보한장)
     default_look: str = "classic"      # 프로젝트 연출에 look 이 없을 때 쓰는 스타일
+    hook_from_title: bool = False      # 후킹 문구가 없으면 제목 첫 줄로 (로고 인트로 없이 후킹 → 바로 5위)
+    mascot_dir: str = "mascot"         # assets/<이 폴더> 의 마스코트 그림. 'mascot' 외 폴더는 비어 있으면 마스코트 없음
 
 
 class Template(BaseModel):

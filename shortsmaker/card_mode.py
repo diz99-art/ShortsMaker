@@ -691,6 +691,8 @@ class CardRenderer:
                 self.warnings.append(f"비트 분석 실패로 비트 효과를 뺐습니다: {e}")
         self.beats = self.beatmap if self.v.beat != "off" else None   # 카드 펄스용
         self._label_font = t.font_path("black")
+        self._masks: dict[int, Image.Image | None] = {}
+        self._bubble_xy: dict[tuple[int, int], tuple[int, int]] = {}
         self.cues = sfx_cues(self.project, t, self.scenes)
         if self.v.depth != "off" and not self._depth:
             self.warnings.append("2.5D 입체는 분위기 카드 디자인으로 합성한 카드에서만 됩니다 (카드를 다시 합성하세요)")
@@ -699,7 +701,11 @@ class CardRenderer:
         self.chart_base = fx.record_value(self.project.gauge_base) if self.project.gauge_base else None
         # 마스코트
         self.mascot = None
-        if self.v.mascot != "off":
+        self.mascot_dir = msc.ASSETS_DIR / self.t.card.mascot_dir
+        has_art = self.mascot_dir.is_dir() and any(self.mascot_dir.glob("*.png"))
+        if self.v.mascot != "off" and not has_art and self.t.card.mascot_dir != "mascot":
+            self.warnings.append(f"assets/{self.t.card.mascot_dir}/ 에 마스코트 그림이 없어 마스코트 없이 만듭니다")
+        elif self.v.mascot != "off":
             self.mascot = msc.make_plan(self.scenes, self.lines, mood=self.project.mood,
                                         bubbles=self.project.bubbles, hook_len=self.hook_len,
                                         duration=self.project.duration)
@@ -745,8 +751,10 @@ class CardRenderer:
         self.bonus_off: MovingLayer | None = None
         if self.clean:  # 클린: 같은 카드 + 회색 물음표 + '번외' (도장·기울기·깜빡임 없음)
             from .card_clean import clean_bonus
+            lay: dict = {}
             card = clean_bonus(self.v.look, rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year,
-                               text=bo.text, kind=bo.kind, accent=self.stat_color or "#F26A00")
+                               text=bo.text, kind=bo.kind, accent=self.stat_color or "#F26A00", layers=lay)
+            self._bonus_text = lay["text"].getchannel("A")  # 말풍선이 피할 글자 자리
             return MovingLayer(card, c.card_box, motion, t.fps, c.content_top, self.canvas, dx=dx)
         if self.v.design:  # 영상 카드와 같은 디자인 + 반전 ('6위?!', '근데…', 기울기, 조명 꺼짐)
             from .card_design import compose_bonus
@@ -1073,7 +1081,7 @@ class CardRenderer:
     def _draw_mascot(self, img: Image.Image, mas: tuple) -> None:
         expr, ang, bub = mas
         x, y = self._mascot_box()
-        im = msc.expression_image(expr)
+        im = msc.expression_image(expr, folder=self.mascot_dir)
         if ang:  # 발끝을 축으로 까딱
             big = Image.new("RGBA", (im.width * 2, im.height * 2), (0, 0, 0, 0))
             big.alpha_composite(im, (im.width // 2, 0))
@@ -1087,12 +1095,82 @@ class CardRenderer:
             key = ("bubble", i)
             if key not in self._sub_cache:
                 self._sub_cache[key] = msc.bubble_image(text, self._label_font, tail_right=self.v.mascot != "left")
-            b = self._sub_cache[key]
+            full = self._sub_cache[key]
+            bx, by = self._bubble_pos(i, full)
+            b = full
             s = 0.6 + 0.4 * min(1.0, k / 4)
-            if s < 1:
-                b = b.resize((max(1, round(b.width * s)), max(1, round(b.height * s))), Image.BICUBIC)
-            bx = x + msc.SIZE - b.width + 10 if self.v.mascot != "left" else x - 10
-            img.alpha_composite(b, (max(0, bx), max(0, y - b.height + 20)))
+            if s < 1:  # 꼬리 쪽(아래)을 기준으로 커짐
+                b = full.resize((max(1, round(full.width * s)), max(1, round(full.height * s))), Image.BICUBIC)
+                bx += (full.width - b.width) if self.v.mascot != "left" else 0
+                by += full.height - b.height
+            img.alpha_composite(b, (max(0, bx), max(0, by)))
+
+    def _text_mask(self, idx: int) -> Image.Image | None:
+        """그 장면 화면에서 글자가 있는 자리 (카드의 순위·기록·이름 글자, 그래프 글자). 말풍선이 피할 곳."""
+        if idx in self._masks:
+            return self._masks[idx]
+        sc = self.scenes[idx]
+        mask = None
+        if sc.kind == "chart":
+            lay = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
+            c = self.t.card
+            fx.draw_chart(lay, self.chart_bars, 9.0, base=self.chart_base, base_label=self.project.gauge_base,
+                          years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
+                          accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
+                          bottom_y=c.footer.button.y - 30, clean=self.clean, **self._chart_bounds())
+            mask = lay.getchannel("A")
+        elif sc.kind in ("rank", "bonus"):
+            layer = self.layers[idx]
+            src = None
+            meta_p = (self.project_dir / sc.item.image).with_suffix(".json") if sc.kind == "rank" else None
+            if meta_p is not None and meta_p.exists():
+                import json as _json
+                lp = (_json.loads(meta_p.read_text(encoding="utf-8")).get("layers") or {}).get("text")
+                if lp and (self.project_dir / lp).is_file():
+                    src = _load_rgba(str(self.project_dir / lp)).getchannel("A")
+                    meta = _json.loads(meta_p.read_text(encoding="utf-8"))  # 글자 층에는 기록 글자가 빠져 있음
+                    if meta.get("record"):
+                        src = src.copy()
+                        x1 = meta.get("right", meta["x"] + meta["size"] * 4)
+                        ImageDraw.Draw(src).rectangle([meta["x"], meta["y"], x1, meta["y"] + meta["h"]], fill=255)
+            if sc.kind == "bonus" and getattr(self, "_bonus_text", None) is not None:
+                src = self._bonus_text
+            if src is None:  # 글자 층이 없으면 카드 아래쪽 45% 를 글자 자리로 봄
+                a = layer.src.getchannel("A")
+                src = Image.new("L", a.size, 0)
+                src.paste(a.crop((0, int(a.height * 0.55), a.width, a.height)), (0, int(a.height * 0.55)))
+            small = src.resize((max(1, round(layer.w)), max(1, round(layer.h))))
+            mask = Image.new("L", self.canvas, 0)
+            mask.paste(small, (round(layer.cx - small.width / 2), round(layer.cy - small.height / 2)))
+        self._masks[idx] = mask
+        return mask
+
+    def _bubble_pos(self, i: int, b: Image.Image) -> tuple[int, int]:
+        """말풍선 자리: 마스코트 바로 위가 기본. 카드·그래프 글자와 겹치면 위로 올린다 (가장 덜 겹치는 곳)."""
+        a, _, _ = self.mascot.bubbles[i]
+        idx = self.scene_at(a + 1e-3).index
+        key = (i, idx)
+        if key in self._bubble_xy:
+            return self._bubble_xy[key]
+        x, y = self._mascot_box()
+        bx = x + msc.SIZE - b.width + 10 if self.v.mascot != "left" else x - 10
+        bx = min(max(0, bx), self.canvas[0] - b.width)
+        base_y = y - b.height + 20
+        top = self.t.card.subtitle.y + self.t.card.subtitle.h
+        mask = self._text_mask(idx)
+        best = (base_y, float("inf"))
+        if mask is not None:
+            import numpy as _np
+            arr = _np.asarray(mask)
+            for dy in range(0, base_y - top, 30):
+                yy = base_y - dy
+                hit = int((arr[yy:yy + b.height, bx:bx + b.width] > 40).sum())
+                if hit < best[1]:
+                    best = (yy, hit)
+                if hit < 30:
+                    break
+        self._bubble_xy[key] = (bx, best[0])
+        return self._bubble_xy[key]
 
     def _draw_hook(self, img: Image.Image, t: float) -> None:
         """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음)."""
@@ -1150,6 +1228,8 @@ def make_renderer(project: Project, project_dir: Path, t: Template, lines: list[
     if t.card.auto_cards:  # 정보한장: 항목으로 클린 카드 자동 합성
         from .info_cards import prepare_cards
         project = prepare_cards(project, project_dir, t)
+    if t.card.hook_from_title and not project.hook.strip():  # 로고 인트로 없이 후킹(제목 첫 줄) → 바로 5위
+        project = project.model_copy(update={"hook": project.title.split("\n")[0].strip()})
     scenes = card_timeline(project, t, lines)
     return CardRenderer(project, project_dir, t, scenes, lines)
 

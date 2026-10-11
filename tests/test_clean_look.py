@@ -129,3 +129,60 @@ def test_info_v2_auto_cards(tmp_path):
     make_renderer(p, tmp_path, t2, SONG)                               # 입력이 같으면 다시 만들지 않음
     assert sorted((tmp_path / "cards_auto").glob("card*.png")) == first
     assert r.frame_at(8.0).getpixel((540, 1100)) != r.frame_at(0.5).getpixel((540, 1100))
+
+
+def test_bubble_moves_off_card_text(tmp_path, t, art):
+    meta_cards(tmp_path, art)
+    p = make_project(tmp_path, bubbles={"ending": "구독 꾹!"}, mood="record",
+                     items=[{"rank": r_, "name": f"선수{r_}", "value": f"{50 + r_}홈런", "description": "삼성 라이온즈 2003",
+                             "image": f"card{r_}.png"} for r_ in (5, 4, 3, 2, 1)],
+                     variation={"look": "clean_a", "mascot": "right"})
+    r = make_renderer(p, tmp_path, t, SONG)
+    i = len(r.mascot.bubbles) - 1
+    a, _, _ = r.mascot.bubbles[i]
+    r.frame_at(a + 0.3)
+    bx, by = next(v for k, v in r._bubble_xy.items() if k[0] == i)
+    mask = np.asarray(r._text_mask(r.scene_at(a + 1e-3).index))
+    b = r._sub_cache[("bubble", i)]
+    assert (mask[by:by + b.height, bx:bx + b.width] > 40).sum() < 30   # 카드 글자와 안 겹침
+    x, y = r._mascot_box()
+    assert by < y                                                     # 마스코트보다 위
+
+
+def meta_cards(d, art):
+    import json
+    for r_ in (5, 4, 3, 2, 1):
+        kw = dict(rank=r_, record=f"{50 + r_}홈런", year="2003", team="삼성 라이온즈", player="선수")
+        compose_clean(art, "clean_a", **kw).save(d / f"card{r_}.png")
+        meta, layers = {}, {}
+        compose_clean(art, "clean_a", **kw, omit_record=True, meta=meta, layers=layers).save(d / f"card{r_}_base.png")
+        meta["base"] = f"card{r_}_base.png"
+        meta["layers"] = {}
+        for n, im in layers.items():
+            im.save(d / f"L{r_}{n}.png")
+            meta["layers"][n] = f"L{r_}{n}.png"
+        (d / f"card{r_}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+
+def test_info_v2_hook_from_title_mascot_folder_and_placeholder_block(tmp_path):
+    from shortsmaker.info_cards import is_placeholder, mark_placeholder
+    from shortsmaker.models import Project, load_template
+    from shortsmaker.validate import pre_render
+    for r_ in (5, 4, 3, 2, 1):
+        Image.new("RGB", (600, 560), (40 * r_, 90, 160)).save(tmp_path / f"img{r_}.png")
+    mark_placeholder(tmp_path / "img3.png")
+    assert is_placeholder(tmp_path / "img3.png") and not is_placeholder(tmp_path / "img2.png")
+    data = dict(channel="info_v2", title="세계 인구 TOP 5\n2024 기준", duration=30, lyrics=[l.model_dump() for l in SONG],
+                variation={"mascot": "right"}, rights_confirmed=True,
+                items=[{"rank": r_, "name": f"나라{r_}", "value": f"{r_}억 명", "image": f"img{r_}.png"}
+                       for r_ in (5, 4, 3, 2, 1)])
+    p = Project.model_validate(data)
+    t2 = load_template("info_v2")
+    r = make_renderer(p, tmp_path, t2, SONG)
+    assert r.hook_len == pytest.approx(r.scenes[0].duration) and r.project.hook == "세계 인구 TOP 5"   # 로고 없이 후킹
+    assert r.mascot is None and any("mascot_info" in w for w in r.warnings)  # 정보한장 마스코트 폴더가 비어 있음
+    rep = pre_render(p, tmp_path, require_rights=True)
+    assert any("임시 글자 카드" in e for e in rep.errors)                       # 수익화용은 막힘
+    assert not any("임시" in e for e in pre_render(p, tmp_path, require_rights=False).errors)  # 시험 렌더는 됨
+    del data["items"][0]["image"]
+    assert any("그림이 없습니다" in e for e in pre_render(Project.model_validate(data), tmp_path).errors)

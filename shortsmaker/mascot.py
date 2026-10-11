@@ -20,7 +20,8 @@ from PIL import Image, ImageDraw
 
 from .scenes import _font
 
-MASCOT_DIR = Path(__file__).resolve().parent.parent / "assets" / "mascot"
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+MASCOT_DIR = ASSETS_DIR / "mascot"        # 야구한장 '한장이' (정보한장은 assets/mascot_info, 템플릿 mascot_dir)
 EXPRESSIONS = ("question", "surprise", "shock", "laugh", "clap", "thumbsup", "wave", "think", "sad", "cheer")
 DEFAULT = "default"        # 기본 표정 (어떤 표정 그림이 없을 때 대신)
 SIZE = 220                 # 화면 속 크기(px)
@@ -142,8 +143,9 @@ def _load(path: str, mtime: float, size: int) -> Image.Image:
     return out
 
 
-def expression_image(expr: str, size: int = SIZE, folder: Path = MASCOT_DIR) -> Image.Image:
+def expression_image(expr: str, size: int = SIZE, folder: Path | None = None) -> Image.Image:
     """assets/mascot/<표정>.png → 없으면 default.png → 그것도 없으면 임시 도형."""
+    folder = folder or MASCOT_DIR
     for name in (expr, DEFAULT):
         p = folder / f"{name}.png"
         if p.is_file():

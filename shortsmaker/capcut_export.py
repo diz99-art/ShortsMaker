@@ -378,7 +378,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
             expr = r.mascot.expr_at((a + b) / 2)
             dst = media / f"mascot_{expr}.png"
             if not dst.exists():
-                msc.expression_image(expr).save(dst)
+                msc.expression_image(expr, folder=r.mascot_dir).save(dst)
             from .models import Box
             ratio = _fit_ratio((msc.SIZE, msc.SIZE), Box(x=x, y=y, w=msc.SIZE, h=msc.SIZE), t)
             seg = cc.VideoSegment(str(dst), cc.Timerange(us(a), us(b - a)),

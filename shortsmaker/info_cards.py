@@ -9,9 +9,50 @@ import hashlib
 import json
 from pathlib import Path
 
-from .card_clean import compose_clean
+from PIL import Image, PngImagePlugin
+
+from .card_clean import compose_clean, soft_text
 from .models import Project, Template
 from .variation import ACCENTS, Variation
+
+PLACEHOLDER_KEY = "shortsmaker-placeholder"  # PNG 글 정보: 임시 그림 (수익화용 렌더에서 막음)
+
+
+def is_placeholder(path: Path) -> bool:
+    try:
+        with Image.open(path) as im:
+            return str(im.info.get(PLACEHOLDER_KEY, "")) == "1"
+    except OSError:
+        return False
+
+
+def mark_placeholder(path: Path) -> None:
+    """이미 있는 그림에 '임시' 표시를 단다 (그림은 그대로)."""
+    with Image.open(path) as im:
+        img = im.copy()
+    info = PngImagePlugin.PngInfo()
+    info.add_text(PLACEHOLDER_KEY, "1")
+    img.save(path, pnginfo=info)
+
+
+def placeholder_art(name: str) -> Image.Image:
+    """그림이 없을 때 임시 글자 카드 (이름 앞 글자). 시험 렌더용으로만."""
+    img = Image.new("RGB", (900, 700), (226, 231, 238))
+    t = soft_text((name or "?")[:3], 260, (120, 130, 146), shadow=0)
+    img.paste(t, ((900 - t.width) // 2, (700 - t.height) // 2), t)
+    return img
+
+
+def placeholder_problems(project: Project, project_dir: Path) -> list[str]:
+    """그림이 없거나 임시 글자 카드인 항목 (수익화용 렌더 차단 사유)."""
+    out = []
+    for it in project.ordered_items:
+        p = project_dir / it.image if it.image else None
+        if p is None or not p.is_file():
+            out.append(f"[{it.shown_rank}위 {it.name}] 그림이 없습니다 (임시 글자 카드는 시험 렌더용)")
+        elif is_placeholder(p):
+            out.append(f"[{it.shown_rank}위 {it.name}] 그림이 임시 글자 카드입니다 — 실제 그림으로 바꾸세요")
+    return out
 
 
 def prepare_cards(project: Project, project_dir: Path, t: Template) -> Project:
@@ -35,9 +76,10 @@ def prepare_cards(project: Project, project_dir: Path, t: Template) -> Project:
         if not card_p.exists():
             kw = dict(rank=it.shown_rank, record=it.value, year="", team="", player=it.name, tied=tied,
                       accent=accent, top=it.shown_rank == 1)
-            compose_clean(src, look, **kw).save(card_p)
+            art = src if src is not None else placeholder_art(it.name)  # 그림이 없으면 임시 글자 카드
+            compose_clean(art, look, **kw).save(card_p)
             meta, layers = {}, {}
-            compose_clean(src, look, **kw, omit_record=True, meta=meta, layers=layers).save(
+            compose_clean(art, look, **kw, omit_record=True, meta=meta, layers=layers).save(
                 out / f"card{it.rank}_{h}_base.png")
             meta["base"] = f"cards_auto/card{it.rank}_{h}_base.png"
             meta["layers"] = {}

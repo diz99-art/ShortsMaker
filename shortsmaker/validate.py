@@ -90,8 +90,15 @@ def pre_render(project: Project, project_dir: Path, *, require_rights: bool = Tr
     if t.background and not t.background_path():
         r.warnings.append(f"템플릿 배경 이미지가 없어 그라데이션을 사용합니다: {t.background}")
 
+    if t.mode == "card" and t.card and t.card.auto_cards:  # 정보한장: 임시 글자 카드는 시험 렌더용
+        from .info_cards import placeholder_problems
+        probs = placeholder_problems(project, project_dir)
+        (r.errors if require_rights else r.warnings).extend(
+            probs if not require_rights else [p + " (수익화용 렌더 불가)" for p in probs])
     for it in project.ordered_items:
         if not it.image:
+            if t.mode == "card" and t.card and t.card.auto_cards:
+                continue
             r.warnings.append(f"[{it.rank}위] 이미지가 지정되지 않아 대체 이미지를 사용합니다")
         elif not (project_dir / it.image).exists():
             r.errors.append(f"[{it.rank}위] 이미지 파일이 없습니다: {it.image}")

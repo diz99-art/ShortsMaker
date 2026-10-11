@@ -251,7 +251,9 @@
     },
     "rank_word": "{rank}위",
     "auto_cards": true,
-    "default_look": "clean_a"
+    "default_look": "clean_a",
+    "hook_from_title": true,
+    "mascot_dir": "mascot_info"
   },
   "effects": {
     "transition": 0,

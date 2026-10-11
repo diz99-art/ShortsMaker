@@ -238,10 +238,10 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
 
 
 def clean_bonus(look: str, *, rank: int | None, name: str, team: str, value: str, year: str, text: str = "",
-                kind: str = "rank", accent: str = "#F26A00") -> Image.Image:
+                kind: str = "rank", accent: str = "#F26A00", layers: dict | None = None) -> Image.Image:
     """보너스 '?' 카드 (클린): 같은 카드 + 회색 물음표 + '번외' 라벨 (도장·기울기 없음)."""
     if kind == "teaser":
         return compose_clean(question_mark(), look, rank=rank or 6, record="", year="", team=team, player=text,
-                             rank_label="다음 편", tag="예고", top=False, accent=accent)
+                             rank_label="다음 편", tag="예고", top=False, accent=accent, layers=layers)
     return compose_clean(question_mark(), look, rank=rank or 6, record=value, year=year, team=team, player=name,
-                         rank_label=f"{rank}위?", tag="번외", top=False, accent=accent)
+                         rank_label=f"{rank}위?", tag="번외", top=False, accent=accent, layers=layers)
