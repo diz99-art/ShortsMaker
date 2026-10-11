@@ -221,7 +221,10 @@ def test_hook_layout_no_overlap(tmp_path, t):
     st_ = t.card.subtitle
     assert cy - h / 2 > st_.y + st_.h + 30                              # 자막 자리(2줄) 아래에 문구
     assert y0 >= cy + h / 2                                             # 문구 아래에 그림
-    assert y1 <= r._mascot_box()[1]                                     # 그림은 한장이 위까지
+    mx, my = r._mascot_box()
+    assert x1 - x0 == round(t.width * 0.70)                             # 화면 너비 70%
+    assert y1 <= min(t.card.footer.button.y, t.card.footer.handle.y)    # '@야구한장 구독' 위까지
+    assert x1 <= mx or y1 <= my                                         # 한장이와 안 겹침
 
 
 def make_cards_simple(d):

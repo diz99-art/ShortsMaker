@@ -9,7 +9,8 @@
     "regular": "Pretendard-SemiBold.otf",
     "bold": "Pretendard-Bold.otf",
     "extrabold": "Pretendard-ExtraBold.otf",
-    "black": "Pretendard-Black.otf"
+    "black": "Pretendard-Black.otf",
+    "display": "GmarketSansTTFBold.ttf"
   },
   "card": {
     "background_color": "#FCFCFC",
@@ -32,7 +33,7 @@
       "y": 222,
       "w": 1020,
       "h": 172,
-      "font": "extrabold",
+      "font": "display",
       "size": 82,
       "min_size": 56,
       "color": "#0043C8",
@@ -82,7 +83,12 @@
       "w": 1080,
       "h": 720
     },
-    "card_box": {"x": 135, "y": 760, "w": 810, "h": 1000},
+    "card_box": {
+      "x": 135,
+      "y": 760,
+      "w": 810,
+      "h": 1000
+    },
     "content_top": 512,
     "intro_motion": {
       "curve": [

@@ -458,19 +458,20 @@ def clean_burst_image(word: str, accent: str, max_w: int, max_h: int) -> Image.I
 
 
 def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | None = None, size: int = 150,
-                progress: float = 1.0, split: bool = False) -> Image.Image:
+                progress: float = 1.0, split: bool = False, font: Path | None = None) -> Image.Image:
     """굵은 글씨 + 아래쪽 절반에 형광펜처럼 깔린 강조색 띠 (줄마다).
     progress: 띠가 왼쪽에서 오른쪽으로 그어진 정도 (0~1, 줄마다 차례로)."""
-    from .card_clean import soft_text
+    from .card_clean import FONT_BLACK, soft_text
+    font = font or FONT_BLACK
     lines = [l.strip() for l in re.split(r"\n| / ", text) if l.strip()][:2] or [text]
     if split and len(lines) == 1 and " " in lines[0]:  # 한 줄로는 줄여야 하면 가운데 띄어쓰기에서 두 줄로
-        one = soft_text(lines[0], size, color, shadow=8, alpha=0.15)
+        one = soft_text(lines[0], size, color, font, shadow=8, alpha=0.15)
         if one.width > max_w:
             words = lines[0].split(" ")
             cut = min(range(1, len(words)), key=lambda i: abs(len(" ".join(words[:i])) - len(" ".join(words[i:]))))
             lines = [" ".join(words[:cut]), " ".join(words[cut:])]
     while True:
-        imgs = [soft_text(l, size, color, shadow=8, alpha=0.15) for l in lines]
+        imgs = [soft_text(l, size, color, font, shadow=8, alpha=0.15) for l in lines]
         tw = max(i.width for i in imgs)
         th = sum(i.height for i in imgs) + 24 * (len(imgs) - 1)
         if (tw <= max_w and (not max_h or th + 20 <= max_h)) or size <= 50:
@@ -498,7 +499,9 @@ HOOK_WIPE = (0.25, 0.5)   # 클린 후킹: 밑줄이 그어지기 시작하는 �
 
 def clean_hook_image(text: str, accent: str, width: int, progress: float = 1.0, size: int = 195) -> Image.Image:
     """클린 후킹: 폭발 도형 대신 굵은 글씨(예전의 1.3배) + 강조색 밑줄이 왼쪽→오른쪽으로 그어짐."""
-    return marker_text(text, "#14171C", accent, width - 80, size=size, progress=progress, split=True)
+    from .card_clean import FONT_DISPLAY
+    return marker_text(text, "#14171C", accent, width - 80, size=size, progress=progress, split=True,
+                       font=FONT_DISPLAY)  # 후킹 문구는 G마켓 산스
 
 
 def hook_wipe(t: float) -> float:

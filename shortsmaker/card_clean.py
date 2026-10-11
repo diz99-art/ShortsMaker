@@ -25,6 +25,7 @@ BLUE = "#0043C8"
 INK = "#14171C"
 GRAY = "#6B7280"
 FONT_BOLD = FONTS_DIR / "Pretendard-Bold.otf"
+FONT_DISPLAY = FONTS_DIR / "GmarketSansTTFBold.ttf"  # 순위·기록 숫자 (G마켓 산스). 작은 글씨는 Pretendard
 FONT_SEMI = FONTS_DIR / "Pretendard-SemiBold.otf"
 LOOKS = {"clean_a": "클린 A (부드러운 판)", "clean_b": "클린 B (흰 카드·라인)"}
 
@@ -126,7 +127,8 @@ def question_mark(size: int = 520) -> Image.Image:
 
 
 def record_image(text: str, size: int) -> Image.Image:
-    return soft_text(text, size, INK, FONT_BLACK, shadow=8, alpha=0.18)
+    """카운트업 숫자 (카드 기록과 같은 G마켓 산스)."""
+    return soft_text(text, size, INK, FONT_DISPLAY)
 
 
 def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int, record: str, year: str, team: str,
@@ -166,8 +168,8 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
         # 순위와 기록을 비슷한 크기로 한 줄에 (폰에서 한눈에). 1위만 순위 글씨가 강조색
         size, avail = 132, cw - 96 - 44
         while True:
-            rk = soft_text(label, size, accent if top else BLUE)
-            rec = soft_text(record, size, INK) if record else None
+            rk = soft_text(label, size, accent if top else BLUE, FONT_DISPLAY)
+            rec = soft_text(record, size, INK, FONT_DISPLAY) if record else None
             if rk.width + (rec.width if rec is not None else 0) <= avail or size <= 48:
                 break
             size = int(size * 0.94)
@@ -202,7 +204,7 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
             L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + int(ch * 0.74) - art.height))
         x0 = margin + 48
         num = re.match(r"^(공동\s*)?(\d+)(위.*)$", label)
-        big = soft_text(num.group(2) if num else label, 220, BLUE, FONT_BLACK, shadow=10, alpha=0.18)
+        big = soft_text(num.group(2) if num else label, 220, BLUE, FONT_DISPLAY, shadow=10, alpha=0.18)
         L["text"].alpha_composite(big, (x0 - 6, margin + 30))
         if num:
             small = soft_text((num.group(1) or "") + num.group(3).strip(), 56, BLUE, FONT_BOLD, shadow=0)
@@ -211,7 +213,7 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
             ImageDraw.Draw(L["text"]).ellipse([margin + cw - 70, margin + 50, margin + cw - 46, margin + 74],
                                               fill=_hex(accent) + (255,))
         y_info = margin + int(ch * 0.76)
-        rec, rsize = _fit(record, 140, cw - 96, INK) if record else (None, 0)
+        rec, rsize = _fit(record, 140, cw - 96, INK, FONT_DISPLAY) if record else (None, 0)
         if rec is not None:
             if not omit_record:
                 L["text"].alpha_composite(rec, (x0, y_info))

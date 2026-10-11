@@ -1224,11 +1224,16 @@ class CardRenderer:
         st_ = c.subtitle
         top = st_.y + st_.h + 56                      # 자막 자리(2줄, 그림자 포함) 아래로 여유를 두고
         text_cy = top + text_h / 2
-        floor = c.footer.button.y - 24
-        if self.mascot is not None:                   # 오른쪽 아래 한장이 위까지만
-            floor = min(floor, self._mascot_box()[1] - 10)
-        box = c.card_box
-        return text_cy, (box.x, round(top + text_h + 24), box.x + box.w, round(floor))
+        floor = min(c.footer.button.y, c.footer.handle.y) - 22   # '@야구한장 구독' 바로 위까지 꽉
+        w = round(self.canvas[0] * 0.70)              # 화면 너비 70%
+        x0 = (self.canvas[0] - w) // 2
+        if self.mascot is not None:                   # 한장이와 겹치지 않게 옆으로 비켜 섬
+            mx, _ = self._mascot_box()
+            if self.v.mascot == "left":
+                x0 = max(x0, mx + msc.SIZE + 12)
+            else:
+                x0 = min(x0, mx - 12 - w)
+        return text_cy, (x0, round(top + text_h + 24), x0 + w, round(floor))
 
     def _draw_hook(self, img: Image.Image, t: float) -> None:
         """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간. 클린은 굵은 글씨 + 강조색 밑줄 (흔들림 없음).
@@ -1277,8 +1282,9 @@ class CardRenderer:
 
     @staticmethod
     def _rounded_card(src: Image.Image, box: tuple[int, int]) -> Image.Image:
+        """후킹 그림을 자리에 꽉 채움 (넘치는 위·아래는 잘라냄, 위쪽 35% 를 중심으로)."""
         from PIL import ImageOps
-        art = ImageOps.contain(src, (max(1, box[0] - 40), max(1, box[1] - 30)), Image.LANCZOS)
+        art = ImageOps.fit(src, (max(1, box[0] - 40), max(1, box[1] - 30)), Image.LANCZOS, centering=(0.5, 0.35))
         m = Image.new("L", art.size, 0)
         ImageDraw.Draw(m).rounded_rectangle([0, 0, art.width - 1, art.height - 1], radius=32, fill=255)
         art.putalpha(ImageChops.multiply(art.getchannel("A"), m))

@@ -9,7 +9,8 @@
     "regular": "Pretendard-SemiBold.otf",
     "bold": "Pretendard-Bold.otf",
     "extrabold": "Pretendard-ExtraBold.otf",
-    "black": "Pretendard-Black.otf"
+    "black": "Pretendard-Black.otf",
+    "display": "GmarketSansTTFBold.ttf"
   },
   "card": {
     "background_color": "#FCFCFC",
@@ -33,7 +34,7 @@
       "y": 222,
       "w": 1020,
       "h": 172,
-      "font": "extrabold",
+      "font": "display",
       "size": 82,
       "min_size": 56,
       "color": "#0043C8",
