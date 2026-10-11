@@ -1235,7 +1235,9 @@ class CardRenderer:
             cy = (c.content_top + c.footer.button.y) / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 40
             if with_image:  # 그림 아래쪽에 흰 판 + 문구
                 box = c.card_box
-                cy = box.y + box.h - im.height / 2 - 40 + (1 - (1 - (1 - k) ** 3)) * 30
+                # 그림 아래쪽, 단 마스코트(오른쪽 아래 구석) 위로 올려 문구가 가려지지 않게
+                floor = (self._mascot_box()[1] - 20) if self.mascot is not None else box.y + box.h - 40
+                cy = min(box.y + box.h - 40, floor) - im.height / 2 + (1 - (1 - (1 - k) ** 3)) * 30
                 panel = Image.new("RGBA", (im.width + 60, im.height + 30), (0, 0, 0, 0))
                 ImageDraw.Draw(panel).rounded_rectangle([0, 0, panel.width - 1, panel.height - 1], radius=36,
                                                         fill=(255, 255, 255, round(235 * a)))

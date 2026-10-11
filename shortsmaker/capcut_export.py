@@ -258,7 +258,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                           font_path=r._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
                           bottom_y=c.footer.button.y - 30, **r._chart_bounds())
             full.save(dst)
-            script.add_segment(cc.VideoSegment(str(dst), cc.Timerange(us(sc.start), us(sc.end - sc.start))), "로고·카드")
+            script.add_segment(cc.VideoSegment(str(dst), cc.Timerange(us(sc.start), us(sc.end) - us(sc.start))), "로고·카드")
             continue
         if sc.kind == "intro" and project.intro_image:
             src, box, motion = project_dir / project.intro_image, c.intro_box or c.logo_box, c.intro_motion
@@ -277,7 +277,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         with Image.open(dst) as im:
             ratio = _fit_ratio(im.size, box, t)
         tx, ty = _transform(t, box.x + box.w / 2, box.y + box.h / 2)
-        seg = cc.VideoSegment(str(dst), cc.Timerange(us(start), us(sc.end - start)),
+        seg = cc.VideoSegment(str(dst), cc.Timerange(us(start), us(sc.end) - us(start)),
                               clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio, transform_x=tx, transform_y=ty))
         layer = r.layers[sc.index]  # 연출(variation)이 반영된 움직임
         for sec, scale in layer.motion.curve:  # 확대 곡선을 그대로 키프레임으로
@@ -359,7 +359,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
             done = sum(1 for x in ranks if x.start <= sc.start)
             text = (f"{done} / {len(ranks)}" if v.progress == "fraction" else
                     "●" * done + "○" * (len(ranks) - done))
-            seg = cc.TextSegment(text, cc.Timerange(us(sc.start), us(sc.end - sc.start)),
+            seg = cc.TextSegment(text, cc.Timerange(us(sc.start), us(sc.end) - us(sc.start)),
                                  style=cc.TextStyle(size=8.0, bold=True, color=(0.07, 0.07, 0.07), align=2),
                                  clip_settings=cc.ClipSettings(transform_x=_transform(t, t.width - 150, 0)[0],
                                                                transform_y=_transform(t, 0, p_.y + p_.h / 2)[1]))

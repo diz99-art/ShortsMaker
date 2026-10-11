@@ -1000,6 +1000,21 @@ def used_sfx(state: AutoState, d: Path) -> tuple[list, str]:
     return sfx_cues(project, t, scenes), v.sfx
 
 
+def _need_sung_starts(state: AutoState, project: Project) -> bool:
+    """표의 순위 낱말('3위' 세 번 …)로 가사에서 장면 시각을 못 찾고, 행마다 부른 시각이 다 있을 때."""
+    from .card_mode import CardModeError, rank_times
+    starts = [r.start for r in sorted(state.rows, key=lambda r: -r.slot)]
+    if any(s_ is None for s_ in starts) or starts != sorted(starts) or len(set(starts)) != len(starts):
+        return False
+    t = load_template(state.template)
+    try:
+        rank_times(project.lyrics, [r.rank for r in sorted(state.rows, key=lambda r: -r.slot)],
+                   t.card.rank_word if t.card else "{rank}위")
+        return False
+    except (CardModeError, ValueError):
+        return True
+
+
 def build_project(state: AutoState, d: Path) -> Project:
     if not state.cards_done:
         raise FlowError("카드를 먼저 합성하세요")
@@ -1007,6 +1022,9 @@ def build_project(state: AutoState, d: Path) -> Project:
     items = [{"rank": r.slot, "display_rank": r.rank, "name": r.player or r.team, "value": r.record,
               "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card,
               "stat_line": r.stat_line} for r in state.rows]
+    if _need_sung_starts(state, project):  # 가사의 순위 낱말이 표와 다르면 (예: '오위, 박한이' ↔ 공동 3위) 부른 시각을 직접
+        for it, r in zip(items, state.rows):
+            it["start"] = r.start
     source = state.data_source_name + (f" ({state.data_source_url})" if state.data_source_url else "")
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
                                       "items": items, "intro_image": state.intro_image, "variation": state.variation,

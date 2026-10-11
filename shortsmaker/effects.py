@@ -329,7 +329,7 @@ def chart_bars(items) -> list[ChartBar]:
             continue
         year = next(iter(re.findall(r"(?<!\d)(\d{4})(?!\d)", it.description or "")), "")
         team = re.sub(r"\s*\d{4}\s*$", "", it.description or "").strip()
-        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.rank == 1))
+        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.shown_rank == 1))  # 공동 1위 모두
     return bars
 
 

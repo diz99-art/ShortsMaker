@@ -119,9 +119,14 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             plog.append(d, "quick_mismatch_accepted", issues=issues)
         extracted = {(r.rank, i): r for i, r in enumerate(state.rows)}
         rows = []
+        used: set[int] = set()
         for i, r in enumerate(data.rows):  # 가사 근거·시각은 추출 결과에서, 값은 표에서
-            ex = next((e for (rk, _), e in extracted.items() if rk == r.rank and (not r.player or r.player in e.lyric)),
-                      next((e for (rk, _), e in extracted.items() if rk == r.rank), None))
+            # 1) 그 선수 이름을 부르는 순위 줄 (가사 순위가 표와 달라도: '오위, 박한이' ↔ 표 공동 3위)
+            # 2) 같은 순위를 부르는 줄 (이름 없이 부르는 곡)
+            ex = next((e for (rk, k), e in extracted.items() if k not in used and r.player and r.player in e.lyric),
+                      next((e for (rk, k), e in extracted.items() if k not in used and rk == r.rank), None))
+            if ex is not None:
+                used.add(next(k for (rk, k), e in extracted.items() if e is ex))
             rows.append(r.model_copy(update={"lyric": ex.lyric if ex else "", "start": ex.start if ex else None,
                                              "stat_line": r.stat_line or (ex.stat_line if ex else "")}))
         try:
