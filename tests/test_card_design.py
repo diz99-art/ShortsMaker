@@ -106,3 +106,16 @@ def test_suggest_design_avoids_recent(tmp_path):
     var.record("b", var.Variation(design="rain", transition="slide"), tmp_path)
     var.record("c", var.Variation(design="glass", transition="pop"), tmp_path)
     assert var.suggest_design(cands, tmp_path) == "fall"                # 다 썼으면 가장 오래전 것
+
+
+def test_bonus_card_matches_design_with_twist():
+    kw = dict(rank=6, name="디아즈", team="삼성 라이온즈", value="50홈런", year="2025")
+    on = cd.compose_bonus("stadium", "rank", **kw)
+    off = cd.compose_bonus("stadium", "rank", **kw, off=True)
+    assert on.size != (cd.W, cd.H) and on.tobytes() != off.tobytes()     # 기울어짐 + 조명 꺼짐 상태가 다름
+    flat = cd.compose_bonus("stadium", "rank", **kw, tilt=0)
+    left_light = flat.getpixel((60 - 45, 40))[:3]
+    dark = cd.compose_bonus("stadium", "rank", **kw, tilt=0, off=True).getpixel((60 - 45, 40))[:3]
+    assert sum(left_light) > sum(dark) + 300                             # 왼쪽 조명탑이 꺼짐
+    teaser = cd.compose_bonus("fall", "teaser", text="다음 편: KBO 도루 TOP 5")
+    assert teaser.getbbox()

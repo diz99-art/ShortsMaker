@@ -249,6 +249,7 @@ class Ctx:
     y_rank: int = 0       # 순위 글자 위쪽 (배치가 끝난 뒤 채움)
     y_banner: int = 0
     art_box: tuple[int, int, int, int] = (0, 0, W, H)
+    off: bool = False     # 보너스 반전: 조명 하나 꺼짐 등 (디자인별)
 
 
 @dataclass
@@ -306,16 +307,18 @@ def _stadium_back(c: Ctx) -> Image.Image:
     img = vgrad((W, H), "#06122B", _mix(c.primary, "#06122B", 0.55))
     d = ImageDraw.Draw(img)
     for sx in (60, W - 60):  # 위 양쪽 조명탑에서 내려오는 빛줄기
-        beam = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        bd = ImageDraw.Draw(beam)
-        tx = W / 2 + (sx - W / 2) * -0.2
-        bd.polygon([(sx - 30, 40), (sx + 30, 40), (tx + 260, c.y_rank), (tx - 260, c.y_rank)],
-                   fill=(255, 250, 220, 70 if c.top else 50))
-        img.alpha_composite(beam.filter(ImageFilter.GaussianBlur(18)))
+        dark = c.off and sx == 60  # 보너스 반전: 왼쪽 조명탑이 꺼짐
+        if not dark:
+            beam = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            bd = ImageDraw.Draw(beam)
+            tx = W / 2 + (sx - W / 2) * -0.2
+            bd.polygon([(sx - 30, 40), (sx + 30, 40), (tx + 260, c.y_rank), (tx - 260, c.y_rank)],
+                       fill=(255, 250, 220, 30 if c.off else (70 if c.top else 50)))
+            img.alpha_composite(beam.filter(ImageFilter.GaussianBlur(18)))
         for k in range(4):  # 조명 알
             for j in range(3):
                 x, y = sx - 45 + j * 45, 40 + k * 38
-                d.ellipse([x - 15, y - 15, x + 15, y + 15], fill=(255, 255, 240, 255))
+                d.ellipse([x - 15, y - 15, x + 15, y + 15], fill=(60, 64, 72, 255) if dark else (255, 255, 240, 255))
     # 관중석 실루엣 + 잔디
     crowd = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(crowd)
@@ -330,7 +333,7 @@ def _stadium_back(c: Ctx) -> Image.Image:
 
 def _flare_front(c: Ctx) -> Image.Image | None:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    for sx in (60, W - 60):
+    for sx in ((W - 60,) if c.off else (60, W - 60)):
         img.alpha_composite(radial((W, H), (sx, 100), "#FFFFFF", "#FFFFFF", 160 if c.top else 110, 200, 0))
     if c.top:
         img.alpha_composite(sparkles((W, H), "#FFFFFF", 10, c.seed + 4, (60, 200, W - 60, c.y_banner - 200)))
@@ -848,14 +851,16 @@ def designs_for(mood: str) -> list[str]:
 
 def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank: int, record: str, year: str,
                      team: str, player: str, mock: bool = False, tied: bool = False, top: bool | None = None,
-                     omit_record: bool = False, meta: dict | None = None) -> Image.Image:
-    """card_compose.compose_card 와 같은 배치에 디자인별 배경·글자 효과. top: 1위 장식 (기본: rank == 1)."""
+                     omit_record: bool = False, meta: dict | None = None, rank_label: str | None = None,
+                     off: bool = False, banner: bool = True) -> Image.Image:
+    """card_compose.compose_card 와 같은 배치에 디자인별 배경·글자 효과. top: 1위 장식 (기본: rank == 1).
+    rank_label: 순위 자리 글자 (보너스 '6위?!'), off: 디자인별 반전 상태 (조명 꺼짐 등)."""
     import re as _re
     dz = DESIGNS[design]
     primary, secondary = team_colors(team)
-    c = Ctx(primary, secondary, rank, rank == 1 if top is None else top, seed=rank * 13 + len(design))
+    c = Ctx(primary, secondary, rank, rank == 1 if top is None else top, seed=rank * 13 + len(design), off=off)
 
-    rank_img = dz.rank_text(f"{rank}위", 270, c)
+    rank_img = _rank_with_twist(dz, rank_label, c) if rank_label else dz.rank_text(f"{rank}위", 270, c)
     if rank_img.width > 560:
         rank_img = rank_img.resize((560, round(rank_img.height * 560 / rank_img.width)), Image.LANCZOS)
     rec_size = 190
@@ -922,11 +927,12 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
             x1 = W / 2 + sx * (yr.width / 2 + 130)
             d.line([x0, cy, x1, cy], fill=_rgba(dz.year_color), width=8)
         _paste_center(card, yr, W / 2, cy)
-    banner = Image.new("RGBA", (W - 60, bh), (0, 0, 0, 0))
-    ImageDraw.Draw(banner).polygon([(30, 0), (W - 60, 0), (W - 90, bh), (0, bh)], fill=_rgba(b_fill),
-                                   outline=_rgba(b_edge), width=6)
-    card.alpha_composite(banner, (30, y_banner))
-    _paste_center(card, name, W / 2, y_banner + bh / 2)
+    if banner:
+        plate = Image.new("RGBA", (W - 60, bh), (0, 0, 0, 0))
+        ImageDraw.Draw(plate).polygon([(30, 0), (W - 60, 0), (W - 90, bh), (0, bh)], fill=_rgba(b_fill),
+                                      outline=_rgba(b_edge), width=6)
+        card.alpha_composite(plate, (30, y_banner))
+        _paste_center(card, name, W / 2, y_banner + bh / 2)
     if pl:
         rw = pl.width + 70
         ribbon = Image.new("RGBA", (rw, rh), (0, 0, 0, 0))
@@ -937,6 +943,64 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
         d = ImageDraw.Draw(card)
         d.rounded_rectangle([16, 16, 330, 84], radius=14, fill=(220, 0, 0, 235))
         d.text((173, 50), "MOCK 시험용", font=_font(str(FONT_EXTRA), 44), fill="white", anchor="mm")
+    return card
+
+
+def _rank_with_twist(dz: Design, label: str, c: Ctx) -> Image.Image:
+    """'6위?!' — 순위는 디자인 글자, '?!' 는 빨갛게 크게 (반전 강조)."""
+    import re as _re
+    m = _re.match(r"^(.*?)([?!？！]+)$", label)
+    head, tail = (m.group(1), m.group(2)) if m else (label, "")
+    a = dz.rank_text(head, 270, c)
+    if not tail:
+        return a
+    b = styled_text(tail, 300, ("#FFE3E3", "#FF3B3B", "#B00010"), stroke="#1A0000", stroke_w=12, outer="#FFFFFF",
+                    outer_w=7, skew=0.18)
+    b = glow(b, "#FF3030", 16, 1.3)
+    out = Image.new("RGBA", (a.width + b.width - 30, max(a.height, b.height)), (0, 0, 0, 0))
+    out.alpha_composite(a, (0, out.height - a.height))
+    out.alpha_composite(b, (a.width - 30, out.height - b.height))
+    return out
+
+
+def question_art(color: str = "#FFD23F") -> Image.Image:
+    """보너스 카드 그림 자리: 커다란 물음표 (캐리커처가 없을 때)."""
+    q = styled_text("?", 600, (_mix(color, "#FFFFFF", 0.5), color, _mix(color, "#000000", 0.35)), stroke="#111111",
+                    stroke_w=16, outer="#FFFFFF", outer_w=9, skew=0.08, shadow=12)
+    q = glow(q, color, 26, 1.2)
+    canvas = Image.new("RGBA", (W - 20, 1320), (0, 0, 0, 0))  # 그림 자리의 60% 쯤만 차지 (순위 글자와 안 겹치게)
+    q.thumbnail((int(canvas.width * 0.62), int(canvas.height * 0.62)))
+    canvas.alpha_composite(q, ((canvas.width - q.width) // 2, 60))
+    return canvas
+
+
+def compose_bonus(design: str, kind: str, *, rank: int | None = None, name: str = "", team: str = "", value: str = "",
+                  year: str = "", text: str = "", art: Path | Image.Image | None = None, off: bool = False,
+                  tilt: float = -5.0) -> Image.Image:
+    """엔딩 보너스 카드: 영상 카드와 같은 디자인 + 반전 ('6위?!', '근데…' 도장, 기울기, off=디자인별 반전 상태)."""
+    if kind == "teaser":
+        card = compose_designed(art, design, rank=rank or 6, record="", year="", team=team, player="",
+                                rank_label="다음 편?!", top=False, off=off, banner=False)
+        lines = [l.strip() for l in text.replace(":", "\n").split("\n") if l.strip()][:3]
+        y = 380
+        for l in lines:
+            im = styled_text(l, 110, "#FFFFFF", stroke="#111111", stroke_w=10, skew=0.08, shadow=6)
+            if im.width > W - 60:
+                im = im.resize((W - 60, round(im.height * (W - 60) / im.width)), Image.LANCZOS)
+            card.alpha_composite(im, ((W - im.width) // 2, y))
+            y += im.height + 24
+    else:
+        card = compose_designed(art if art is not None else question_art(), design, rank=rank or 6, record=value,
+                                year=year, team=team, player=name, rank_label=f"{rank}위?!", top=False, off=off)
+    st = stamp("근데…", 104, "#D91E2A", angle=-12, seed=7)
+    card.alpha_composite(st, (W - st.width - 24, 40))
+    if off and DESIGNS[design].back is not _stadium_back:  # 조명 반전이 없는 디자인은 전체가 한순간 어두워짐
+        from PIL import ImageEnhance
+        a = card.getchannel("A")
+        card = ImageEnhance.Brightness(card.convert("RGB")).enhance(0.55).convert("RGBA")
+        card.putalpha(a)
+    if tilt:
+        card = card.rotate(tilt, expand=True, resample=Image.BICUBIC)
     return card
 
 

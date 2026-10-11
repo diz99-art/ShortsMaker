@@ -301,6 +301,13 @@ def hook_alpha(t: float, length: float = HOOK_LEN) -> float:
 
 # ---------------------------------------------------------------- 엔딩 보너스 카드
 
+BONUS_FLICKER = [(0.55, 0.65), (0.75, 0.82), (1.25, 1.6)]  # 보너스 반전: 꺼지는 구간 (장면 시작 뒤 초)
+
+
+def bonus_flicker(t: float) -> bool:
+    return any(a <= t < b for a, b in BONUS_FLICKER)
+
+
 def bonus_card(kind: str, *, rank: int | None = None, name: str = "", team: str = "", value: str = "",
                year: str = "", text: str = "", accent: tuple[str, ...] = ("#FFF27A", "#F7B500", "#C86A00")
                ) -> Image.Image:

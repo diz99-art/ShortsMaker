@@ -672,8 +672,17 @@ class CardRenderer:
         c, t, bo = self.t.card, self.t, self.project.bonus
         motion, dx, _ = transition_motion({"stamp": "punch", "slide": "slide", "pop": "pop"}.get(self.v.ending, "punch"),
                                           c.card_motion)
-        if bo.image and (self.project_dir / bo.image).is_file():
-            src: Path | Image.Image = self.project_dir / bo.image
+        art = self.project_dir / bo.image if bo.image and (self.project_dir / bo.image).is_file() else None
+        self.bonus_off: MovingLayer | None = None
+        if self.v.design:  # 영상 카드와 같은 디자인 + 반전 ('6위?!', '근데…', 기울기, 조명 꺼짐)
+            from .card_design import compose_bonus
+            kw = dict(rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year, text=bo.text, art=art)
+            on = compose_bonus(self.v.design, bo.kind, **kw)
+            self.bonus_off = MovingLayer(compose_bonus(self.v.design, bo.kind, **kw, off=True), c.card_box, motion,
+                                         t.fps, c.content_top, self.canvas, dx=dx)
+            return MovingLayer(on, c.card_box, motion, t.fps, c.content_top, self.canvas, dx=dx)
+        if art is not None:
+            src: Path | Image.Image = art
         else:
             src = fx.bonus_card(bo.kind, rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year,
                                 text=bo.text, accent=self.accent_rank)
@@ -765,6 +774,8 @@ class CardRenderer:
             pulse = fx.pulse_state(self.beats, sec, fps, self.v.beat == "pulse_flash")
         # 기록 카운트업 (게이지도 같은 값으로)
         count = None
+        if sc.kind == "bonus" and getattr(self, "bonus_off", None) is not None and since >= 0:
+            count = "off" if fx.bonus_flicker(since / fps) else None   # 디자인별 반전: 꺼졌다 켜짐
         if sc.index in self._counts and since >= 0:
             frac = fx.count_frac(since / fps)
             count = fx.count_text(self._counts[sc.index]["record"], frac) if frac < 1 else None
@@ -828,7 +839,10 @@ class CardRenderer:
             if pulse is not None:
                 ks, dx, dy, ang = transform or (1.0, 0.0, 0.0, 0.0)
                 transform = (ks * ps, dx + pdx, dy, ang)
-            layer = self._count_layer(idx, count) if count is not None else self.layers[idx]
+            if count == "off":
+                layer = self.bonus_off
+            else:
+                layer = self._count_layer(idx, count) if count is not None else self.layers[idx]
             layer.draw(img, None if anim is None else anim / fps, transform)
         if gauge_v is not None:
             fx.draw_gauge(img, self.gauge, gauge_v, sc.item.description, self.stat_color or "#EB1B1B", self._label_font)
