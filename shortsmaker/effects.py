@@ -351,3 +351,156 @@ def bonus_card(kind: str, *, rank: int | None = None, name: str = "", team: str 
             card.alpha_composite(im, ((CARD_W - im.width) // 2, y))
             y += im.height + 30
     return card
+
+
+# ---------------------------------------------------------------- 데이터 그래픽 (1위 뒤 막대그래프)
+
+CHART_LEN = 2.0          # 보너스 직전 그래프 장면 길이
+CHART_GROW = 0.8         # 막대가 자라는 시간
+
+
+@dataclass
+class ChartBar:
+    label: str           # '5위'
+    name: str
+    value: float
+    record: str
+    team: str
+    year: str
+    top: bool = False
+
+
+def chart_bars(items) -> list[ChartBar]:
+    """영상 순서(5위→1위)대로. items: Project.ordered_items."""
+    bars = []
+    for it in items:
+        v = record_value(it.value)
+        if v is None:
+            continue
+        year = next(iter(re.findall(r"(?<!\d)(\d{4})(?!\d)", it.description or "")), "")
+        team = re.sub(r"\s*\d{4}\s*$", "", it.description or "").strip()
+        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.rank == 1))
+    return bars
+
+
+def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float | None, base_label: str,
+               years: bool, hot: str, accent: tuple[str, ...], font_path: Path, top_y: int, bottom_y: int,
+               left: int = 90, right: int | None = None) -> None:
+    """막대그래프 (기준선 포함). t: 장면 시작 뒤 초 (막대가 차례로 자람)."""
+    if not bars:
+        return
+    W_ = img.width
+    d = ImageDraw.Draw(img)
+    n = len(bars)
+    right = W_ - 90 if right is None else right
+    slot = (right - left) / n
+    bw = slot * 0.58
+    axis_y = bottom_y - (260 if years else 150)
+    maxv = max([b.value for b in bars] + ([base] if base else [])) * 1.1
+    hmax = axis_y - top_y - 90
+    f_val = _font(str(font_path), 48)
+    f_name = _font(str(font_path), 40)
+    f_small = _font(str(font_path), 32)
+    d.line([left - 20, axis_y, right + 20, axis_y], fill=(17, 17, 17, 255), width=6)
+    for i, b in enumerate(bars):
+        grow = min(1.0, max(0.0, (t - 0.08 * i) / CHART_GROW))
+        grow = 1 - (1 - grow) ** 3
+        cx = left + slot * (i + 0.5)
+        h = hmax * b.value / maxv * grow
+        primary, secondary = team_colors(b.team)
+        x0, x1 = cx - bw / 2, cx + bw / 2
+        if h > 2:
+            d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=12, fill=_hex(primary) + (255,),
+                                outline=_hex(hot) + (255,) if b.top else (17, 17, 17, 255),
+                                width=10 if b.top else 5)
+        val = b.value * grow
+        txt = f"{val:.0f}" if b.value == int(b.value) else f"{val:.1f}"
+        d.text((cx, axis_y - h - 12), txt, font=f_val, fill=(17, 17, 17, 255), anchor="mb", stroke_width=5,
+               stroke_fill=(255, 255, 255))
+        d.text((cx, axis_y + 14), b.name, font=f_name, fill=(17, 17, 17, 255), anchor="mt")
+        d.text((cx, axis_y + 62), b.label, font=f_small, fill=_hex(hot) + (255,) if b.top else (90, 90, 90, 255),
+               anchor="mt")
+    if base:
+        yb = axis_y - hmax * base / maxv
+        for x in range(left - 20, right + 20, 36):  # 점선
+            d.line([x, yb, x + 20, yb], fill=(226, 30, 30, 255), width=6)
+        d.text((right + 20, yb - 8), base_label, font=f_small, fill=(226, 30, 30, 255), anchor="rb", stroke_width=4,
+               stroke_fill=(255, 255, 255))
+    if years:  # 연도 타임라인: 축 위에 선수별 점
+        ys = [int(b.year) for b in bars if b.year]
+        if ys:
+            y0, y1 = min(ys), max(ys)
+            span = max(1, y1 - y0)
+            ty = bottom_y - 90
+            d.line([left, ty, right, ty], fill=(120, 120, 120, 255), width=5)
+            for b in bars:
+                if not b.year:
+                    continue
+                x = left + (right - left) * (int(b.year) - y0) / span
+                primary, _ = team_colors(b.team)
+                r = 16 if b.top else 12
+                d.ellipse([x - r, ty - r, x + r, ty + r], fill=_hex(primary) + (255,), outline=(17, 17, 17, 255),
+                          width=4)
+            d.text((left, ty + 24), str(y0), font=f_small, fill=(90, 90, 90, 255), anchor="lt")
+            d.text((right, ty + 24), str(y1), font=f_small, fill=(90, 90, 90, 255), anchor="rt")
+
+
+# ---------------------------------------------------------------- 키워드 터뜨리기
+
+BURST_LEN = 0.6
+BURST_GAP = 5.0          # 터뜨림 사이 최소 간격
+BURST_MAX = 3
+
+
+def pick_bursts(lines, times_of, names: list[str], strong: list[tuple[float, float]],
+                blocked: list[tuple[float, float]]) -> list[tuple[float, str]]:
+    """강한 구간(후렴)에서 숫자·순위·선수 이름을 부르는 순간 (간격 BURST_GAP 이상, 최대 BURST_MAX 번)."""
+    pat = re.compile(r"(공동\s*\d위|\d+위|\d[\d,]*(?:\.\d+)?[가-힣%]*" + "".join(f"|{re.escape(n)}" for n in names if n)
+                     + ")")
+    cands = []
+    for li, l in enumerate(lines):
+        ts = times_of(li)
+        for m in pat.finditer(l.text):
+            t = ts[m.start()] if m.start() < len(ts) else l.start
+            if any(a <= t < b for a, b in strong) and not any(a - 0.3 <= t < b for a, b in blocked):
+                cands.append((t, m.group(1)))
+    out: list[tuple[float, str]] = []
+    for t, word in sorted(cands):
+        if len(out) < BURST_MAX and (not out or t - out[-1][0] >= BURST_GAP):
+            out.append((t, word))
+    return out
+
+
+def burst_image(word: str, accent: tuple[str, ...], max_w: int) -> Image.Image:
+    size = 260
+    im = styled_text(word, size, accent, stroke="#3B0A00", stroke_w=14, outer="#FFFFFF", outer_w=9, skew=0.12)
+    while im.width > max_w and size > 80:
+        size = int(size * 0.9)
+        im = styled_text(word, size, accent, stroke="#3B0A00", stroke_w=14, outer="#FFFFFF", outer_w=9, skew=0.12)
+    return im
+
+
+def burst_frame(style: str, t: float) -> tuple[float, float, float]:
+    """(배율, 각도, 알파) — t: 터뜨린 뒤 초."""
+    fade = 1.0 if t < BURST_LEN - 0.15 else max(0.0, (BURST_LEN - t) / 0.15)
+    if style == "stamp":
+        s = 2.0 - 1.0 * min(1.0, t / 0.12) if t < 0.12 else 1.0
+        return s, -8.0, fade
+    return 0.6 + 0.6 * min(1.0, t / 0.25) ** 0.5, 0.0, min(1.0, t / 0.08) * fade
+
+
+# ---------------------------------------------------------------- 2.5D 패럴랙스
+
+LAYER_NAMES = ("back", "art", "front", "text")
+
+
+def parallax(kind: str, t: float) -> dict[str, tuple[float, float]]:
+    """층별 (배율, 가로 이동 px — 카드 원본 941px 기준). t: 등장 효과가 끝난 뒤 초."""
+    if kind == "dolly":  # 앞층일수록 더 빨리 다가옴
+        k = min(t, 8.0) / 8.0
+        return {"back": (1 + 0.02 * k, 0.0), "art": (1 + 0.06 * k, 0.0), "front": (1 + 0.1 * k, 0.0),
+                "text": (1.0, 0.0)}
+    if kind == "pan":  # 앞층일수록 더 크게 옆으로 흐름 (6초 주기 왕복)
+        s = math.sin(2 * math.pi * t / 6.0)
+        return {"back": (1.03, -14 * s), "art": (1.03, 18 * s), "front": (1.03, 34 * s), "text": (1.0, 0.0)}
+    return {n: (1.0, 0.0) for n in LAYER_NAMES}

@@ -154,7 +154,7 @@ def test_renderer_frames(tmp_path, t):
     assert hook.tobytes() != plain.tobytes()                         # 0~2초 후킹 문구
     assert r.state(round(1.0 * 30))[1] == "hook" and r.state(round(2.5 * 30))[1] != "hook"
     # 진행 점: 5위 장면 1개, 1위 장면 5개 채움
-    assert r.state(round(7.0 * 30))[-1][0] == 1 and r.state(round(23.0 * 30))[-1][0] == 5
+    assert r.state(round(7.0 * 30))[13][0] == 1 and r.state(round(23.0 * 30))[13][0] == 5
     bonus = r.frame_at(28.0)
     assert bonus.tobytes() != r.frame_at(24.0).tobytes()
     assert r.state(round(28 * 30))[0] == len(r.scenes) - 1

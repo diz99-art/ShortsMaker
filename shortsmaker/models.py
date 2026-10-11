@@ -108,6 +108,8 @@ class Project(BaseModel):
     hook: str = ""                  # 첫 0~2초 후킹 문구 ('50홈런이 6위?!'). 비우면 로고 인트로만
     bonus: Bonus | None = None      # 1위 뒤 엔딩 보너스 장면
     gauge_base: str = ""            # 게이지 바 기준선 ('50홈런'). 비우면 게이지 없이 숫자만
+    bubbles: dict[str, str] = Field(default_factory=dict)  # 마스코트 말풍선 {intro, top, ending} (3~8글자)
+    mood: str = ""                  # 카드 분위기 (마스코트 표정 고를 때)
 
     @field_validator("items")
     @classmethod

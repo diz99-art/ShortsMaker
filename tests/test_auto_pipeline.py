@@ -329,7 +329,7 @@ def test_full_mock_flow_with_tie(tmp_path):
     from shortsmaker.card_mode import card_timeline
     from shortsmaker.models import load_template
     scenes = card_timeline(project, load_template("yagu_v2"), project.lyrics)
-    starts = [s.start for s in scenes[1:]]
+    starts = [s.start for s in scenes if s.kind == "rank"]
     assert starts == sorted(starts) and len(set(starts)) == 5        # 공동 2위 두 장면이 각자 부르는 순간에
     assert "공동 2위 이대호" in ap.credits_text(state, d)
 

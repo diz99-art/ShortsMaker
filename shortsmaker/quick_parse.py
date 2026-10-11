@@ -10,6 +10,7 @@
   후킹: 첫 2초 큰 질문 문구 (선택)
   보너스: 6위 이름 | 팀 | 기록 | 연도  또는  예고 | 다음 편 문구 (선택)
   기준: 게이지 기준선 (선택, 예: 50홈런)
+  말풍선: 인트로 / 1위 / 엔딩 (선택, 각 3~8글자, 빈 칸은 자동)
 
 틀린 줄은 줄 번호와 이유를 알려 준다. 마크다운 표(| … |), 코드 블록(```), 굵게(**), 목록 기호(-)는 알아서 걸러 읽는다.
 """
@@ -34,7 +35,8 @@ EXAMPLE = """제목: 50홈런도 6위라고?! / KBO 단일 시즌 홈런 TOP 5
 메모: 2003년 이승엽 56개와 심정수 53개는 같은 시즌의 홈런 경쟁이었다
 후킹: 50홈런이 6위?!
 보너스: 6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025
-기준: 50홈런"""
+기준: 50홈런
+말풍선: 몇 개일까? / 역시 1위! / 구독 꾹!"""
 
 
 @dataclass
@@ -47,6 +49,7 @@ class QuickData:
     hook: str = ""
     bonus: dict | None = None
     gauge_base: str = ""
+    bubbles: dict[str, str] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)    # "7번째 줄: …"
     warnings: list[str] = field(default_factory=list)
 
@@ -71,6 +74,7 @@ def request_prompt(topic: str) -> str:
 - 후킹은 첫 2초에 띄울 짧은 질문 (15자 안팎, 예: 50홈런이 6위?!).
 - 보너스는 TOP 5 바로 밖 6위 기록 (출처에 있는 값만) 또는 '예고 | 다음 편 주제'.
 - 기준은 게이지 기준선이 될 상징적인 값 (예: 50홈런). 없으면 줄을 빼도 된다.
+- 말풍선은 마스코트가 노래 쉬는 틈에 할 말 '인트로 / 1위 / 엔딩' (각 3~8글자, 반말·짧게).
 
 양식
 제목: 1줄 / 2줄
@@ -81,7 +85,8 @@ def request_prompt(topic: str) -> str:
 메모: 가사·해설에 쓸 사실
 후킹: 첫 2초 질문
 보너스: 6위 이름 | 팀 | 기록 | 연도
-기준: 기준선 값"""
+기준: 기준선 값
+말풍선: 인트로 / 1위 / 엔딩"""
 
 
 def _clean(line: str) -> str:
@@ -99,7 +104,7 @@ def parse_quick(text: str) -> QuickData:
         if any(u in line for u in UNSURE):
             q.errors.append(f"{no}번째 줄: '확인 필요' 칸이 있습니다 — 직접 확인해 채운 뒤 다시 붙여 넣으세요: {line[:50]}")
             continue
-        m = re.match(r"^(제목|출처|메모|후킹|보너스|기준)\s*[:：]\s*(.*)$", line)
+        m = re.match(r"^(제목|출처|메모|후킹|보너스|기준|말풍선)\s*[:：]\s*(.*)$", line)
         if m:
             key, val = m.group(1), m.group(2).strip()
             if key == "제목":
@@ -129,6 +134,18 @@ def parse_quick(text: str) -> QuickData:
                         Bonus.model_validate(q.bonus)
                 except (FlowError, ValueError) as e:
                     q.errors.append(f"{no}번째 줄: 보너스 — {str(e).splitlines()[-1] if isinstance(e, ValueError) else e}")
+            elif key == "말풍선":
+                from .mascot import SLOTS, bubble_problem
+                parts = [x.strip() for x in val.split("/")]
+                if len(parts) > 3:
+                    q.errors.append(f"{no}번째 줄: 말풍선은 '인트로 / 1위 / 엔딩' 3칸입니다")
+                else:
+                    for slot, text in zip(SLOTS, parts):
+                        if text:
+                            prob = bubble_problem(text)
+                            if prob:
+                                q.errors.append(f"{no}번째 줄: {prob}")
+                            q.bubbles[slot] = text
             elif key == "기준":
                 if val and not re.search(r"\d", val):
                     q.errors.append(f"{no}번째 줄: 기준선에 숫자가 없습니다 (예: 50홈런)")

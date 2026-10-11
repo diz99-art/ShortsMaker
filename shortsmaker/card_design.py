@@ -267,6 +267,12 @@ class Design:
     tags: tuple[str, ...] = field(default_factory=tuple)
 
 
+def _player_text(player: str) -> Image.Image:
+    """카드 아래 선수 이름 (예전의 2배 크기)."""
+    from .card_compose import _fit_text
+    return _fit_text(player, 116, W - 120, fill="#FFFFFF", stroke="#111111", stroke_w=8, skew=0.06, shadow=0)
+
+
 def _plain(text: str, size: int, fill, **kw) -> Image.Image:
     base = dict(stroke="#111111", stroke_w=11, skew=0.14, shadow=8)
     base.update(kw)
@@ -852,7 +858,7 @@ def designs_for(mood: str) -> list[str]:
 def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank: int, record: str, year: str,
                      team: str, player: str, mock: bool = False, tied: bool = False, top: bool | None = None,
                      omit_record: bool = False, meta: dict | None = None, rank_label: str | None = None,
-                     off: bool = False, banner: bool = True) -> Image.Image:
+                     off: bool = False, banner: bool = True, layers: dict | None = None) -> Image.Image:
     """card_compose.compose_card 와 같은 배치에 디자인별 배경·글자 효과. top: 1위 장식 (기본: rank == 1).
     rank_label: 순위 자리 글자 (보너스 '6위?!'), off: 디자인별 반전 상태 (조명 꺼짐 등)."""
     import re as _re
@@ -875,7 +881,7 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
                        skew=0.12, shadow=6)
     if name.width > W - 150:
         name = name.resize((W - 150, round(name.height * (W - 150) / name.width)), Image.LANCZOS)
-    pl = styled_text(player, 58, "#FFFFFF", stroke="#111111", stroke_w=5, skew=0.06, shadow=0) if player else None
+    pl = _player_text(player) if player else None
 
     y = H - 8
     if pl:
@@ -894,8 +900,9 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
     y_rank = y - rank_img.height
     c.y_rank, c.y_banner = y_rank, y_banner
 
-    card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    card.alpha_composite(dz.back(c))
+    # 층: 배경 → 캐리커처 → 앞 효과 → 글자 (2.5D 패럴랙스에서 층마다 따로 움직임)
+    L = {n: Image.new("RGBA", (W, H), (0, 0, 0, 0)) for n in ("back", "art", "front", "text")}
+    L["back"].alpha_composite(dz.back(c))
     if caricature is not None:
         if isinstance(caricature, Image.Image):
             art = caricature.convert("RGBA")
@@ -903,10 +910,11 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
             with Image.open(caricature) as im:
                 art = ImageOps.exif_transpose(im).convert("RGBA")
         art = ImageOps.contain(art, (W - 20, min(1320, y_banner - 20)), Image.LANCZOS)
-        card.alpha_composite(art, ((W - art.width) // 2, 10))
+        L["art"].alpha_composite(art, ((W - art.width) // 2, 10))
     front = dz.front(c)
     if front is not None:
-        card.alpha_composite(front)
+        L["front"].alpha_composite(front)
+    card = L["text"]
     if c.top and dz.mood in ("record", "money", "live", "rivalry"):  # 1위: 왕관
         cr = crown(220, "#FFD23F")
         card.alpha_composite(cr, (max(0, 34 + rank_img.width // 2 - cr.width // 2), max(0, y_rank - cr.height + 50)))
@@ -943,7 +951,12 @@ def compose_designed(caricature: Path | Image.Image | None, design: str, *, rank
         d = ImageDraw.Draw(card)
         d.rounded_rectangle([16, 16, 330, 84], radius=14, fill=(220, 0, 0, 235))
         d.text((173, 50), "MOCK 시험용", font=_font(str(FONT_EXTRA), 44), fill="white", anchor="mm")
-    return card
+    if layers is not None:
+        layers.update({n: im.copy() for n, im in L.items()})
+    out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for n in ("back", "art", "front", "text"):
+        out.alpha_composite(L[n])
+    return out
 
 
 def _rank_with_twist(dz: Design, label: str, c: Ctx) -> Image.Image:

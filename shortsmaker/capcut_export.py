@@ -249,6 +249,17 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
     script.add_segment(cc.VideoSegment(str(base), cc.Timerange(0, D)), "배경")
 
     for sc in r.scenes:
+        if sc.kind == "chart":  # 데이터 그래픽: 다 자란 그래프 한 장 (화면 전체 크기)
+            from . import effects as fx
+            dst = media / f"{sc.index:02d}_그래프.png"
+            full = Image.new("RGBA", (t.width, t.height), (0, 0, 0, 0))
+            fx.draw_chart(full, r.chart_bars, 9.0, base=r.chart_base, base_label=project.gauge_base,
+                          years=v.datagfx == "bars_years", hot=r.stat_color or "#EB1B1B", accent=r.accent_rank,
+                          font_path=r._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
+                          bottom_y=c.footer.button.y - 30, **r._chart_bounds())
+            full.save(dst)
+            script.add_segment(cc.VideoSegment(str(dst), cc.Timerange(us(sc.start), us(sc.end - sc.start))), "로고·카드")
+            continue
         if sc.kind == "intro" and project.intro_image:
             src, box, motion = project_dir / project.intro_image, c.intro_box or c.logo_box, c.intro_motion
         elif sc.kind == "intro":
@@ -353,6 +364,45 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                                  clip_settings=cc.ClipSettings(transform_x=_transform(t, t.width - 150, 0)[0],
                                                                transform_y=_transform(t, 0, p_.y + p_.h / 2)[1]))
             script.add_segment(seg, "진행 표시")
+    if r.mascot is not None:  # 마스코트: 표정이 바뀔 때마다 그림 조각 (까딱은 없음)
+        from . import mascot as msc
+        script.add_track(cc.TrackType.video, "마스코트")
+        x, y = r._mascot_box()
+        tx, ty = _transform(t, x + msc.SIZE / 2, y + msc.SIZE / 2)
+        cuts = sorted({0.0, project.duration, *[a for a, b, e in r.mascot.exprs], *[b for a, b, e in r.mascot.exprs],
+                       *[a for a, b, e in r.mascot.reactions], *[b for a, b, e in r.mascot.reactions]})
+        cuts = [c_ for c_ in cuts if 0 <= c_ <= project.duration]
+        for a, b in zip(cuts, cuts[1:]):
+            if b - a < 0.05:
+                continue
+            expr = r.mascot.expr_at((a + b) / 2)
+            dst = media / f"mascot_{expr}.png"
+            if not dst.exists():
+                msc.expression_image(expr).save(dst)
+            from .models import Box
+            ratio = _fit_ratio((msc.SIZE, msc.SIZE), Box(x=x, y=y, w=msc.SIZE, h=msc.SIZE), t)
+            seg = cc.VideoSegment(str(dst), cc.Timerange(us(a), us(b - a)),
+                                  clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio,
+                                                                transform_x=tx, transform_y=ty))
+            script.add_segment(seg, "마스코트")
+        if r.mascot.bubbles:
+            script.add_track(cc.TrackType.text, "말풍선")
+            for a, b, text in r.mascot.bubbles:
+                seg = cc.TextSegment(text, cc.Timerange(us(a), us(b - a)),
+                                     style=cc.TextStyle(size=9.0, bold=True, color=(0.07, 0.07, 0.07), align=1),
+                                     border=cc.TextBorder(color=(1.0, 1.0, 1.0), width=60.0),
+                                     clip_settings=cc.ClipSettings(transform_x=tx, transform_y=ty + 0.2))
+                script.add_segment(seg, "말풍선")
+    if r.bursts:  # 키워드 터뜨리기
+        from . import effects as fx
+        script.add_track(cc.TrackType.text, "키워드")
+        for at, word in r.bursts:
+            seg = cc.TextSegment(word, cc.Timerange(us(at), us(fx.BURST_LEN)),
+                                 style=cc.TextStyle(size=40.0, bold=True, color=_rgb01(r.accent_rank[1]), align=1),
+                                 border=cc.TextBorder(color=(0.23, 0.04, 0.0), width=60.0),
+                                 clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]))
+            seg.add_animation(cc.TextIntro["放大"], us(0.2))
+            script.add_segment(seg, "키워드")
     if r.cues and v.sfx != "off":  # 효과음: 종류별 트랙 (같은 트랙에서 겹치지 않게)
         from .sfx import MIX_GAIN, sfx_file
         from .validate import media_duration
@@ -374,7 +424,8 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
     return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
             "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."
             + (" 비트 펄스·기록 카운트업·게이지는 CapCut 초안에 없습니다 (MP4 에만)." if v.beat != "off" or v.count != "static"
-               else "")]
+               else "")
+            + (" 2.5D 입체·마스코트 까딱은 CapCut 초안에 없습니다." if v.depth != "off" or v.mascot != "off" else "")]
 
 
 # ---------------------------------------------------------------- 수동 가져오기 키트

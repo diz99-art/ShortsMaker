@@ -57,6 +57,8 @@ if data:
         bo = data.bonus
         extras.append("보너스 " + (f"예고: {bo['text']}" if bo["kind"] == "teaser" else
                                  f"{bo['rank']}위 {bo['name']} {bo['team']} {bo['value']} {bo['year']}".strip()))
+    if data.bubbles:
+        extras.append("말풍선 " + " / ".join(data.bubbles.get(k, "(자동)") for k in ("intro", "top", "ending")))
     if any(extras):
         st.caption(" · ".join(x for x in extras if x))
 

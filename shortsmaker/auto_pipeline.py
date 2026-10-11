@@ -27,6 +27,7 @@ from . import production_log as plog
 from . import upload as upl
 from .bg_remove import remove_background
 from .lyrics_check import check_lyrics_text, history_lyrics
+from .mascot import auto_bubbles
 from .variation import ACCENTS, Variation, conflicts, record as record_variation, suggest
 from .card_compose import FONT_EXTRA, compose_card, save_card
 from .manual_prompt import build_prompt, default_scene, manual_dir, prepare_folder
@@ -103,6 +104,7 @@ class AutoState(BaseModel):
     bonus: dict | None = None              # 엔딩 보너스 (models.Bonus)
     gauge_base: str = ""                   # 게이지 기준선 ('50홈런')
     mood: str = ""                         # 카드 분위기 (card_design.MOODS)
+    bubbles: dict[str, str] = Field(default_factory=dict)  # 마스코트 말풍선 (사람이 준 것, 빈 칸은 자동)
     mood_reason: str = ""
     mood_via: str = ""                     # claude | rules | user
     no_logo: dict[int, bool] = Field(default_factory=dict)  # 자리별 '로고·유니폼 글씨 없음' 확인
@@ -345,7 +347,7 @@ def set_title(state: AutoState, d: Path, title: str) -> None:
 
 
 def set_extras(state: AutoState, d: Path, *, hook: str | None = None, bonus: dict | None | Literal[False] = False,
-               gauge_base: str | None = None) -> None:
+               gauge_base: str | None = None, bubbles: dict[str, str] | None = None) -> None:
     """후킹 문구·엔딩 보너스·게이지 기준선 (None/False 는 그대로 둠, bonus=None 은 지움). 보너스 값은 출처에 있는 값만."""
     from .models import Bonus
     changes = {}
@@ -360,6 +362,14 @@ def set_extras(state: AutoState, d: Path, *, hook: str | None = None, bonus: dic
         if g and not re.search(r"\d", g):
             raise FlowError("게이지 기준선에 숫자가 없습니다 (예: 50홈런)")
         changes["gauge_base"] = state.gauge_base = g
+    if bubbles is not None:
+        from .mascot import SLOTS, bubble_problem
+        clean = {k: v.strip() for k, v in bubbles.items() if k in SLOTS and v and v.strip()}
+        bad = [p for p in (bubble_problem(v) for v in clean.values()) if p]
+        if bad:
+            raise FlowError("; ".join(bad))
+        if clean != state.bubbles:
+            changes["bubbles"] = state.bubbles = clean
     if changes:
         save_state(state, d)
         plog.append(d, "extras_changed", **changes)
@@ -889,9 +899,16 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
                 make = compose_card
             card = make(d / ps.approved, **kw)
             meta: dict = {}  # 카운트업용: 기록 글자를 뺀 바탕 카드 + 글자 위치
-            base = make(d / ps.approved, **kw, omit_record=True, meta=meta)
+            layers: dict = {}  # 2.5D 용 층 (디자인 카드만)
+            base = (make(d / ps.approved, **kw, omit_record=True, meta=meta, layers=layers) if design
+                    else make(d / ps.approved, **kw, omit_record=True, meta=meta))
             save_card(base, d / "cards" / f"card{r.slot}_base.png")
             meta["base"] = f"cards/card{r.slot}_base.png"
+            if layers:
+                meta["layers"] = {}
+                for n, im in layers.items():  # 글자 층은 기록 글자를 뺀 것 (카운트업이 그 위에 그림)
+                    save_card(im, d / "cards" / f"card{r.slot}_L_{n}.png")
+                    meta["layers"][n] = f"cards/card{r.slot}_L_{n}.png"
             (d / "cards" / f"card{r.slot}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         out[r.slot] = save_card(card, d / "cards" / f"card{r.slot}.png")
         ps.card = str(out[r.slot].relative_to(d))
@@ -962,6 +979,7 @@ def build_project(state: AutoState, d: Path) -> Project:
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
                                       "items": items, "intro_image": state.intro_image, "variation": state.variation,
                                       "hook": state.hook, "bonus": state.bonus, "gauge_base": state.gauge_base,
+                                      "bubbles": auto_bubbles(state.mood, state.bubbles), "mood": state.mood,
                                       "source_note": f"출처: {source}" if source else "",
                                       "rights_confirmed": state.rights_confirmed and not state.mock})
     save_project(project, d)

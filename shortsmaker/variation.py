@@ -34,6 +34,10 @@ COUNTS = {"countup": "기록 숫자 카운트업", "countup_gauge": "카운트�
 SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
 PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
 ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
+MASCOTS = {"right": "마스코트 오른쪽 아래", "left": "마스코트 왼쪽 아래", "off": "마스코트 없음"}
+DATAGFX = {"bars": "1위 뒤 기록 막대그래프", "bars_years": "막대그래프 + 연도 타임라인", "off": "그래프 없음"}
+DEPTHS = {"pan": "2.5D 옆으로 흐르기", "dolly": "2.5D 다가가기", "off": "입체 없음"}
+BURSTS = {"zoom": "키워드 크게 터뜨리기", "stamp": "키워드 도장 쾅", "off": "키워드 없음"}
 # 카드 디자인 (분위기별 3종, shortsmaker/card_design.py). '' 은 예전 붓 터치 카드
 CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold_rays": "금색 광선", "medal": "메달·리본",
                 "fall": "추락 그래프", "rain": "어두운 비", "glass": "금 간 유리", "bills": "지폐 비", "coins": "금화 더미",
@@ -42,9 +46,10 @@ CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold
                 "neon": "네온", "breaking": "속보 LIVE"}
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
         "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
-        "design": CARD_DESIGNS}
-OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none"}  # 추천에서 빼는 값
-FIXED = ("design",)  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰 따로 추천)
+        "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS}
+OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none", "mascot": "off",
+       "datagfx": "off", "depth": "off", "burst": "off"}  # 추천에서 빼는 값
+FIXED = ("design", "mascot")  # 랜덤으로 고르지 않는 요소 (디자인은 분위기에 맞춰, 마스코트는 기본 오른쪽 아래)
 RECENT = 5
 MIN_DIFF = 3  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
 
@@ -62,6 +67,10 @@ class Variation(BaseModel):
     progress: str = "none"
     ending: str = "stamp"  # 보너스 장면 등장 (보너스가 없으면 쓰지 않음)
     design: str = ""       # 카드 디자인 (비우면 예전 붓 터치 카드)
+    mascot: str = "off"    # 마스코트 '한장이' 위치
+    datagfx: str = "off"
+    depth: str = "off"
+    burst: str = "off"
 
     def describe(self) -> str:
         return " · ".join(f"{AXES[k][getattr(self, k)] if k != 'accent' else ACCENTS[self.accent]['label']}"
@@ -119,7 +128,7 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
     rnd = random.Random(seed)
     past = recent(root, exclude)
     choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES if k not in FIXED}
-    combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}) for _ in range(4000)]
+    combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}, mascot="right") for _ in range(4000)]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]
     counts = {(k, getattr(r, k)) for r in past for k in AXES}
     ok.sort(key=lambda c: (sum((k, getattr(c, k)) in counts for k in AXES), rnd.random()))

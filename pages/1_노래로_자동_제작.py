@@ -179,9 +179,16 @@ else:
         bonus_in = e2.text_input("엔딩 보너스 (출처에 있는 값만)", b_txt, key="x_bonus",
                                  placeholder="6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025  또는  예고 | 다음 편: …")
         gauge_in = e3.text_input("게이지 기준선", state.gauge_base, key="x_gauge", placeholder="50홈런")
+        from shortsmaker.mascot import auto_bubbles
+        auto_b = auto_bubbles(state.mood)
+        bb = st.columns(3)
+        bub_in = {k: bb[i].text_input(f"마스코트 말풍선 · {lbl} (3~8글자, 비우면 자동: {auto_b[k]})",
+                                      state.bubbles.get(k, ""), key=f"x_bub_{k}")
+                  for i, (k, lbl) in enumerate([("intro", "인트로"), ("top", "1위"), ("ending", "엔딩")])}
         if st.button("저장", key="x_save"):
             try:
-                ap.set_extras(state, D, hook=hook_in, bonus=ap.parse_bonus(bonus_in), gauge_base=gauge_in)
+                ap.set_extras(state, D, hook=hook_in, bonus=ap.parse_bonus(bonus_in), gauge_base=gauge_in,
+                              bubbles=bub_in)
                 st.toast("저장했습니다 (카드를 다시 합성하면 반영)")
             except (ap.FlowError, ValueError) as e:
                 _err(e)
@@ -471,11 +478,12 @@ else:
                       format_func=var.INTROS.get, key="v_it")
     mo = v5.selectbox("그림 움직임", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
                       format_func=var.MOTIONS.get, key="v_mo", help="1위는 더 강하게 + 등장 때 번쩍·흔들림")
-    w1, w2, w3, w4, w5, w6 = st.columns(6)
     extra = {}
-    for col, (k, label_) in zip((w1, w2, w3, w4, w5, w6), [("hook", "후킹 등장"), ("beat", "비트 맞춤"),
-                                                            ("count", "기록 숫자"), ("sfx", "효과음"),
-                                                            ("progress", "진행 표시"), ("ending", "보너스 등장")]):
+    axes_ui = [("hook", "후킹 등장"), ("beat", "비트 맞춤"), ("count", "기록 숫자"), ("sfx", "효과음"),
+               ("progress", "진행 표시"), ("ending", "보너스 등장"), ("mascot", "마스코트 한장이"),
+               ("datagfx", "1위 뒤 그래프"), ("depth", "2.5D 입체"), ("burst", "키워드 터뜨리기")]
+    cols_ui = st.columns(5) + st.columns(5)
+    for col, (k, label_) in zip(cols_ui, axes_ui):
         opts = var.AXES[k]
         extra[k] = col.selectbox(label_, list(opts), index=list(opts).index(getattr(cur, k)), format_func=opts.get,
                                  key=f"v_{k}")
