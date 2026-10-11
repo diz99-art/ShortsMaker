@@ -1,0 +1,68 @@
+{
+  "whoosh_a.wav": {
+    "label": "전환 효과음 (휙)",
+    "license": "자체 제작",
+    "title": "whoosh_a",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "thud_a.wav": {
+    "label": "순위 공개 효과음 (쿵)",
+    "license": "자체 제작",
+    "title": "thud_a",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "slam_a.wav": {
+    "label": "후킹 효과음 (쾅)",
+    "license": "자체 제작",
+    "title": "slam_a",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "whoosh_b.wav": {
+    "label": "전환 효과음 (휙)",
+    "license": "자체 제작",
+    "title": "whoosh_b",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "thud_b.wav": {
+    "label": "순위 공개 효과음 (쿵)",
+    "license": "자체 제작",
+    "title": "thud_b",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "slam_b.wav": {
+    "label": "후킹 효과음 (쾅)",
+    "license": "자체 제작",
+    "title": "slam_b",
+    "author": "ShortsMaker (numpy 합성)",
+    "source": "shortsmaker/sfx.py"
+  },
+  "cheer_a.wav": {
+    "label": "1위 함성",
+    "title": "Clapping hurray",
+    "author": "starlite",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Clapping_hurray.ogg",
+    "original": "https://upload.wikimedia.org/wikipedia/commons/a/a8/Clapping_hurray.ogg",
+    "original_sha256": "9f117453621c3e3921a3ce61d281a51e59a3cf9cd1c2559e8ce489230f1c4e65",
+    "license_text": "This work has been released into the public domain by its author, starlite. This applies worldwide.",
+    "checked_at": "2026-10-11",
+    "edit": "0.3초부터 3.2초 잘라 모노·음량 정규화·끝 줄임"
+  },
+  "cheer_b.wav": {
+    "label": "1위 함성",
+    "title": "277021 sandermotions applause-2",
+    "author": "sandermotions",
+    "license": "CC0 1.0",
+    "source": "https://commons.wikimedia.org/wiki/File:277021_sandermotions_applause-2.wav",
+    "original": "https://upload.wikimedia.org/wikipedia/commons/6/6d/277021_sandermotions_applause-2.wav",
+    "original_sha256": "81d52260cee58e0f284a0236c9d4a0e40463df182ea869ee14da70bfa6258b5e",
+    "license_text": "Creative Commons CC0 1.0 Universal Public Domain Dedication",
+    "checked_at": "2026-10-11",
+    "edit": "0.2초부터 3.2초 잘라 모노·음량 정규화·끝 줄임"
+  }
+}

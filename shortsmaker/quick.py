@@ -81,8 +81,10 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         except ap.FlowError as e:
             return QuickResult("stopped", "곡", str(e), slug=slug)
         ap.set_data_source(state, d, data.source_name, data.source_url)
+        ap.set_extras(state, d, hook=data.hook, bonus=data.bonus, gauge_base=data.gauge_base)
         plog.append(d, "quick_input", title=data.title, rows=[r.model_dump() for r in data.rows], memos=data.memos,
-                    source=f"{data.source_name} {data.source_url}")
+                    source=f"{data.source_name} {data.source_url}", hook=data.hook, bonus=data.bonus,
+                    gauge_base=data.gauge_base)
 
     if not state.aligned:
         report(0.05, "가사 자동 맞추기 (1~2분)")

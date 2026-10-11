@@ -31,6 +31,9 @@ from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegErro
 from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import SceneBuildResult, SceneLayers, _font, _hex, _wrap
 from .timeline import Scene, snap
+from . import effects as fx
+from .effects import BONUS_LEN, BONUS_MIN_TOP, HOOK_IMPACT, HOOK_LEN
+from .sfx import Cue, mix_filter
 from .variation import (ACCENTS, FLASH, LINE_RISE, TITLE_CARD, TOP_FLASH, TOP_GAIN, TOP_SHAKE, Variation, idle_transform,
                         intro_motion, top_shake, transition_motion)
 
@@ -179,7 +182,7 @@ def rank_times(lines: list[LyricLine], ranks: list[int], word_format: str = "{ra
 # ---------------------------------------------------------------- 타임라인
 
 def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list[Scene]:
-    """인트로 + 5위~1위. 아웃트로 없이 1위 카드가 끝까지 남는다 (참고 영상과 같음)."""
+    """인트로 + 5위~1위 (+ 엔딩 보너스). 1위 카드가 끝까지 남고, 보너스가 있으면 마지막 몇 초를 보너스 장면으로."""
     items = project.ordered_items
     if project.has_scene_starts:
         starts = {it.rank: it.start for it in items}
@@ -192,11 +195,52 @@ def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list
     for label, a, b in zip(labels, bounds, bounds[1:]):
         if b - a < MIN_SCENE:
             raise CardModeError(f"{label} 장면이 {b - a:.2f}초로 너무 짧습니다 (장면 시작 시각을 확인하세요)")
+    kinds = ["intro"] + ["rank"] * len(items)
+    scene_items: list = [None] + list(items)
+    b_start = bonus_start(project, bounds[-2], fps)
+    if b_start is not None:
+        bounds.insert(-1, b_start)
+        kinds.append("bonus")
+        scene_items.append(None)
     scenes = []
     for i, (a, b) in enumerate(zip(bounds, bounds[1:])):
-        scenes.append(Scene(index=i, kind="intro" if i == 0 else "rank", start=a, end=b,
-                            clip_duration=b - a, item=items[i - 1] if i else None))
+        scenes.append(Scene(index=i, kind=kinds[i], start=a, end=b, clip_duration=b - a, item=scene_items[i]))
     return scenes
+
+
+def bonus_start(project: Project, top_start: float, fps: int) -> float | None:
+    """보너스 장면 시작: 1위를 BONUS_MIN_TOP 초 이상 보여 준 뒤, 영상 끝 BONUS_LEN 초. 자리가 없으면 None."""
+    if project.bonus is None:
+        return None
+    start = snap(max(top_start + BONUS_MIN_TOP, project.duration - BONUS_LEN), fps)
+    return start if project.duration - start >= 2.5 else None
+
+
+def hook_length(project: Project, scenes: list[Scene]) -> float:
+    """후킹 문구 시간. 인트로가 짧으면 줄인다 (로고·제목이 1초는 보이게). 문구가 없으면 0."""
+    if not project.hook.strip() or not scenes:
+        return 0.0
+    room = scenes[0].duration - 1.0
+    return round(min(HOOK_LEN, room), 2) if room >= 1.0 else 0.0
+
+
+def sfx_cues(project: Project, t: Template, scenes: list[Scene]) -> list[Cue]:
+    """효과음 위치: 후킹 '쾅', 장면 전환 '휙', 카드 착지 '쿵', 1위 함성."""
+    v = Variation.model_validate(project.variation or {})
+    if v.sfx == "off":
+        return []
+    cues: list[Cue] = []
+    if hook_length(project, scenes):
+        cues.append(Cue(HOOK_IMPACT, "slam"))
+    land = 0.12 if v.transition in ("flash", "pop") else 0.2
+    for sc in scenes:
+        if sc.kind == "intro":
+            continue
+        cues.append(Cue(max(0.0, sc.start - 0.12), "whoosh"))
+        cues.append(Cue(sc.start + land, "thud"))
+        if sc.kind == "rank" and sc.item.shown_rank == 1 and sc.item.rank == 1:
+            cues.append(Cue(sc.start + 0.25, "cheer"))
+    return sorted(cues, key=lambda c: c.at)
 
 
 # ---------------------------------------------------------------- 정적 레이어
@@ -312,9 +356,9 @@ def _interp(curve: list[tuple[float, float]], t: float) -> float:
 class MovingLayer:
     """박스 가운데를 중심으로 배율 s, 가로 이동 dx 로 그린다. 모션 블러는 셔터 동안의 위치·배율을 평균."""
 
-    def __init__(self, path: Path, box: Box, motion: Motion, fps: int, top: int, canvas: tuple[int, int],
+    def __init__(self, path: Path | Image.Image, box: Box, motion: Motion, fps: int, top: int, canvas: tuple[int, int],
                  dx: list[tuple[float, float]] | None = None):
-        self.src = _load_rgba(str(path))
+        self.src = path.convert("RGBA") if isinstance(path, Image.Image) else _load_rgba(str(path))
         self.box, self.motion, self.fps, self.top, self.canvas, self.dx = box, motion, fps, top, canvas, dx
         self.w, self.h = fit_size(self.src.size, box)
         self.cx, self.cy = box.x + box.w / 2, box.y + box.h / 2
@@ -322,6 +366,10 @@ class MovingLayer:
         # 가장 큰 배율에서도 선명하도록 원본 해상도에서 바로 줄인다
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
             (round(self.w * max_s), round(self.h * max_s)), Image.LANCZOS)
+
+    def variant(self, img: Image.Image) -> "MovingLayer":
+        """같은 자리·움직임에 그림만 바꾼 레이어 (카운트업 숫자)."""
+        return MovingLayer(img, self.box, self.motion, self.fps, self.top, self.canvas, dx=self.dx)
 
     def _place(self, s: float, dx: float = 0.0, dy: float = 0.0, angle: float = 0.0) -> tuple[Image.Image, int, int]:
         w, h = max(1, round(self.w * s)), max(1, round(self.h * s))
@@ -555,11 +603,49 @@ class CardRenderer:
                 raise CardModeError(f"채널 로고 이미지가 없습니다: templates/{self.project.channel}/{c.logo}")
         self.layers: dict[int, MovingLayer] = {
             0: MovingLayer(intro, intro_box, intro_m, t.fps, c.content_top, self.canvas, dx=intro_dx)}
+        self.accent_rank = ACCENTS.get(self.v.accent, ACCENTS["red_gold"])["rank"]
+        self._counts: dict[int, dict] = {}       # 장면 → 카운트업 정보 (바탕 카드, 기록 글자 위치)
+        self._count_layers: dict[tuple[int, str], MovingLayer] = {}
         for s in self.scenes[1:]:
+            if s.kind == "bonus":
+                self.layers[s.index] = self._bonus_layer()
+                continue
             if not s.item.image:
                 raise CardModeError(f"[{s.item.rank}위] 카드 이미지가 지정되지 않았습니다")
-            self.layers[s.index] = MovingLayer(self.project_dir / s.item.image, c.card_box, card_m,
-                                               t.fps, c.content_top, self.canvas, dx=card_dx)
+            img_path = self.project_dir / s.item.image
+            self.layers[s.index] = MovingLayer(img_path, c.card_box, card_m, t.fps, c.content_top, self.canvas,
+                                               dx=card_dx)
+            meta_p = img_path.with_suffix(".json")
+            if self.v.count != "static" and meta_p.exists():
+                import json as _json
+                meta = _json.loads(meta_p.read_text(encoding="utf-8"))
+                base_p = self.project_dir / meta.get("base", "")
+                if meta.get("record") and base_p.is_file() and fx.record_value(meta["record"]) is not None:
+                    self._counts[s.index] = {**meta, "base_img": _load_rgba(str(base_p))}
+        # 후킹 문구 (인트로 앞 0~2초)
+        self.hook_len = hook_length(self.project, self.scenes)
+        if self.project.hook.strip() and not self.hook_len:
+            self.warnings.append("인트로가 짧아 후킹 문구를 넣지 못했습니다")
+        self.hook_img = (fx.hook_image(self.project.hook, self.accent_rank, self.stat_color or "#EB1B1B", t.width)
+                         if self.hook_len else None)
+        if self.project.bonus is not None and not any(s.kind == "bonus" for s in self.scenes):
+            self.warnings.append("1위 장면 뒤 시간이 모자라 보너스 장면을 넣지 못했습니다 (영상 끝을 '반주 끝까지'로 해 보세요)")
+        # 비트
+        self.beats: fx.BeatMap | None = None
+        if self.v.beat != "off" and self.project.music:
+            try:
+                self.beats = fx.load_beats(self.project_dir, self.project.music).shifted(self.project.music_start)
+            except Exception as e:  # noqa: BLE001 — 비트 분석이 안 되면 효과만 빼고 렌더
+                self.warnings.append(f"비트 분석 실패로 비트 효과를 뺐습니다: {e}")
+        # 게이지
+        self.gauge = None
+        if self.v.count == "countup_gauge" and self.project.gauge_base:
+            vals = [x for x in (fx.record_value(i.value) for i in self.project.items) if x is not None]
+            self.gauge = fx.make_gauge(self.project.gauge_base, vals, c.content_top, c.footer.button.y)
+            if self.gauge is None:
+                self.warnings.append(f"게이지 기준선 '{self.project.gauge_base}'에서 숫자를 찾지 못했습니다")
+        self._label_font = t.font_path("black")
+        self.cues = sfx_cues(self.project, t, self.scenes)
         st = c.subtitle
         font_path = t.font_path(st.font)
         self._times = [self._reveal_times(l) for l in self.lines]
@@ -575,12 +661,36 @@ class CardRenderer:
         self._stats: dict[int, SubtitleLayout] = {}
         if c.stat_line:
             for s in self.scenes[1:]:
-                if s.item.stat_line.strip():
+                if s.item and s.item.stat_line.strip():
                     self._stats[s.index] = layout_stat(s.item.stat_line, c.stat_line, t.font_path(c.stat_line.font))
                     if self._stats[s.index].overflow:
                         self.warnings.append(f"빨간 기록 줄이 {c.stat_line.max_lines}줄을 넘습니다: {s.item.stat_line}")
         self._cache_key = None
         self._cache_frame: Image.Image | None = None
+
+    def _bonus_layer(self) -> MovingLayer:
+        c, t, bo = self.t.card, self.t, self.project.bonus
+        motion, dx, _ = transition_motion({"stamp": "punch", "slide": "slide", "pop": "pop"}.get(self.v.ending, "punch"),
+                                          c.card_motion)
+        if bo.image and (self.project_dir / bo.image).is_file():
+            src: Path | Image.Image = self.project_dir / bo.image
+        else:
+            src = fx.bonus_card(bo.kind, rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year,
+                                text=bo.text, accent=self.accent_rank)
+        return MovingLayer(src, c.card_box, motion, t.fps, c.content_top, self.canvas, dx=dx)
+
+    def _count_layer(self, idx: int, text: str) -> MovingLayer:
+        key = (idx, text)
+        if key not in self._count_layers:
+            from .card_compose import record_text
+            m = self._counts[idx]
+            card = m["base_img"].copy()
+            rec = record_text(text, m["size"], m.get("team", ""))
+            card.alpha_composite(rec, (m["x"], m["y"] + m["h"] - rec.height))
+            if len(self._count_layers) > 40:
+                self._count_layers.clear()
+            self._count_layers[key] = self.layers[idx].variant(card)
+        return self._count_layers[key]
 
     def _reveal_times(self, line: LyricLine) -> list[float]:
         """자막 등장 방식별 글자 시각: typing=글자마다, word=단어 첫 글자 시각에 단어 전체, line=줄 시작에 전부."""
@@ -622,21 +732,55 @@ class CardRenderer:
         sc = self.scene_at(sec)
         m = self.layers[sc.index].motion
         since = frame_no - round(sc.start * fps)
-        if sc.kind == "intro" and self.title_card is not None:  # 제목 카드 → 그다음 로고 움직임
-            hold = round(TITLE_CARD * fps)
-            since = since - hold if since >= hold else -1
-        if since < 0:
+        hook = None
+        anim: object
+        if sc.kind == "intro":  # 후킹 문구 → 제목 카드 → 로고 움직임
+            pre = 0
+            if self.hook_len:
+                hl = round(self.hook_len * fps)
+                if since < hl:
+                    hook = since
+                pre += hl
+            if self.title_card is not None:
+                pre += round(TITLE_CARD * fps)
+            since = since - pre if since >= pre else -1
+        if hook is not None:
+            anim = "hook"
+        elif since < 0:
             anim = "title"
         else:
             anim = since if since / fps < m.length + m.gap_frames / fps else None
-        flash = since if sc.kind == "rank" and self.flash and 0 <= since < round(self.flash * fps) else None
+        card_scene = sc.kind in ("rank", "bonus")
+        flash = since if card_scene and self.flash and 0 <= since < round(self.flash * fps) else None
         top = sc.kind == "rank" and sc.item.shown_rank == 1
         if top and 0 <= since < round(TOP_FLASH * fps):  # 1위: 번쩍
             flash = since if flash is None else flash
         # 그림 움직임: 등장 효과가 끝난 뒤부터 장면 끝까지 프레임마다 (1위는 흔들림도)
         idle = None
-        if sc.kind == "rank" and (self.v.motion != "none" or top):
+        if card_scene and (self.v.motion != "none" or top):
             idle = since
+        # 비트 펄스: 카드가 다 들어온 뒤
+        pulse = None
+        if card_scene and self.beats is not None and anim is None:
+            pulse = fx.pulse_state(self.beats, sec, fps, self.v.beat == "pulse_flash")
+        # 기록 카운트업 (게이지도 같은 값으로)
+        count = None
+        if sc.index in self._counts and since >= 0:
+            frac = fx.count_frac(since / fps)
+            count = fx.count_text(self._counts[sc.index]["record"], frac) if frac < 1 else None
+        gauge_v = None
+        if self.gauge is not None and sc.kind == "rank":
+            val = fx.record_value(sc.item.value) or 0.0
+            cur = val * fx.count_frac(max(since, 0) / fps) if since >= 0 else 0.0
+            gauge_v = float(round(cur)) if val == int(val) else round(cur, 1)  # 정수 기록은 정수로 올라감
+        # 진행 표시
+        prog = None
+        if self.v.progress != "none":
+            ranks = [s for s in self.scenes if s.kind == "rank"]
+            done = sum(1 for s in ranks if s.start <= sc.start) if sc.kind != "intro" else 0
+            pop_n = round(0.25 * fps)
+            pop = round(1 - since / pop_n, 2) if sc.kind == "rank" and 0 <= since < pop_n else 0.0
+            prog = (done, pop)
         rise = None
         line_i, shown = None, 0
         for i, l in enumerate(self.lines):  # 다음 가사가 시작되면 교체
@@ -652,23 +796,27 @@ class CardRenderer:
         stat = 0
         if sc.index in self._stats:
             stat = stat_visible(sc.item.stat_line, self.t.card.stat_line, sec - sc.start)
-        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise, idle)
+        return (sc.index, anim, line_i, shown, sc.kind == "intro", stat, flash, rise, idle, hook, pulse, count,
+                gauge_v, prog)
 
     def frame(self, frame_no: int) -> Image.Image:
         key = self.state(frame_no)
         if key == self._cache_key and self._cache_frame is not None:
             return self._cache_frame
-        idx, anim, line_i, shown, intro, stat, flash, rise, idle = key
+        idx, anim, line_i, shown, intro, stat, flash, rise, idle, hook, pulse, count, gauge_v, prog = key
         fps = self.t.fps
         img = self.base.convert("RGBA")
-        if anim == "title":
+        sc = self.scenes[idx]
+        ps, pdx, pflash = fx.pulse_transform(pulse, fps)
+        if anim == "hook":
+            self._draw_hook(img, hook / fps)
+        elif anim == "title":
             img.alpha_composite(self.title_card)
         else:
             transform = None
             if idle is not None:
-                sc = self.scenes[idx]
                 layer = self.layers[idx]
-                top = sc.item.shown_rank == 1
+                top = sc.kind == "rank" and sc.item.shown_rank == 1
                 entry = layer.motion.length + layer.motion.gap_frames / fps
                 t_idle = idle / fps - entry
                 ks, dx, dy, ang = idle_transform(self.v.motion, t_idle, TOP_GAIN if top else 1.0)
@@ -677,14 +825,28 @@ class CardRenderer:
                 transform = (ks, dx, dy, ang)
                 if anim is not None and t_idle < 0:  # 등장 중에는 1위 흔들림만
                     transform = (1.0, top_shake(idle / fps) if top else 0.0, 0.0, 0.0)
-            self.layers[idx].draw(img, None if anim is None else anim / fps, transform)
-        if flash is not None:  # 흰 섬광이 사라짐 (구분선 아래만). 1위 번쩍은 TOP_FLASH 초
-            span = round((self.flash or TOP_FLASH) * fps)
-            a = round(255 * (1 - flash / max(1, span)))
+            if pulse is not None:
+                ks, dx, dy, ang = transform or (1.0, 0.0, 0.0, 0.0)
+                transform = (ks * ps, dx + pdx, dy, ang)
+            layer = self._count_layer(idx, count) if count is not None else self.layers[idx]
+            layer.draw(img, None if anim is None else anim / fps, transform)
+        if gauge_v is not None:
+            fx.draw_gauge(img, self.gauge, gauge_v, sc.item.description, self.stat_color or "#EB1B1B", self._label_font)
+        if flash is not None or pflash:  # 흰 섬광이 사라짐 (구분선 아래만). 1위 번쩍은 TOP_FLASH 초
+            a = 0.0
+            if flash is not None:
+                span = round((self.flash or TOP_FLASH) * fps)
+                a = 1 - flash / max(1, span)
+            a = max(a, pflash)
             white = Image.new("RGBA", self.canvas, (255, 255, 255, 0))
-            white.paste((255, 255, 255, a), (0, self.t.card.content_top, self.canvas[0], self.canvas[1]))
+            white.paste((255, 255, 255, round(255 * a)), (0, self.t.card.content_top, self.canvas[0], self.canvas[1]))
             img.alpha_composite(white)
         img.alpha_composite(self.head)
+        if prog is not None:
+            p = self.t.card.pill
+            fx.draw_progress(img, self.v.progress, prog[0], sum(1 for s in self.scenes if s.kind == "rank"),
+                             right=self.canvas[0] - 42, cy=round(p.y + p.h / 2), hot=self.stat_color or "#EB1B1B",
+                             font_path=self._label_font, pop=prog[1])
         if stat:
             ck = ("stat", idx, stat)
             if ck not in self._sub_cache:
@@ -703,6 +865,39 @@ class CardRenderer:
         out = img.convert("RGB")
         self._cache_key, self._cache_frame = key, out
         return out
+
+    def _draw_hook(self, img: Image.Image, t: float) -> None:
+        """후킹 문구: 구분선 아래 가운데에 크게. 섬광은 '쾅' 순간."""
+        c = self.t.card
+        h = self.hook_img
+        cx = self.canvas[0] / 2
+        cy = (c.content_top + c.footer.button.y) / 2 + 40
+        if self.v.hook == "pop_words":  # 단어씩: 왼쪽부터 가려 둔 부분을 연다
+            n = max(1, len(self.project.hook.split()))
+            k = min(n, int(t / 0.2) + 1)
+            src = h.copy()
+            if k < n:
+                mask = Image.new("L", src.size, 255)
+                ImageDraw.Draw(mask).rectangle([round(src.width * (0.12 + 0.76 * k / n)), 0, src.width, src.height],
+                                               fill=0)
+                src.putalpha(Image.composite(src.getchannel("A"), Image.new("L", src.size, 0), mask))
+            s, dx, dy, fl = fx.hook_frame("pop_words", t - (k - 1) * 0.2)
+        else:
+            src = h
+            s, dx, dy, fl = fx.hook_frame(self.v.hook, t)
+        w, hh = max(1, round(src.width * s)), max(1, round(src.height * s))
+        im = src.resize((w, hh), Image.BICUBIC)
+        alpha = fx.hook_alpha(t, self.hook_len)
+        if alpha < 1:
+            im.putalpha(im.getchannel("A").point(lambda v: round(v * alpha)))
+        layer = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
+        MovingLayer._paste(layer, im, round(cx - w / 2 + dx), round(cy - hh / 2 + dy))
+        layer.paste((0, 0, 0, 0), (0, 0, self.canvas[0], c.content_top))
+        img.alpha_composite(layer)
+        if fl > 0.01:
+            white = Image.new("RGBA", self.canvas, (255, 255, 255, 0))
+            white.paste((255, 255, 255, round(255 * fl)), (0, c.content_top, self.canvas[0], self.canvas[1]))
+            img.alpha_composite(white)
 
     def frame_at(self, sec: float) -> Image.Image:
         return self.frame(round(sec * self.t.fps))
@@ -745,9 +940,16 @@ def render_video(r: CardRenderer, output: Path, *, progress: ProgressFn | None =
     else:
         cmd += ["-f", "lavfi", "-t", _f(p.duration), "-i", "anullsrc=r=44100:cl=stereo"]
     fade = min(t.effects.music_fade_out, p.duration)
-    cmd += ["-filter_complex",
-            f"[0:v]{TO_TV_YUV420}[vout];[1:a]apad,atrim=0:{_f(p.duration)},asetpts=PTS-STARTPTS,"
-            f"afade=t=out:st={_f(p.duration - fade)}:d={_f(fade)}[aout]",
+    v = r.v
+    sfx_args, sfx_graph, _ = mix_filter(r.cues, v.sfx, 2) if v.sfx != "off" else ([], "", [])
+    cmd += sfx_args
+    music_chain = f"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,apad,atrim=0:{_f(p.duration)},asetpts=PTS-STARTPTS"
+    if sfx_graph:  # 효과음은 음악 위에 작게 (sfx.MIX_GAIN)
+        audio = (f"{music_chain}[mus];{sfx_graph};[mus][sfx]amix=inputs=2:duration=first:normalize=0:"
+                 f"dropout_transition=0,afade=t=out:st={_f(p.duration - fade)}:d={_f(fade)}[aout]")
+    else:
+        audio = f"{music_chain},afade=t=out:st={_f(p.duration - fade)}:d={_f(fade)}[aout]"
+    cmd += ["-filter_complex", f"[0:v]{TO_TV_YUV420}[vout];{audio}",
             "-map", "[vout]", "-map", "[aout]", "-r", str(t.fps), "-t", _f(p.duration),
             *FINAL_VCODEC, *FINAL_ACODEC, "-movflags", "+faststart", str(output)]
     with tempfile.TemporaryFile() as err:

@@ -70,6 +70,26 @@ class LyricLine(BaseModel):
         return self
 
 
+class Bonus(BaseModel):
+    """1위 뒤 엔딩 보너스 한 장면: 순위 밖 기록(kind=rank, 예: 6위 디아즈 50홈런) 또는 다음 편 예고(kind=teaser)."""
+    kind: Literal["rank", "teaser"] = "rank"
+    rank: int | None = Field(default=None, ge=1, le=99)
+    name: str = ""
+    team: str = ""
+    value: str = ""
+    year: str = ""
+    text: str = ""            # 예고 문구 ('다음 편: KBO 단일 시즌 도루 TOP 5')
+    image: str | None = None  # 보너스 카드 PNG (프로젝트 폴더 기준). 없으면 렌더러가 글자 카드를 그린다
+
+    @model_validator(mode="after")
+    def _filled(self) -> "Bonus":
+        if self.kind == "rank" and not (self.rank and self.name and self.value):
+            raise ValueError("보너스 순위 장면은 순위·이름·기록이 필요합니다")
+        if self.kind == "teaser" and not self.text.strip():
+            raise ValueError("다음 편 예고 문구가 비어 있습니다")
+        return self
+
+
 class Project(BaseModel):
     channel: str
     title: str = Field(min_length=1)
@@ -84,7 +104,10 @@ class Project(BaseModel):
     rights_confirmed: bool = False
     outro_start: float | None = Field(default=None, ge=0)  # 아웃트로 시작 시각(초). 없으면 비례 배분
     intro_image: str | None = None  # 카드 모드 인트로 캐릭터 (프로젝트 폴더 기준). 없으면 템플릿 채널 로고
-    variation: dict | None = None   # 카드 모드 연출 {transition, accent, subtitle, intro} (shortsmaker/variation.py)
+    variation: dict | None = None   # 카드 모드 연출 {transition, accent, subtitle, intro, …} (shortsmaker/variation.py)
+    hook: str = ""                  # 첫 0~2초 후킹 문구 ('50홈런이 6위?!'). 비우면 로고 인트로만
+    bonus: Bonus | None = None      # 1위 뒤 엔딩 보너스 장면
+    gauge_base: str = ""            # 게이지 바 기준선 ('50홈런'). 비우면 게이지 없이 숫자만
 
     @field_validator("items")
     @classmethod

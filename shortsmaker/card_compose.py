@@ -101,23 +101,36 @@ def _paste_center(canvas: Image.Image, img: Image.Image, cx: float, cy: float) -
 
 
 def _fit_text(text: str, size: int, max_w: int, **kw) -> Image.Image:
+    return _fit_sized(text, size, max_w, **kw)[0]
+
+
+def _fit_sized(text: str, size: int, max_w: int, **kw) -> tuple[Image.Image, int]:
     img = styled_text(text, size, **kw)
     while img.width > max_w and size > 24:
         size = int(size * 0.92)
         img = styled_text(text, size, **kw)
-    return img
+    return img, size
+
+
+def record_text(text: str, size: int, team: str) -> Image.Image:
+    """카드의 기록 글자 (카운트업 때 렌더러가 숫자만 바꿔 같은 모양으로 다시 그린다)."""
+    primary, _ = team_colors(team)
+    return styled_text(text, size, SILVER, stroke="#111111", stroke_w=11, outer=primary, outer_w=7)
 
 
 def compose_card(caricature: Path, *, rank: int, record: str, year: str, team: str, player: str,
-                 mock: bool = False, tied: bool = False, rank_fill: tuple[str, ...] | None = None) -> Image.Image:
-    """아래에서부터 쌓는다: 선수 이름 리본 → 팀 이름 띠 → 연도 → 기록 → 순위. 캐리커처는 그 위·뒤에 크게."""
+                 mock: bool = False, tied: bool = False, rank_fill: tuple[str, ...] | None = None,
+                 omit_record: bool = False, meta: dict | None = None) -> Image.Image:
+    """아래에서부터 쌓는다: 선수 이름 리본 → 팀 이름 띠 → 연도 → 기록 → 순위. 캐리커처는 그 위·뒤에 크게.
+
+    omit_record: 기록 글자를 빼고 그린다 (카운트업용 바탕). meta 에 기록 글자 위치·크기를 채워 준다."""
     primary, secondary = team_colors(team)
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
     gold = tuple(rank_fill) if rank_fill else GOLD  # 영상마다 바꾸는 순위 강조색 (variation.ACCENTS)
     rank_img = _fit_text(f"{rank}위", 270, 540, fill=gold, stroke="#3B0A00", stroke_w=12, outer="#FFFFFF", outer_w=6)
-    rec = (_fit_text(record, 190, W - 90, fill=SILVER, stroke="#111111", stroke_w=11, outer=primary, outer_w=7)
-           if record else None)
+    rec, rec_size = (_fit_sized(record, 190, W - 90, fill=SILVER, stroke="#111111", stroke_w=11, outer=primary,
+                                outer_w=7) if record else (None, 0))
     year = year.strip() if year and re.fullmatch(r"\s*\d{4}\s*", year) else ""  # 장면 설명 등 다른 글은 카드에 안 찍음
     yr = styled_text(year, 66, "#FFFFFF", stroke="#111111", stroke_w=6, skew=0.08, shadow=4) if year else None
     name = _fit_text(team or "팀", 104, W - 150, fill="#FFFFFF", stroke=secondary, stroke_w=9, skew=0.12, shadow=6)
@@ -159,8 +172,10 @@ def compose_card(caricature: Path, *, rank: int, record: str, year: str, team: s
     if tied:  # 공동 순위: 순위 글자 위에 '공동'
         co = styled_text("공동", 96, gold, stroke="#3B0A00", stroke_w=8, outer="#FFFFFF", outer_w=5, shadow=6)
         card.alpha_composite(co, (40, max(0, y_rank - co.height + 24)))
-    if rec:
+    if rec and not omit_record:
         card.alpha_composite(rec, (56, y_rec))
+    if rec and meta is not None:
+        meta.update(record=record, size=rec_size, x=56, y=y_rec, h=rec.height, team=team)
     if yr:
         d = ImageDraw.Draw(card)
         cy = y_year + yr.height / 2

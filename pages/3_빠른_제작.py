@@ -52,6 +52,13 @@ if data:
                                     "연도": r.year, "장면 설명": r.scene} for r in data.rows]), hide_index=True)
     if data.memos:
         st.caption("메모: " + " / ".join(data.memos))
+    extras = [f"후킹 '{data.hook}'" if data.hook else "", f"기준선 {data.gauge_base}" if data.gauge_base else ""]
+    if data.bonus:
+        bo = data.bonus
+        extras.append("보너스 " + (f"예고: {bo['text']}" if bo["kind"] == "teaser" else
+                                 f"{bo['rank']}위 {bo['name']} {bo['team']} {bo['value']} {bo['year']}".strip()))
+    if any(extras):
+        st.caption(" · ".join(x for x in extras if x))
 
 # ---------------------------------------------------------------- ② 곡
 st.header("② 곡 파일")

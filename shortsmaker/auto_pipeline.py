@@ -99,6 +99,9 @@ class AutoState(BaseModel):
     lyrics_report: dict | None = None
     lyrics_ack: bool = False               # 가사 검사 결과를 사람이 확인함
     variation: dict | None = None
+    hook: str = ""                         # 후킹 문구 (첫 0~2초)
+    bonus: dict | None = None              # 엔딩 보너스 (models.Bonus)
+    gauge_base: str = ""                   # 게이지 기준선 ('50홈런')
     no_logo: dict[int, bool] = Field(default_factory=dict)  # 자리별 '로고·유니폼 글씨 없음' 확인
     suno: dict = Field(default_factory=dict)  # 곡 파일 태그의 Suno 정보 (id, created)
     suno_paid: bool = False
@@ -336,6 +339,48 @@ def set_title(state: AutoState, d: Path, title: str) -> None:
     project = _project(state, d)
     save_project(project.model_copy(update={"title": title}), d)
     save_state(state, d)
+
+
+def set_extras(state: AutoState, d: Path, *, hook: str | None = None, bonus: dict | None | Literal[False] = False,
+               gauge_base: str | None = None) -> None:
+    """후킹 문구·엔딩 보너스·게이지 기준선 (None/False 는 그대로 둠, bonus=None 은 지움). 보너스 값은 출처에 있는 값만."""
+    from .models import Bonus
+    changes = {}
+    if hook is not None and hook.strip() != state.hook:
+        changes["hook"] = state.hook = hook.strip()
+    if bonus is not False:
+        b = Bonus.model_validate(bonus).model_dump() if bonus else None
+        if b != state.bonus:
+            changes["bonus"] = state.bonus = b
+    if gauge_base is not None and gauge_base.strip() != state.gauge_base:
+        g = gauge_base.strip()
+        if g and not re.search(r"\d", g):
+            raise FlowError("게이지 기준선에 숫자가 없습니다 (예: 50홈런)")
+        changes["gauge_base"] = state.gauge_base = g
+    if changes:
+        save_state(state, d)
+        plog.append(d, "extras_changed", **changes)
+
+
+def parse_bonus(text: str) -> dict | None:
+    """'6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025' 또는 '예고 | 다음 편: …' → Bonus 사전. 비우면 None."""
+    text = text.strip()
+    if not text:
+        return None
+    cells = [c.strip() for c in text.split("|")]
+    if cells[0] in ("예고", "다음 편", "다음편"):
+        return {"kind": "teaser", "text": " | ".join(cells[1:]).strip() or cells[0]}
+    m = re.match(r"^(\d{1,2})\s*위\s*(.*)$", cells[0])
+    if not m:
+        raise FlowError("보너스는 '6위 이름 | 팀 | 기록 | 연도' 또는 '예고 | 문구' 형식입니다")
+    rank, name = int(m.group(1)), m.group(2).strip()
+    rest = cells[1:]
+    if not name and rest:
+        name, rest = rest[0], rest[1:]
+    team, value, year = (rest + ["", "", ""])[:3]
+    if year and not re.fullmatch(r"\d{4}", year):
+        raise FlowError(f"보너스 연도 '{year}' 는 4자리 숫자여야 합니다")
+    return {"kind": "rank", "rank": rank, "name": name, "team": team, "value": value, "year": year}
 
 
 def swap_slots(state: AutoState, d: Path, a: int, b: int) -> None:
@@ -769,9 +814,15 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
         if sticker:  # 스티커형: 글씨 없는 그림 그대로 (순위·기록은 영상의 자막·빨간 줄로)
             card = _sticker(d / ps.approved, mock=state.mock)
         else:
-            card = compose_card(d / ps.approved, rank=r.rank, record=r.record, year=r.year, team=r.team,
-                                player=r.player, mock=state.mock, tied=label(state.rows, r).startswith("공동"),
-                                rank_fill=ACCENTS[Variation.model_validate(state.variation).accent]["rank"])
+            kw = dict(rank=r.rank, record=r.record, year=r.year, team=r.team, player=r.player, mock=state.mock,
+                      tied=label(state.rows, r).startswith("공동"),
+                      rank_fill=ACCENTS[Variation.model_validate(state.variation).accent]["rank"])
+            card = compose_card(d / ps.approved, **kw)
+            meta: dict = {}  # 카운트업용: 기록 글자를 뺀 바탕 카드 + 글자 위치
+            base = compose_card(d / ps.approved, **kw, omit_record=True, meta=meta)
+            save_card(base, d / "cards" / f"card{r.slot}_base.png")
+            meta["base"] = f"cards/card{r.slot}_base.png"
+            (d / "cards" / f"card{r.slot}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         out[r.slot] = save_card(card, d / "cards" / f"card{r.slot}.png")
         ps.card = str(out[r.slot].relative_to(d))
     state.cards_done = True
@@ -808,7 +859,26 @@ def credits_text(state: AutoState, d: Path) -> str:
                     f"{ph['license']} {ph.get('license_url', '')} / {ph['source']}".rstrip())
     rows.append("MOCK 시험용 — 실제 영상에 쓰지 마세요." if state.mock else
                 "캐리커처는 위 사진을 바탕으로 AI로 변형한 2차 저작물입니다.")
+    cues, variant = used_sfx(state, d)
+    if cues:
+        from .sfx import credits_lines
+        rows += ["", "[효과음]"] + credits_lines(cues, variant)
     return "\n".join(rows)
+
+
+def used_sfx(state: AutoState, d: Path) -> tuple[list, str]:
+    """이 영상에 들어갈 효과음 (큐, 세트). 카드가 아직 없으면 ([], '')."""
+    v = Variation.model_validate(state.variation or {})
+    if v.sfx == "off" or not state.cards_done:
+        return [], ""
+    from .card_mode import card_timeline, sfx_cues
+    try:
+        project = build_project(state, d)
+        t = load_template(project.channel)
+        scenes = card_timeline(project, t, project.lyrics)
+    except Exception:  # noqa: BLE001 — 렌더 단계에서 같은 오류가 다시 보인다
+        return [], ""
+    return sfx_cues(project, t, scenes), v.sfx
 
 
 def build_project(state: AutoState, d: Path) -> Project:
@@ -821,6 +891,7 @@ def build_project(state: AutoState, d: Path) -> Project:
     source = state.data_source_name + (f" ({state.data_source_url})" if state.data_source_url else "")
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
                                       "items": items, "intro_image": state.intro_image, "variation": state.variation,
+                                      "hook": state.hook, "bonus": state.bonus, "gauge_base": state.gauge_base,
                                       "source_note": f"출처: {source}" if source else "",
                                       "rights_confirmed": state.rights_confirmed and not state.mock})
     save_project(project, d)
@@ -867,6 +938,12 @@ def checklist(state: AutoState, d: Path) -> list[dict]:
     add("lyrics", "가사 검사 결과 확인 (나열형·데이터 일치·이전 영상과 겹침)", state.lyrics_ack,
         "" if state.lyrics_report is None else ("통과" if state.lyrics_report["passed"] else
                                                 "검사 오류 있음: " + "; ".join(state.lyrics_report["errors"][:2])))
+    cues, variant = used_sfx(state, d)
+    if cues:
+        from .sfx import problems as sfx_problems
+        bad = sfx_problems(cues, variant)
+        add("sfx", "효과음 출처·라이선스 (자체 제작·퍼블릭 도메인·CC0)", not bad,
+            "; ".join(bad) if bad else "쓴 효과음 모두 출처 기록됨")
     v_ok = state.variation is not None and not conflicts(Variation.model_validate(state.variation), d.parent,
                                                          exclude=state.slug)
     add("variation", "연출이 최근 5편과 충분히 다름", v_ok,

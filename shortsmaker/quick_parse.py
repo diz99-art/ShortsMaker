@@ -7,6 +7,9 @@
   5 | 박병호 | 넥센 히어로즈 | 52홈런 | 2014 | 힘차게 풀스윙하는 타격 자세
   …
   메모: 가사·해설에 쓸 사실
+  후킹: 첫 2초 큰 질문 문구 (선택)
+  보너스: 6위 이름 | 팀 | 기록 | 연도  또는  예고 | 다음 편 문구 (선택)
+  기준: 게이지 기준선 (선택, 예: 50홈런)
 
 틀린 줄은 줄 번호와 이유를 알려 준다. 마크다운 표(| … |), 코드 블록(```), 굵게(**), 목록 기호(-)는 알아서 걸러 읽는다.
 """
@@ -28,7 +31,10 @@ EXAMPLE = """제목: 50홈런도 6위라고?! / KBO 단일 시즌 홈런 TOP 5
 3 | 심정수 | 현대 유니콘스 | 53홈런 | 2003 | 배트를 어깨에 걸치고 묵직하게 선 자세
 2 | 이승엽 | 삼성 라이온즈 | 54홈런 | 1999 | 젊은 시절, 외다리 타법으로 타격 준비
 1 | 이승엽 | 삼성 라이온즈 | 56홈런 | 2003 | 두 팔을 번쩍 들고 환호하는 모습
-메모: 2003년 이승엽 56개와 심정수 53개는 같은 시즌의 홈런 경쟁이었다"""
+메모: 2003년 이승엽 56개와 심정수 53개는 같은 시즌의 홈런 경쟁이었다
+후킹: 50홈런이 6위?!
+보너스: 6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025
+기준: 50홈런"""
 
 
 @dataclass
@@ -38,6 +44,9 @@ class QuickData:
     source_url: str = ""
     rows: list[RankRow] = field(default_factory=list)
     memos: list[str] = field(default_factory=list)
+    hook: str = ""
+    bonus: dict | None = None
+    gauge_base: str = ""
     errors: list[str] = field(default_factory=list)    # "7번째 줄: …"
     warnings: list[str] = field(default_factory=list)
 
@@ -59,6 +68,9 @@ def request_prompt(topic: str) -> str:
 - 기록은 숫자+단위 (예: 52홈런, 16연패, 152억). 연도는 4자리.
 - 장면 설명은 캐리커처 그림용 동작·표정만 (구단 로고·글씨·등번호는 넣지 말 것).
 - 메모는 가사·해설에 쓸 사실 2~5줄 (출처에 있는 사실만, 줄마다 '메모:'로 시작).
+- 후킹은 첫 2초에 띄울 짧은 질문 (15자 안팎, 예: 50홈런이 6위?!).
+- 보너스는 TOP 5 바로 밖 6위 기록 (출처에 있는 값만) 또는 '예고 | 다음 편 주제'.
+- 기준은 게이지 기준선이 될 상징적인 값 (예: 50홈런). 없으면 줄을 빼도 된다.
 
 양식
 제목: 1줄 / 2줄
@@ -66,7 +78,10 @@ def request_prompt(topic: str) -> str:
 순위 | 선수 | 팀 | 기록 | 연도 | 장면 설명
 5 | 선수 | 팀 | 기록 | 연도 | 장면 설명
 (5줄)
-메모: 가사·해설에 쓸 사실"""
+메모: 가사·해설에 쓸 사실
+후킹: 첫 2초 질문
+보너스: 6위 이름 | 팀 | 기록 | 연도
+기준: 기준선 값"""
 
 
 def _clean(line: str) -> str:
@@ -84,7 +99,7 @@ def parse_quick(text: str) -> QuickData:
         if any(u in line for u in UNSURE):
             q.errors.append(f"{no}번째 줄: '확인 필요' 칸이 있습니다 — 직접 확인해 채운 뒤 다시 붙여 넣으세요: {line[:50]}")
             continue
-        m = re.match(r"^(제목|출처|메모)\s*[:：]\s*(.*)$", line)
+        m = re.match(r"^(제목|출처|메모|후킹|보너스|기준)\s*[:：]\s*(.*)$", line)
         if m:
             key, val = m.group(1), m.group(2).strip()
             if key == "제목":
@@ -101,6 +116,23 @@ def parse_quick(text: str) -> QuickData:
                     q.errors.append(f"{no}번째 줄: 출처 URL 이 http(s):// 로 시작하지 않습니다: {parts[1][:40]}")
                 else:
                     q.source_name, q.source_url = parts
+            elif key == "후킹":
+                if len(val) > 30:
+                    q.errors.append(f"{no}번째 줄: 후킹 문구가 너무 깁니다 ({len(val)}자, 30자 이내)")
+                q.hook = val
+            elif key == "보너스":
+                from .auto_pipeline import FlowError, parse_bonus
+                try:
+                    q.bonus = parse_bonus(val)
+                    if q.bonus:
+                        from .models import Bonus
+                        Bonus.model_validate(q.bonus)
+                except (FlowError, ValueError) as e:
+                    q.errors.append(f"{no}번째 줄: 보너스 — {str(e).splitlines()[-1] if isinstance(e, ValueError) else e}")
+            elif key == "기준":
+                if val and not re.search(r"\d", val):
+                    q.errors.append(f"{no}번째 줄: 기준선에 숫자가 없습니다 (예: 50홈런)")
+                q.gauge_base = val
             else:
                 if val:
                     q.memos.append(val)

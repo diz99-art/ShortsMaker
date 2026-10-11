@@ -1,11 +1,12 @@
 """영상마다 연출 바꾸기 — 템플릿으로 찍어낸 반복형 영상이 되지 않게.
 
-연출 4요소(장면 전환·강조색·자막 등장·인트로)를 영상마다 고른다. 제목 파랑·채널 로고는 채널 정체성이라 고정.
-모든 프로젝트의 조합을 projects/_history.json 에 남기고, 최근 5편과 2요소 이상 다른 조합만 허용한다.
+연출 요소(장면 전환·강조색·자막 등장·인트로·그림 움직임·후킹·비트·숫자·효과음·진행 표시·엔딩)를 영상마다 고른다.
+제목 파랑·채널 로고는 채널 정체성이라 고정.
+모든 프로젝트의 조합을 projects/_history.json 에 남기고, 최근 5편과 3요소 이상 다른 조합만 허용한다.
+예전 기록·프로젝트에 없는 요소는 '끄기'로 본다 (예전 영상은 그대로 렌더된다).
 """
 from __future__ import annotations
 
-import itertools
 import json
 import random
 from datetime import datetime, timezone
@@ -27,9 +28,17 @@ SUBTITLES = {"typing": "한 글자씩", "word": "단어 단위로 톡톡", "line
 INTROS = {"shrink": "크게 시작해 줄어들기", "slide": "옆에서 들어오기", "title_card": "제목 카드 → 로고"}
 MOTIONS = {"kenburns": "천천히 확대 (켄 번즈)", "float": "위아래 둥실둥실", "bounce": "등장 후 통통 튀기",
            "wobble": "살짝 흔들림", "none": "움직임 없음"}
-AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS}
+HOOKS = {"slam": "크게 '쾅' 찍히기", "drop": "위에서 떨어져 튕기기", "pop_words": "단어씩 팡팡"}
+BEATS = {"pulse": "박자마다 카드 펄스", "pulse_flash": "펄스 + 강한 구간 번쩍·흔들림", "off": "비트 효과 없음"}
+COUNTS = {"countup": "기록 숫자 카운트업", "countup_gauge": "카운트업 + 기준선 게이지", "static": "숫자 고정"}
+SFX = {"a": "효과음 세트 A", "b": "효과음 세트 B", "off": "효과음 없음"}
+PROGRESS = {"dots": "진행 점 ●●●○○", "fraction": "숫자 3/5", "bar": "진행 막대", "none": "진행 표시 없음"}
+ENDINGS = {"stamp": "보너스 '쾅' 찍기", "slide": "보너스 옆에서 들어오기", "pop": "보너스 튀어 오르기"}
+AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
+        "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS}
+OFF = {"motion": "none", "beat": "off", "count": "static", "sfx": "off", "progress": "none"}  # 추천에서 빼는 값
 RECENT = 5
-MIN_DIFF = 2  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
+MIN_DIFF = 3  # 최근 영상들과 적어도 이만큼의 요소가 달라야 함
 
 
 class Variation(BaseModel):
@@ -38,6 +47,12 @@ class Variation(BaseModel):
     subtitle: str = "typing"
     intro: str = "shrink"
     motion: str = "none"  # 순위 장면 그림 움직임 (예전 프로젝트는 움직임 없음)
+    hook: str = "slam"     # 후킹 문구 등장 (문구가 없으면 쓰지 않음)
+    beat: str = "off"
+    count: str = "static"
+    sfx: str = "off"
+    progress: str = "none"
+    ending: str = "stamp"  # 보너스 장면 등장 (보너스가 없으면 쓰지 않음)
 
     def describe(self) -> str:
         return " · ".join(f"{AXES[k][getattr(self, k)] if k != 'accent' else ACCENTS[self.accent]['label']}"
@@ -80,16 +95,15 @@ def conflicts(v: Variation, root: Path = PROJECTS_DIR, exclude: str | None = Non
 
 
 def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | None = None) -> Variation:
-    """최근 5편과 충분히 다른 조합 중 하나 (덜 쓰인 요소를 우선)."""
+    """최근 5편과 충분히 다른 조합 중 하나 (덜 쓰인 요소를 우선). '끄기' 값은 추천하지 않는다."""
     rnd = random.Random(seed)
     past = recent(root, exclude)
-    combos = [Variation(transition=t, accent=a, subtitle=s, intro=i, motion=m)
-              for t, a, s, i, m in itertools.product(TRANSITIONS, ACCENTS, SUBTITLES, INTROS,
-                                                     [k for k in MOTIONS if k != "none"])]
+    choices = {k: [v for v in AXES[k] if OFF.get(k) != v] for k in AXES}
+    combos = [Variation(**{k: rnd.choice(vs) for k, vs in choices.items()}) for _ in range(4000)]
     ok = [c for c in combos if all(differences(c, r) >= MIN_DIFF for r in past)]
     counts = {(k, getattr(r, k)) for r in past for k in AXES}
     ok.sort(key=lambda c: (sum((k, getattr(c, k)) in counts for k in AXES), rnd.random()))
-    return ok[0] if ok else rnd.choice(combos)
+    return ok[0] if ok else combos[0]
 
 
 def record(slug: str, v: Variation, root: Path = PROJECTS_DIR, kind: str = "render") -> None:

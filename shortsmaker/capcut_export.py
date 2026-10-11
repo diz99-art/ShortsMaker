@@ -253,10 +253,14 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
             src, box, motion = project_dir / project.intro_image, c.intro_box or c.logo_box, c.intro_motion
         elif sc.kind == "intro":
             src, box, motion = t.asset_path(c.logo), c.logo_box, c.intro_motion
+        elif sc.kind == "bonus":  # 보너스 카드: 렌더러가 그린 그림 그대로
+            src, box, motion = media / f"{sc.index:02d}_보너스.png", c.card_box, c.card_motion
+            r.layers[sc.index].src.save(src)
         else:
             src, box, motion = project_dir / sc.item.image, c.card_box, c.card_motion
         dst = media / f"{sc.index:02d}_{sc.label}{src.suffix.lower()}"
-        shutil.copy2(src, dst)
+        if src != dst:
+            shutil.copy2(src, dst)
         gap = motion.gap_frames / t.fps
         start = sc.start + gap
         with Image.open(dst) as im:
@@ -271,10 +275,10 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         for sec, dx in layer.dx or []:  # 옆에서 들어오기
             if sec < sc.end - start:
                 seg.add_keyframe(cc.KeyframeProperty.position_x, us(sec), round(tx + dx / (t.width / 2), 4))
-        if sc.kind == "rank" and v.motion != "none":  # 그림 움직임: 0.3초 간격 키프레임으로 근사
+        if sc.kind in ("rank", "bonus") and v.motion != "none":  # 그림 움직임: 0.3초 간격 키프레임으로 근사
             from .variation import TOP_GAIN, idle_transform
             entry = layer.motion.length
-            gain = TOP_GAIN if sc.item.shown_rank == 1 else 1.0
+            gain = TOP_GAIN if sc.item and sc.item.shown_rank == 1 else 1.0
             k = 0
             while entry + k * 0.3 < sc.end - start and k < 60:
                 sec = entry + k * 0.3
@@ -294,7 +298,7 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         sl = c.stat_line
         script.add_track(cc.TrackType.text, "기록 줄")
         for sc in r.scenes[1:]:
-            text = sc.item.stat_line.strip()
+            text = sc.item.stat_line.strip() if sc.item else ""
             if not text:
                 continue
             seg = cc.TextSegment(
@@ -327,8 +331,50 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
             if dur > 0.05:  # 자막 등장 방식 (한 글자씩 / 단어 / 줄)
                 seg.add_animation(cc.TextIntro[anim], us(dur))
             script.add_segment(seg, "자막")
+    if r.hook_len:  # 후킹 문구: 큰 글자 + 튀어 오르는 등장
+        script.add_track(cc.TrackType.text, "후킹")
+        seg = cc.TextSegment(project.hook, cc.Timerange(0, us(r.hook_len)),
+                             style=cc.TextStyle(size=28.0, bold=True, color=_rgb01(r.stat_color or "#EB1B1B"),
+                                                align=1, auto_wrapping=True, max_line_width=0.9),
+                             border=cc.TextBorder(color=(1.0, 1.0, 1.0), width=60.0),
+                             clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]))
+        seg.add_animation(cc.TextIntro["弹入"], us(0.3))
+        script.add_segment(seg, "후킹")
+    if v.progress != "none":  # 진행 표시: 장면마다 글자로 (●●○○○ / 2 / 5)
+        ranks = [sc for sc in r.scenes if sc.kind == "rank"]
+        script.add_track(cc.TrackType.text, "진행 표시")
+        p_ = c.pill
+        for sc in r.scenes[1:]:
+            done = sum(1 for x in ranks if x.start <= sc.start)
+            text = (f"{done} / {len(ranks)}" if v.progress == "fraction" else
+                    "●" * done + "○" * (len(ranks) - done))
+            seg = cc.TextSegment(text, cc.Timerange(us(sc.start), us(sc.end - sc.start)),
+                                 style=cc.TextStyle(size=8.0, bold=True, color=(0.07, 0.07, 0.07), align=2),
+                                 clip_settings=cc.ClipSettings(transform_x=_transform(t, t.width - 150, 0)[0],
+                                                               transform_y=_transform(t, 0, p_.y + p_.h / 2)[1]))
+            script.add_segment(seg, "진행 표시")
+    if r.cues and v.sfx != "off":  # 효과음: 종류별 트랙 (같은 트랙에서 겹치지 않게)
+        from .sfx import MIX_GAIN, sfx_file
+        from .validate import media_duration
+        names = {"whoosh": "효과음 휙", "thud": "효과음 쿵", "slam": "효과음 쾅", "cheer": "효과음 함성"}
+        for kind in names:
+            cues = [q for q in r.cues if q.kind == kind]
+            if not cues:
+                continue
+            src = sfx_file(kind, v.sfx)
+            dst = media / src.name
+            shutil.copy2(src, dst)
+            length = media_duration(dst) or 0.5
+            script.add_track(cc.TrackType.audio, names[kind])
+            for q in cues:
+                dur = min(length, project.duration - q.at)
+                if dur > 0.05:
+                    script.add_segment(cc.AudioSegment(str(dst), cc.Timerange(us(q.at), us(dur)),
+                                                       volume=MIX_GAIN[kind]), names[kind])
     return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
-            "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."]
+            "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."
+            + (" 비트 펄스·기록 카운트업·게이지는 CapCut 초안에 없습니다 (MP4 에만)." if v.beat != "off" or v.count != "static"
+               else "")]
 
 
 # ---------------------------------------------------------------- 수동 가져오기 키트

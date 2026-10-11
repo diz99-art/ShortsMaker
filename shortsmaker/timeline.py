@@ -22,7 +22,7 @@ BASE_RANK = 8.0
 BASE_RANK_ONE = 10.0
 BASE_OUTRO = 5.0
 
-SceneKind = Literal["intro", "rank", "outro"]
+SceneKind = Literal["intro", "rank", "outro", "bonus"]
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class Scene:
     def label(self) -> str:
         if self.kind == "rank" and self.item:
             return f"{self.item.shown_rank}위"
-        return {"intro": "인트로", "outro": "아웃트로"}.get(self.kind, self.kind)
+        return {"intro": "인트로", "outro": "아웃트로", "bonus": "보너스"}.get(self.kind, self.kind)
 
 
 def snap(t: float, fps: int) -> float:

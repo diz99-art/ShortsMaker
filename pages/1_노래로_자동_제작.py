@@ -169,6 +169,22 @@ else:
     if title2.strip() and title2.strip() != state.title:
         ap.set_title(state, D, title2)
         st.toast("제목 저장")
+    with st.expander("후킹 문구 · 엔딩 보너스 · 게이지 기준선 (선택)", expanded=bool(state.hook or state.bonus)):
+        e1, e2, e3 = st.columns([2, 3, 1])
+        hook_in = e1.text_input("후킹 문구 (첫 2초)", state.hook, key="x_hook", placeholder="50홈런이 6위?!")
+        b = state.bonus or {}
+        b_txt = ("" if not b else (f"예고 | {b.get('text', '')}" if b.get("kind") == "teaser" else
+                                   f"{b.get('rank')}위 {b.get('name', '')} | {b.get('team', '')} | {b.get('value', '')} | "
+                                   f"{b.get('year', '')}"))
+        bonus_in = e2.text_input("엔딩 보너스 (출처에 있는 값만)", b_txt, key="x_bonus",
+                                 placeholder="6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025  또는  예고 | 다음 편: …")
+        gauge_in = e3.text_input("게이지 기준선", state.gauge_base, key="x_gauge", placeholder="50홈런")
+        if st.button("저장", key="x_save"):
+            try:
+                ap.set_extras(state, D, hook=hook_in, bonus=ap.parse_bonus(bonus_in), gauge_base=gauge_in)
+                st.toast("저장했습니다 (카드를 다시 합성하면 반영)")
+            except (ap.FlowError, ValueError) as e:
+                _err(e)
     unknown_ok = st.checkbox("사전에 없는 팀 허용 (MLB·해외 팀 등)", key="unknown_team")
     merge = st.checkbox("자막: 'N위, 팀' 줄과 기록 줄을 한 자막으로 합치기", value=state.merge_record_lines, key="merge")
     if st.button("표 확정", key="confirm", type="primary"):
@@ -441,7 +457,7 @@ else:
                 ap.confirm_no_logo(state, D, r.slot, ok)
                 st.rerun()
 
-    st.subheader("② 연출 (최근 5편과 2요소 이상 달라야 함, 제목 파랑·로고는 고정)")
+    st.subheader("② 연출 (최근 5편과 3요소 이상 달라야 함, 제목 파랑·로고는 고정)")
     from shortsmaker import variation as var
     cur = var.Variation.model_validate(state.variation) if state.variation else ap.suggest_variation(state, D)
     v1, v2, v3, v4, v5 = st.columns(5)
@@ -455,7 +471,15 @@ else:
                       format_func=var.INTROS.get, key="v_it")
     mo = v5.selectbox("그림 움직임", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
                       format_func=var.MOTIONS.get, key="v_mo", help="1위는 더 강하게 + 등장 때 번쩍·흔들림")
-    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo)
+    w1, w2, w3, w4, w5, w6 = st.columns(6)
+    extra = {}
+    for col, (k, label_) in zip((w1, w2, w3, w4, w5, w6), [("hook", "후킹 등장"), ("beat", "비트 맞춤"),
+                                                            ("count", "기록 숫자"), ("sfx", "효과음"),
+                                                            ("progress", "진행 표시"), ("ending", "보너스 등장")]):
+        opts = var.AXES[k]
+        extra[k] = col.selectbox(label_, list(opts), index=list(opts).index(getattr(cur, k)), format_func=opts.get,
+                                 key=f"v_{k}")
+    pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, **extra)
     bad = var.conflicts(pick, D.parent, exclude=state.slug)
     for b_ in bad:
         st.warning(b_)
