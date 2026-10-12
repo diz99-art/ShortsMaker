@@ -26,7 +26,7 @@
       "fill": "#FFFFFF",
       "border_width": 4,
       "border_color": "#111111",
-      "icon_color": "#F26A00",
+      "icon_color": "#1FB873",
       "icon": "dot"
     },
     "title": {
@@ -37,7 +37,7 @@
       "font": "display",
       "size": 82,
       "min_size": 56,
-      "color": "#0043C8",
+      "color": "#0B7A4F",
       "max_lines": 2
     },
     "title_line_pitch": 0.96,
@@ -254,7 +254,9 @@
     "auto_cards": true,
     "default_look": "clean_a",
     "hook_from_title": true,
-    "mascot_dir": "mascot_info"
+    "mascot_dir": "mascot_info",
+    "main_color": "#0B7A4F",
+    "accent_color": "#1FB873"
   },
   "effects": {
     "transition": 0,

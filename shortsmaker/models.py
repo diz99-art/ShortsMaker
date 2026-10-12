@@ -43,6 +43,7 @@ class Item(BaseModel):
     start: float | None = Field(default=None, ge=0)  # 이 순위 장면이 시작하는 시각(초). 노래에 맞출 때만
     display_rank: int | None = Field(default=None, ge=1, le=5)  # 화면에 보이는 순위 (공동 2위 2명 → 2, 2 / 3위 없음)
     stat_line: str = ""  # 스티커형: 자막 아래 빨간 기록 줄 (1~2줄, 줄바꿈은 '\n')
+    year: str = ""  # 정보한장: 기준 연도 ('2024' → 카드에 '2024년 기준')
 
     @property
     def shown_rank(self) -> int:
@@ -379,6 +380,8 @@ class CardLayout(BaseModel):
     default_look: str = "classic"      # 프로젝트 연출에 look 이 없을 때 쓰는 스타일
     hook_from_title: bool = False      # 후킹 문구가 없으면 제목 첫 줄로 (로고 인트로 없이 후킹 → 바로 5위)
     mascot_dir: str = "mascot"         # assets/<이 폴더> 의 마스코트 그림. 'mascot' 외 폴더는 비어 있으면 마스코트 없음
+    main_color: str | None = None      # 클린 카드·키워드·그래프의 채널 색 (없으면 야구한장 파랑)
+    accent_color: str | None = None    # 1위·후킹 밑줄 강조색 (있으면 연출의 강조색 대신 고정)
 
 
 class Template(BaseModel):

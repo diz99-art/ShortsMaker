@@ -134,8 +134,9 @@ def record_image(text: str, size: int) -> Image.Image:
 def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int, record: str, year: str, team: str,
                   player: str, accent: str = "#F26A00", top: bool | None = None, tied: bool = False,
                   rank_label: str | None = None, tag: str = "", omit_record: bool = False, meta: dict | None = None,
-                  layers: dict | None = None) -> Image.Image:
-    """클린 카드 (941×1162, 투명 바깥). tag: 작은 회색 라벨 (보너스 '번외')."""
+                  layers: dict | None = None, main: str = BLUE) -> Image.Image:
+    """클린 카드 (941×1162, 투명 바깥). tag: 작은 회색 라벨 (보너스 '번외').
+    main: 채널 색 (야구한장 파랑, 정보한장은 템플릿 main_color). year 는 '2014' 또는 '2024년 기준'."""
     top = rank == 1 if top is None else top
     primary, _ = team_colors(team)
     margin = 34                                  # 그림자 자리
@@ -145,7 +146,7 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
     mask.paste(_rounded_mask((cw, ch), 44), (margin, margin))
     _drop_shadow(L["back"], mask)
     label = rank_label or (("공동 " if tied else "") + f"{rank}위")
-    sub = " · ".join(x for x in (team, year if re.fullmatch(r"\d{4}", year or "") else "") if x)
+    sub = " · ".join(x for x in (team, year if re.fullmatch(r"\d{4}|\d{4}년 기준", year or "") else "") if x)
 
     if look == "clean_a":
         panel_h = 360
@@ -168,7 +169,7 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
         # 순위와 기록을 비슷한 크기로 한 줄에 (폰에서 한눈에). 1위만 순위 글씨가 강조색
         size, avail = 132, cw - 96 - 44
         while True:
-            rk = soft_text(label, size, accent if top else BLUE, FONT_DISPLAY)
+            rk = soft_text(label, size, accent if top else main, FONT_DISPLAY)
             rec = soft_text(record, size, INK, FONT_DISPLAY) if record else None
             if rk.width + (rec.width if rec is not None else 0) <= avail or size <= 48:
                 break
@@ -204,10 +205,10 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
             L["art"].alpha_composite(art, (margin + (cw - art.width) // 2, margin + int(ch * 0.74) - art.height))
         x0 = margin + 48
         num = re.match(r"^(공동\s*)?(\d+)(위.*)$", label)
-        big = soft_text(num.group(2) if num else label, 220, BLUE, FONT_DISPLAY, shadow=10, alpha=0.18)
+        big = soft_text(num.group(2) if num else label, 220, main, FONT_DISPLAY, shadow=10, alpha=0.18)
         L["text"].alpha_composite(big, (x0 - 6, margin + 30))
         if num:
-            small = soft_text((num.group(1) or "") + num.group(3).strip(), 56, BLUE, FONT_BOLD, shadow=0)
+            small = soft_text((num.group(1) or "") + num.group(3).strip(), 56, main, FONT_BOLD, shadow=0)
             L["text"].alpha_composite(small, (x0 + big.width + 8, margin + 30 + big.height - small.height - 10))
         if top:  # 1위만: 강조색 작은 점
             ImageDraw.Draw(L["text"]).ellipse([margin + cw - 70, margin + 50, margin + cw - 46, margin + 74],
@@ -240,10 +241,11 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
 
 
 def clean_bonus(look: str, *, rank: int | None, name: str, team: str, value: str, year: str, text: str = "",
-                kind: str = "rank", accent: str = "#F26A00", layers: dict | None = None) -> Image.Image:
+                kind: str = "rank", accent: str = "#F26A00", layers: dict | None = None,
+                main: str = BLUE) -> Image.Image:
     """보너스 '?' 카드 (클린): 같은 카드 + 회색 물음표 + '번외' 라벨 (도장·기울기 없음)."""
     if kind == "teaser":
         return compose_clean(question_mark(), look, rank=rank or 6, record="", year="", team=team, player=text,
-                             rank_label="다음 편", tag="예고", top=False, accent=accent, layers=layers)
+                             rank_label="다음 편", tag="예고", top=False, accent=accent, layers=layers, main=main)
     return compose_clean(question_mark(), look, rank=rank or 6, record=value, year=year, team=team, player=name,
-                         rank_label=f"{rank}위?", tag="번외", top=False, accent=accent, layers=layers)
+                         rank_label=f"{rank}위?", tag="번외", top=False, accent=accent, layers=layers, main=main)

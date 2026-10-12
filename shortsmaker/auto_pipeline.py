@@ -42,6 +42,7 @@ from .validate import media_duration
 
 CHANNEL = "yagu_v2"  # 기본 템플릿 (카드형). 스티커형은 "yagu_v2_sticker"
 TEMPLATES = {"yagu_v2": "카드형", "yagu_v2_sticker": "스티커형"}
+INFO_TEMPLATES = {"info_v2": "정보한장"}  # 빠른 제작 전용: 캐리커처 없이 항목 그림으로 카드를 렌더할 때 자동 합성
 GEN_MODES = {"manual": "수동 생성 (무료, ChatGPT·Gemini)", "openai": "OpenAI 자동 생성 (유료)", "mock": "Mock 시험 (무료)"}
 STATE_FILE = "auto.json"
 END_TAIL = 2.0  # 마지막 가사가 끝난 뒤 남기는 시간(초). 이 안에서 음악이 페이드아웃된다
@@ -150,6 +151,10 @@ def load_state(d: Path) -> AutoState:
     return AutoState.model_validate_json((d / STATE_FILE).read_text(encoding="utf-8"))
 
 
+def is_info(state: AutoState) -> bool:
+    return state.template in INFO_TEMPLATES
+
+
 def _project(state: AutoState, d: Path) -> Project:
     return load_project(d / "project.json")[0]
 
@@ -164,8 +169,8 @@ def start_from_song(song: Path, slug: str, *, title: str | None = None, mock: bo
         mode = {True: "mock", False: "openai"}.get(mock, "manual")
     if mode not in GEN_MODES:
         raise FlowError(f"생성 방식은 {', '.join(GEN_MODES)} 중 하나입니다")
-    if template not in TEMPLATES:
-        raise FlowError(f"템플릿은 {', '.join(TEMPLATES)} 중 하나입니다")
+    if template not in TEMPLATES and template not in INFO_TEMPLATES:
+        raise FlowError(f"템플릿은 {', '.join([*TEMPLATES, *INFO_TEMPLATES])} 중 하나입니다")
     """곡을 새 프로젝트 폴더에 복사하고 상태를 만든다. 같은 이름 폴더가 있으면 덮어쓰지 않는다."""
     d = project_dir(slug, root)
     if d.exists():
@@ -309,7 +314,8 @@ def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str 
     """사용자가 확인·수정한 표를 확정. 빈칸이 있으면 거부. 자막 표시 텍스트도 이때 정한다."""
     if not state.aligned:
         raise FlowError("먼저 가사 자동 맞추기를 끝내세요")
-    problems = rows_complete(rows) + column_problems(rows, allow_unknown_team=allow_unknown_team)
+    problems = (rows_complete(rows, need_team=not is_info(state))
+                + column_problems(rows, allow_unknown_team=allow_unknown_team or is_info(state)))
     if problems:
         raise FlowError("표를 확정할 수 없습니다: " + "; ".join(problems))
     filled = [r for r in rows if r.team.strip() or r.player.strip() or r.record.strip()]
@@ -324,7 +330,7 @@ def confirm_table(state: AutoState, d: Path, rows: list[RankRow], *, title: str 
     save_project(project.model_copy(update={"title": state.title, "lyrics": lines}), d)
     for r in state.rows:  # 표가 바뀌면 사진 검색어도 새로
         ps = state.players[r.slot]
-        if not ps.folder:
+        if not ps.folder and not is_info(state):
             ps.query = f'"{r.player}" {r.team.split()[0]} baseball'
     state.table_confirmed = True
     save_state(state, d)
@@ -799,6 +805,31 @@ def set_hook_image(state: AutoState, d: Path, data: bytes) -> Path:
     return path
 
 
+def use_info_image(state: AutoState, d: Path, slot: int, data: bytes | None) -> Path:
+    """정보한장: 항목 그림을 배경 그대로 둔다 (카드는 렌더할 때 info_cards 가 합성).
+    그림이 없으면 임시 글자 카드 — 표시를 달아 두어 수익화용 렌더에서 막힌다."""
+    from .info_cards import mark_placeholder, placeholder_art
+    if not is_info(state):
+        raise FlowError("정보한장 프로젝트에서만 씁니다")
+    r = _row(state, slot)
+    (d / "images").mkdir(exist_ok=True)
+    p = d / "images" / f"item{slot}.png"
+    ps = state.players[slot]
+    if data:
+        Image.open(io.BytesIO(data)).convert("RGB").save(p)
+        ps.source = "upload"
+    else:
+        placeholder_art(r.player).save(p)
+        mark_placeholder(p)
+        ps.source = "placeholder"
+    ps.approved = ps.card = str(p.relative_to(d))
+    state.no_logo[slot] = False
+    state.cards_done = False
+    save_state(state, d)
+    plog.append(d, "info_image", slot=slot, source=ps.source)
+    return p
+
+
 def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "auto") -> Path:
     png, _ = _cutout(data, method)
     path = d / "intro.png"
@@ -895,6 +926,13 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
         raise FlowError("승인한 캐리커처가 없는 순위: "
                         + ", ".join(row_label(state, s) for s in sorted(waiting, reverse=True)))
     out = {}
+    if is_info(state):  # 정보한장: 카드는 렌더할 때 항목 값으로 자동 합성 (info_cards.prepare_cards)
+        for r in state.rows:
+            out[r.slot] = d / state.players[r.slot].approved
+            state.players[r.slot].card = state.players[r.slot].approved
+        state.cards_done = True
+        save_state(state, d)
+        return out
     sticker = _style_name(state) == "sticker"
     for r in state.rows:
         ps = state.players[r.slot]
@@ -962,6 +1000,10 @@ def credits_text(state: AutoState, d: Path) -> str:
     commons = False
     for r in state.rows:
         ps = state.players[r.slot]
+        if is_info(state):
+            rows.append(f"{label(state.rows, r)} {r.player}: " + ("사용자 제공 이미지 (사용 권한은 제작자가 확인)"
+                                                                 if ps.source == "upload" else "임시 글자 카드 (시험용)"))
+            continue
         if not ps.folder:
             if ps.approved and "manual" in ps.approved:
                 rows.append(f"{label(state.rows, r)} {r.player}: 사용자가 직접 만든 그림 (사진 없음)")
@@ -1022,6 +1064,9 @@ def build_project(state: AutoState, d: Path) -> Project:
     items = [{"rank": r.slot, "display_rank": r.rank, "name": r.player or r.team, "value": r.record,
               "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card,
               "stat_line": r.stat_line} for r in state.rows]
+    if is_info(state):  # 정보한장: 구분은 description, 기준 연도는 따로 (카드에 '2024년 기준')
+        for it, r in zip(items, state.rows):
+            it.update(description=r.team, year=r.year)
     if _need_sung_starts(state, project):  # 가사의 순위 낱말이 표와 다르면 (예: '오위, 박한이' ↔ 공동 3위) 부른 시각을 직접
         for it, r in zip(items, state.rows):
             it["start"] = r.start
@@ -1060,13 +1105,21 @@ def checklist(state: AutoState, d: Path) -> list[dict]:
         f"플랜: {state.suno_plan or '미입력'} · 곡 태그: " +
         (f"Suno id {state.suno.get('id', '없음')}, 생성 {state.suno.get('created', '알 수 없음')}"
          if state.suno.get("made_with_suno") else "Suno 표시 없음 (확인 필요)"))
-    missing = [row_label(state, s) for s in state.players if not state.no_logo.get(s)]
-    add("no_logo", "캐리커처에 구단 로고·유니폼 글씨 없음 (사람 확인)", not missing,
-        ("확인 안 된 순위: " + ", ".join(missing)) if missing else "5명 모두 확인")
+    if is_info(state):  # 정보한장: 로고·캐리커처 대신 '임시 글자 카드 없음'과 그림 권리
+        temp = [row_label(state, s) for s, ps in state.players.items() if ps.source != "upload"]
+        add("info_images", "모든 항목에 실제 그림 (임시 글자 카드 없음)", not temp,
+            ("임시 카드인 순위: " + ", ".join(temp)) if temp else "5개 모두 올린 그림")
+    missing = [] if is_info(state) else [row_label(state, s) for s in state.players if not state.no_logo.get(s)]
+    if not is_info(state):
+        add("no_logo", "캐리커처에 구단 로고·유니폼 글씨 없음 (사람 확인)", not missing,
+            ("확인 안 된 순위: " + ", ".join(missing)) if missing else "5명 모두 확인")
     bad_credit = []
     for r in state.rows:
         ps = state.players[r.slot]
-        if ps.source == "placeholder" or (not ps.folder and ps.source != "none"):
+        if is_info(state):
+            if ps.source != "upload":
+                bad_credit.append(label(state.rows, r))
+        elif ps.source == "placeholder" or (not ps.folder and ps.source != "none"):
             bad_credit.append(label(state.rows, r))
         elif ps.folder and not (d / ps.folder / "metadata.json").exists():
             bad_credit.append(label(state.rows, r))
@@ -1121,6 +1174,7 @@ def render_all(state: AutoState, d: Path, *, rights_confirmed: bool = False, kin
         warnings += draft.warnings
     except CapCutExportError as e:  # CapCut 실패는 MP4 에 영향 없음
         warnings.append(f"CapCut 초안을 만들지 못했습니다: {e}")
+    warnings = list(dict.fromkeys(warnings))  # 같은 경고가 MP4·CapCut 양쪽에서 두 번 나오지 않게
     save_state(state, d)
     if kind == "monetize":
         record_variation(state.slug, Variation.model_validate(state.variation), d.parent)

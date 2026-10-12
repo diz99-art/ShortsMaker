@@ -1,5 +1,7 @@
 """빠른 제작: 양식 답변 + 곡 + 그림 5장 → 버튼 하나로 시험 렌더까지.
 
+정보한장(template info_v2): 그림은 0~5장, 배경 제거 없이 그대로 쓰고 빈 자리는 임시 글자 카드.
+
 곡 등록 → 가사 맞추기 → 가사와 표 대조 → 표 확정 → 그림 넣기(배경 제거) → 연출 자동 추천 → 합성 → 시험 렌더(_DRAFT).
 문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다.
 항상 새 프로젝트 폴더를 만든다 (같은 이름이 있으면 _2, _3 …). 멈춘 프로젝트를 '이어서' 할 때만 resume=True 로
@@ -77,7 +79,10 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
     report = progress or (lambda f, m: None)
     if not data.ok:
         return QuickResult("stopped", "양식", "붙여 넣은 양식에 틀린 줄이 있습니다", data.errors, slug=slug)
-    if len(images) != len(data.rows):
+    info = template in ap.INFO_TEMPLATES
+    if info and len(images) > len(data.rows):
+        return QuickResult("stopped", "그림", f"그림이 {len(images)}장입니다 ({len(data.rows)}장까지, 순위 순서대로)", slug=slug)
+    if not info and len(images) != len(data.rows):
         return QuickResult("stopped", "그림", f"그림이 {len(images)}장입니다 ({len(data.rows)}장 필요, 순위 순서대로)",
                            slug=slug)
 
@@ -134,9 +139,14 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         except ap.FlowError as e:
             return QuickResult("stopped", "표 확정", str(e), slug=slug)
 
-    report(0.5, "그림 넣기 (배경 제거)")
     slots = [r.slot for r in state.rows]  # 표 순서 = 자리 5→1 (공동은 표 순서)
-    for slot, img in zip(slots, images):
+    if info:  # 정보한장: 그림은 배경 그대로, 없는 자리는 임시 글자 카드 (수익화용 렌더에서 막힘)
+        report(0.5, "그림 넣기")
+        for i, slot in enumerate(slots):
+            if not state.players[slot].approved:
+                ap.use_info_image(state, d, slot, images[i] if i < len(images) else None)
+    report(0.5, "그림 넣기 (배경 제거)")
+    for slot, img in ([] if info else zip(slots, images)):
         if not state.players[slot].approved:
             if not ap.photo_ready(state, slot):
                 ap.skip_photo(state, d, slot)
@@ -145,7 +155,7 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             except Exception as e:  # noqa: BLE001
                 return QuickResult("stopped", "그림", f"{ap.row_label(state, slot)} 그림을 읽을 수 없습니다: {e}", slug=slug)
 
-    if not state.mood:
+    if not state.mood and not info:  # 분위기(카드 디자인)는 야구한장만 — 정보한장은 클린 카드 고정
         report(0.53, "분위기 판단 (카드 디자인)")
         ap.detect_mood(state, d, use_claude=use_claude)
     if state.variation is None:

@@ -15,7 +15,9 @@ import streamlit as st
 
 from shortsmaker import auto_pipeline as ap
 from shortsmaker import manual_prompt as mp
-from shortsmaker.models import PROJECTS_DIR
+from shortsmaker import quick_parse_info as qi
+from shortsmaker.mascot import ASSETS_DIR
+from shortsmaker.models import PROJECTS_DIR, load_template
 from shortsmaker.quick import new_slug as quick_new_slug, run_quick
 from shortsmaker.quick_parse import EXAMPLE, parse_quick, request_prompt
 from shortsmaker.rank_extract import label
@@ -27,9 +29,21 @@ st.caption("① ChatGPT 답변 ② 곡 ③ 그림 5장 → '시험 렌더까지 
 ROOT = Path(os.environ.get("SHORTSMAKER_PROJECTS_DIR", PROJECTS_DIR))
 ss = st.session_state
 
+# 채널: 양식·템플릿·로고·마스코트 폴더가 함께 바뀐다
+channel = st.radio("채널", ["야구한장", "정보한장"], horizontal=True, key="q_channel")
+INFO = channel == "정보한장"
+if INFO:
+    tpl_info = load_template(qi.CHANNEL)
+    mdir = ASSETS_DIR / tpl_info.card.mascot_dir
+    has_mascot = mdir.is_dir() and any(mdir.glob("*.png"))
+    st.caption(f"템플릿 {qi.CHANNEL} · 로고 templates/{qi.CHANNEL}/{tpl_info.card.logo} · "
+               f"마스코트 assets/{tpl_info.card.mascot_dir}/ " + ("(있음)" if has_mascot else "(비어 있음 → 마스코트 없이)"))
+COLS = (["순위", "이름", "구분", "값", "기준 연도", "그림 설명"] if INFO else ["순위", "선수", "팀", "기록", "연도", "장면 설명"])
+
 with st.expander("ChatGPT 에 이 양식을 요청하는 프롬프트 (복사)"):
-    topic = st.text_input("주제", "KBO 단일 시즌 홈런 TOP 5", key="q_topic")
-    prompt = request_prompt(topic)
+    topic = st.text_input("주제", "세계 인구 많은 나라 TOP 5" if INFO else "KBO 단일 시즌 홈런 TOP 5",
+                          key="q_topic_info" if INFO else "q_topic")
+    prompt = qi.request_prompt(topic) if INFO else request_prompt(topic)
     st.code(prompt, language=None)
     if st.button("프롬프트 복사", key="q_cp"):
         mp.copy_to_clipboard(prompt)
@@ -38,8 +52,9 @@ with st.expander("ChatGPT 에 이 양식을 요청하는 프롬프트 (복사)")
 
 # ---------------------------------------------------------------- ① 답변
 st.header("① ChatGPT 답변 붙여넣기")
-text = st.text_area("답변", "", height=230, key="q_text", placeholder=EXAMPLE)
-data = parse_quick(text) if text.strip() else None
+text = st.text_area("답변", "", height=230, key="q_text_info" if INFO else "q_text",
+                    placeholder=qi.EXAMPLE if INFO else EXAMPLE)
+data = (qi.parse_info_quick(text) if INFO else parse_quick(text)) if text.strip() else None
 if data:
     if data.errors:
         for e in data.errors:
@@ -49,8 +64,8 @@ if data:
     for w in data.warnings:
         st.warning(w)
     if data.rows:
-        st.dataframe(pd.DataFrame([{"순위": label(data.rows, r), "선수": r.player, "팀": r.team, "기록": r.record,
-                                    "연도": r.year, "장면 설명": r.scene} for r in data.rows]), hide_index=True)
+        st.dataframe(pd.DataFrame([dict(zip(COLS, (label(data.rows, r), r.player, r.team, r.record, r.year, r.scene)))
+                                   for r in data.rows]), hide_index=True)
     if data.memos:
         st.caption("메모: " + " / ".join(data.memos))
     extras = [f"후킹 '{data.hook}'" if data.hook else "", f"기준선 {data.gauge_base}" if data.gauge_base else ""]
@@ -68,7 +83,7 @@ st.header("② 곡 파일")
 song = st.file_uploader("Suno 에서 받은 곡 (가사가 들어 있는 m4a)", type=["m4a", "mp3", "wav"], key="q_song")
 
 # ---------------------------------------------------------------- ③ 그림
-st.header("③ 그림 5장 (표 순서대로: 5위 → 1위)")
+st.header("③ 그림 (표 순서대로: 5위 → 1위)" + (" — 0~5장, 비운 자리는 임시 글자 카드 (시험 렌더용)" if INFO else " 5장"))
 files = st.file_uploader("그림 (png·jpg·webp)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True,
                          key="q_imgs")
 if files:
@@ -100,18 +115,26 @@ if hook_file:
 # ---------------------------------------------------------------- 만들기
 st.header("⑤ 만들기")
 c1, c2 = st.columns(2)
-tpl = c1.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="q_tpl")
+if INFO:
+    tpl = qi.CHANNEL
+    c1.markdown(f"영상 모드: **{ap.INFO_TEMPLATES[tpl]}** (클린 카드 자동 합성)")
+else:
+    tpl = c1.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="q_tpl")
 # 프로젝트 이름: 비우면 이번 답변의 제목으로 (예전 값이 칸에 남아 'quick' 으로 렌더되던 문제 방지)
 name_in = c2.text_input("프로젝트 이름 (비우면 제목으로 자동, 항상 새 폴더)", "", key="q_slug_in")
 auto_name = re.sub(r"[^\w가-힣]+", "_", (data.title.split("\n")[-1] if data and data.title else "")).strip("_")[:40]
 c2.caption(f"만들 폴더: projects/{quick_new_slug(name_in.strip() or auto_name or 'quick', ROOT)}")
-ready = bool(data and data.ok and song and files and len(files) == len(data.rows))
+n_files = len(files or [])
+ready = bool(data and data.ok and song and (n_files <= len(data.rows) if INFO else files and n_files == len(data.rows)))
 if not ready:
-    st.caption("답변 양식 오류가 없고, 곡과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)이 있으면 열립니다")
+    st.caption("답변 양식 오류가 없고, 곡" + (" (그림은 선택)" if INFO else
+               "과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)") + "이 있으면 열립니다")
+elif INFO and n_files < len(data.rows):
+    st.warning(f"그림 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 임시 글자 카드로 만듭니다 (수익화용 렌더는 막힘)")
 
 
 def _go(accept: bool, resume_slug: str | None = None) -> None:
-    images = [files[i].getvalue() for i in ss.q_order]
+    images = [files[i].getvalue() for i in ss.q_order] if files else []
     bar = st.progress(0.0)
     started = time.time()
     with tempfile.TemporaryDirectory() as tmp:

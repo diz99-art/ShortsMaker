@@ -23,10 +23,10 @@ def form():
 def test_project_mapping_and_metadata(form):
     project = parse_quick_info(form)
     assert isinstance(project, Project)
-    assert project.channel == "info_top5"
+    assert project.channel == "info_v2"
     assert project.title == "세계의 건물\n높이 TOP 5"
     assert project.hook == "얼마나 높을까?"
-    assert project.source_note == "공식 통계 | https://example.com/data"
+    assert project.source_note == "출처: 공식 통계 (https://example.com/data)"
     assert project.memos == ["높이는 공식 통계 기준", "전망대 높이와 다름"]
     assert project.bubbles == {"intro": "높다 높아", "top": "최고 높이", "ending": "구독 꾹!"}
     assert project.bonus.name == "건물6" and project.bonus.team == "관광 시설"

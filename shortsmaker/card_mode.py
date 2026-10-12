@@ -627,7 +627,8 @@ class CardRenderer:
             self.flash = 0.0  # 클린: 흰 섬광 없음 (인·아웃 효과만)
         intro_m, intro_dx = intro_motion(self.v.intro, c.intro_motion)
         self.title_card = render_title_card(t, self.project) if self.v.intro == "title_card" else None
-        self.stat_color = ACCENTS.get(self.v.accent, {}).get("stat")
+        self.stat_color = c.accent_color or ACCENTS.get(self.v.accent, {}).get("stat")
+        self.main_color = c.main_color or "#0043C8"
         self._sub_cache: dict[tuple, Image.Image] = {}
         if self.project.intro_image:  # 프로젝트 인트로 캐릭터
             intro, intro_box = self.project_dir / self.project.intro_image, c.intro_box or c.logo_box
@@ -756,7 +757,8 @@ class CardRenderer:
             from .card_clean import clean_bonus
             lay: dict = {}
             card = clean_bonus(self.v.look, rank=bo.rank, name=bo.name, team=bo.team, value=bo.value, year=bo.year,
-                               text=bo.text, kind=bo.kind, accent=self.stat_color or "#F26A00", layers=lay)
+                               text=bo.text, kind=bo.kind, accent=self.stat_color or "#F26A00", layers=lay,
+                               main=self.main_color)
             self._bonus_text = lay["text"].getchannel("A")  # 말풍선이 피할 글자 자리
             return MovingLayer(card, c.card_box, motion, t.fps, c.content_top, self.canvas, dx=dx)
         if self.v.design:  # 영상 카드와 같은 디자인 + 반전 ('6위?!', '근데…', 기울기, 조명 꺼짐)
@@ -938,7 +940,7 @@ class CardRenderer:
             fx.draw_chart(img, self.chart_bars, chart / fps, base=self.chart_base, base_label=self.project.gauge_base,
                           years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
                           accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
-                          bottom_y=c.footer.button.y - 30, clean=self.clean, **self._chart_bounds())
+                          bottom_y=c.footer.button.y - 30, clean=self.clean, main=self.main_color, **self._chart_bounds())
         else:
             transform = None
             if idle is not None:
@@ -1089,7 +1091,8 @@ class CardRenderer:
     def _draw_burst(self, img: Image.Image, i: int, t: float) -> None:
         if i not in self._burst_imgs:
             word, st_ = self.bursts[i][1], self.t.card.subtitle
-            self._burst_imgs[i] = (fx.clean_burst_image(word, self.stat_color or "#F26A00", st_.w + 160, st_.h + 40)
+            self._burst_imgs[i] = (fx.clean_burst_image(word, self.stat_color or "#F26A00", st_.w + 160, st_.h + 40,
+                                                         main=self.main_color)
                                    if self.clean else
                                    fx.burst_image(word, self.accent_rank, st_.w + 160, max_h=st_.h + 40))
         src = self._burst_imgs[i]
@@ -1162,7 +1165,7 @@ class CardRenderer:
             fx.draw_chart(lay, self.chart_bars, 9.0, base=self.chart_base, base_label=self.project.gauge_base,
                           years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
                           accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
-                          bottom_y=c.footer.button.y - 30, clean=self.clean, **self._chart_bounds())
+                          bottom_y=c.footer.button.y - 30, clean=self.clean, main=self.main_color, **self._chart_bounds())
             mask = lay.getchannel("A")
         elif sc.kind in ("rank", "bonus"):
             layer = self.layers[idx]

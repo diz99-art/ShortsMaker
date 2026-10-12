@@ -60,7 +60,8 @@ def prepare_cards(project: Project, project_dir: Path, t: Template) -> Project:
     vd.setdefault("look", t.card.default_look)
     v = Variation.model_validate(vd)
     look = v.look if v.look in ("clean_a", "clean_b") else "clean_a"
-    accent = ACCENTS.get(v.accent, ACCENTS["red_gold"])["stat"]
+    accent = t.card.accent_color or ACCENTS.get(v.accent, ACCENTS["red_gold"])["stat"]
+    main = t.card.main_color or "#0043C8"
     out = project_dir / "cards_auto"
     out.mkdir(exist_ok=True)
     items = []
@@ -69,13 +70,14 @@ def prepare_cards(project: Project, project_dir: Path, t: Template) -> Project:
         if src is not None and src.parent.name == "cards_auto":
             src = None  # 이미 자동 카드로 바뀐 프로젝트를 다시 넣은 경우
         tied = sum(1 for o in project.items if o.shown_rank == it.shown_rank) > 1
-        key = json.dumps([look, accent, it.shown_rank, it.rank, it.name, it.value, it.description, tied,
+        key = json.dumps([look, accent, main, it.shown_rank, it.rank, it.name, it.value, it.description, it.year, tied,
                           str(src), src.stat().st_mtime if src else 0], ensure_ascii=False)
         h = hashlib.sha1(key.encode()).hexdigest()[:10]
         card_p = out / f"card{it.rank}_{h}.png"
         if not card_p.exists():
-            kw = dict(rank=it.shown_rank, record=it.value, year="", team="", player=it.name, tied=tied,
-                      accent=accent, top=it.shown_rank == 1)
+            # 이름 아래 작은 글씨: '구분 · 2024년 기준'
+            kw = dict(rank=it.shown_rank, record=it.value, year=f"{it.year}년 기준" if it.year else "",
+                      team=it.description, player=it.name, tied=tied, accent=accent, top=it.shown_rank == 1, main=main)
             art = src if src is not None else placeholder_art(it.name)  # 그림이 없으면 임시 글자 카드
             compose_clean(art, look, **kw).save(card_p)
             meta, layers = {}, {}

@@ -335,7 +335,7 @@ def chart_bars(items) -> list[ChartBar]:
 
 def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float | None, base_label: str,
                years: bool, hot: str, accent: tuple[str, ...], font_path: Path, top_y: int, bottom_y: int,
-               left: int = 90, right: int | None = None, clean: bool = False) -> None:
+               left: int = 90, right: int | None = None, clean: bool = False, main: str = "#0043C8") -> None:
     """막대그래프 (기준선 포함). t: 장면 시작 뒤 초 (막대가 차례로 자람)."""
     if not bars:
         return
@@ -363,7 +363,7 @@ def draw_chart(img: Image.Image, bars: list[ChartBar], t: float, *, base: float 
         if h > 2:
             if clean:  # 클린: 테두리 없이 채널 파랑 막대, 1위만 강조색
                 d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=14,
-                                    fill=_hex(hot if b.top else "#9DB4E6") + (255,))
+                                    fill=_hex(hot) + (255,) if b.top else _tint(main, 0.6))
             else:
                 d.rounded_rectangle([x0, axis_y - h, x1, axis_y], radius=12, fill=_hex(primary) + (255,),
                                     outline=_hex(hot) + (255,) if b.top else (17, 17, 17, 255),
@@ -452,9 +452,15 @@ def burst_image(word: str, accent: tuple[str, ...], max_w: int, max_h: int | Non
     return im
 
 
-def clean_burst_image(word: str, accent: str, max_w: int, max_h: int) -> Image.Image:
-    """클린: 채널 파랑 굵은 글씨 + 강조색 밑줄 하이라이트."""
-    return marker_text(word, "#0043C8", accent, max_w, max_h, size=170)
+def clean_burst_image(word: str, accent: str, max_w: int, max_h: int, main: str = "#0043C8") -> Image.Image:
+    """클린: 채널 색(야구한장 파랑) 굵은 글씨 + 강조색 밑줄 하이라이트."""
+    return marker_text(word, main, accent, max_w, max_h, size=170)
+
+
+def _tint(color: str, k: float) -> tuple[int, int, int, int]:
+    """채널 색을 흰색 쪽으로 k 만큼 옅게 (클린 그래프의 1위 아닌 막대)."""
+    r, g, b = _hex(color)
+    return (round(r + (255 - r) * k), round(g + (255 - g) * k), round(b + (255 - b) * k), 255)
 
 
 def marker_text(text: str, color: str, accent: str, max_w: int, max_h: int | None = None, size: int = 150,

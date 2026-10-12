@@ -334,7 +334,7 @@ def column_problems(rows: list[RankRow], *, allow_unknown_team: bool = False) ->
     return out
 
 
-def rows_complete(rows: list[RankRow]) -> list[str]:
+def rows_complete(rows: list[RankRow], *, need_team: bool = True) -> list[str]:
     """다음 단계로 가기 전 확인. 문제 목록 (비어 있으면 통과).
 
     5명(항목 5개)이어야 하고, 순위는 공동 순위 규칙(1, 2, 2, 4, 5)을 따라야 한다.
@@ -349,7 +349,7 @@ def rows_complete(rows: list[RankRow]) -> list[str]:
         problems.append(f"순위가 공동 순위 규칙에 맞지 않습니다 (현재 {ranks}). 예: 공동 2위 2명이면 1, 2, 2, 4, 5 (3위 없음)")
     for r in filled:
         for field, name in [("team", "팀"), ("player", "선수"), ("record", "기록")]:
-            if not getattr(r, field).strip():
+            if not getattr(r, field).strip() and (need_team or field != "team"):  # 정보한장: 구분(team)은 비어도 됨
                 problems.append(f"{label(filled, r)} {name}이(가) 비어 있습니다")
     empty_needed = [r for r in rows if r not in filled and not _skipped_by_tie([f.rank for f in filled], r.rank)]
     for r in empty_needed:
