@@ -136,7 +136,7 @@ def compose_clean(caricature: Path | Image.Image | None, look: str, *, rank: int
                   rank_label: str | None = None, tag: str = "", omit_record: bool = False, meta: dict | None = None,
                   layers: dict | None = None, main: str = BLUE) -> Image.Image:
     """클린 카드 (941×1162, 투명 바깥). tag: 작은 회색 라벨 (보너스 '번외').
-    main: 채널 색 (야구한장 파랑, 정보한장은 템플릿 main_color). year 는 '2014' 또는 '2024년 기준'."""
+    main: 채널 색 (야구한장 파랑, 하늘 배지형은 템플릿 main_color). year 는 '2014' 또는 '2024년 기준'."""
     top = rank == 1 if top is None else top
     primary, _ = team_colors(team)
     margin = 34                                  # 그림자 자리

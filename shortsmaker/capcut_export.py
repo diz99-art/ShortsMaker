@@ -267,6 +267,9 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         elif sc.kind == "bonus":  # 보너스 카드: 렌더러가 그린 그림 그대로
             src, box, motion = media / f"{sc.index:02d}_보너스.png", c.card_box, c.card_motion
             r.layers[sc.index].src.save(src)
+        elif sc.kind == "outro":  # 엔딩 카드 (하늘 배지형)
+            src, box, motion = media / f"{sc.index:02d}_엔딩.png", c.outro_box or c.card_box, c.card_motion
+            r.layers[sc.index].src.save(src)
         else:
             src, box, motion = project_dir / sc.item.image, c.card_box, c.card_motion
         dst = media / f"{sc.index:02d}_{sc.label}{src.suffix.lower()}"

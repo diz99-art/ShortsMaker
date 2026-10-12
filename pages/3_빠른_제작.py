@@ -30,13 +30,19 @@ ROOT = Path(os.environ.get("SHORTSMAKER_PROJECTS_DIR", PROJECTS_DIR))
 ss = st.session_state
 
 # 채널: 양식·템플릿·로고·마스코트 폴더가 함께 바뀐다
-channel = st.radio("채널", ["야구한장", "정보한장"], horizontal=True, key="q_channel")
-INFO = channel == "정보한장"
+channel = st.radio("채널", ["야구한장", "하늘 배지형"], horizontal=True, key="q_channel")
+INFO = channel == "하늘 배지형"
 if INFO:
     tpl_info = load_template(qi.CHANNEL)
     mdir = ASSETS_DIR / tpl_info.card.mascot_dir
     has_mascot = mdir.is_dir() and any(mdir.glob("*.png"))
-    st.caption(f"템플릿 {qi.CHANNEL} · 로고 templates/{qi.CHANNEL}/{tpl_info.card.logo} · "
+
+    def _asset(cands: list[str]) -> str:
+        p_ = tpl_info.brand_asset(cands)
+        return "없음" if p_ is None else (f"assets/{p_.relative_to(ASSETS_DIR)}" + (" (임시: 참고 영상에서 자름)"
+                                                                                    if "/temp/" in str(p_) else ""))
+    st.caption(f"템플릿 {qi.CHANNEL} · {tpl_info.card.footer.handle_text} · 로고 {_asset(tpl_info.card.brand_logo)} · "
+               f"기준 캐릭터 {_asset(tpl_info.card.default_character)} · 엔딩 카드 {_asset(tpl_info.card.outro_image)} · "
                f"마스코트 assets/{tpl_info.card.mascot_dir}/ " + ("(있음)" if has_mascot else "(비어 있음 → 마스코트 없이)"))
 COLS = (["순위", "이름", "구분", "값", "기준 연도", "그림 설명"] if INFO else ["순위", "선수", "팀", "기록", "연도", "장면 설명"])
 
@@ -68,7 +74,8 @@ if data:
                                    for r in data.rows]), hide_index=True)
     if data.memos:
         st.caption("메모: " + " / ".join(data.memos))
-    extras = [f"후킹 '{data.hook}'" if data.hook else "", f"기준선 {data.gauge_base}" if data.gauge_base else ""]
+    extras = [f"후킹 '{data.hook}'" if data.hook else "", f"기준선 {data.gauge_base}" if data.gauge_base else "",
+              f"값 이름 '{data.value_label}'" if data.value_label else ""]
     if data.bonus:
         bo = data.bonus
         extras.append("보너스 " + (f"예고: {bo['text']}" if bo["kind"] == "teaser" else
@@ -83,7 +90,8 @@ st.header("② 곡 파일")
 song = st.file_uploader("Suno 에서 받은 곡 (가사가 들어 있는 m4a)", type=["m4a", "mp3", "wav"], key="q_song")
 
 # ---------------------------------------------------------------- ③ 그림
-st.header("③ 그림 (표 순서대로: 5위 → 1위)" + (" — 0~5장, 비운 자리는 임시 글자 카드 (시험 렌더용)" if INFO else " 5장"))
+st.header("③ 캐릭터 (표 순서대로: 5위 → 1위) — 0~5장, 비운 자리는 기준 캐릭터 (시험 렌더용)" if INFO
+          else "③ 그림 5장 (표 순서대로: 5위 → 1위)")
 files = st.file_uploader("그림 (png·jpg·webp)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True,
                          key="q_imgs")
 if files:
@@ -105,19 +113,44 @@ if files:
                 order[pos], order[to] = order[to], order[pos]
                 st.rerun()
 
+# ---------------------------------------------------------------- 하늘 배지형: 아이콘
+icon_files, title_icon_file = [], None
+if INFO:
+    st.header("④ 아이콘 5장 (선택, 표 순서대로: 5위 → 1위)")
+    icon_files = st.file_uploader("배지 왼쪽 작은 아이콘 (png 투명 배경 권장, 흰 배경은 자동으로 지움)",
+                                  type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="q_icons") or []
+    if icon_files:
+        if ss.get("q_icon_names") != [f.name for f in icon_files]:
+            ss.q_icon_names, ss.q_icon_order = [f.name for f in icon_files], list(range(len(icon_files)))
+        ilabels = [f"{label(data.rows, r)} {r.player}" for r in data.rows] if data and data.rows else []
+        icols = st.columns(max(1, len(icon_files)))
+        for pos, idx in enumerate(ss.q_icon_order):
+            with icols[pos]:
+                st.image(icon_files[idx].getvalue(), width=90,
+                         caption=ilabels[pos] if pos < len(ilabels) else f"{pos + 1}번째")
+                to = st.selectbox("바꿀 자리", [None] + [p for p in range(len(icon_files)) if p != pos],
+                                  format_func=lambda p: "—" if p is None else (ilabels[p] if p < len(ilabels) else str(p + 1)),
+                                  key=f"q_isw{pos}")
+                if to is not None and st.button("바꾸기", key=f"q_iswb{pos}"):
+                    o = ss.q_icon_order
+                    o[pos], o[to] = o[to], o[pos]
+                    st.rerun()
+    title_icon_file = st.file_uploader("제목 둘째 줄 끝 작은 아이콘 (선택, 없으면 생략)", type=["png", "jpg", "jpeg", "webp"],
+                                       key="q_title_icon")
+
 # ---------------------------------------------------------------- 후킹 그림
-st.header("④ 후킹 그림 (선택)")
+st.header("⑤ 후킹 그림 (선택)" if INFO else "④ 후킹 그림 (선택)")
 hook_file = st.file_uploader("첫 장면에 후킹 문구와 함께 나올 그림 1장", type=["png", "jpg", "jpeg", "webp"],
                              key="q_hook_img")
 if hook_file:
     st.image(hook_file.getvalue(), width=220)
 
 # ---------------------------------------------------------------- 만들기
-st.header("⑤ 만들기")
+st.header("⑥ 만들기" if INFO else "⑤ 만들기")
 c1, c2 = st.columns(2)
 if INFO:
     tpl = qi.CHANNEL
-    c1.markdown(f"영상 모드: **{ap.INFO_TEMPLATES[tpl]}** (클린 카드 자동 합성)")
+    c1.markdown(f"영상 모드: **{ap.INFO_TEMPLATES[tpl]}** (배지 + 캐릭터 자동 합성)")
 else:
     tpl = c1.radio("영상 모드", list(ap.TEMPLATES), format_func=ap.TEMPLATES.get, horizontal=True, key="q_tpl")
 # 프로젝트 이름: 비우면 이번 답변의 제목으로 (예전 값이 칸에 남아 'quick' 으로 렌더되던 문제 방지)
@@ -130,7 +163,7 @@ if not ready:
     st.caption("답변 양식 오류가 없고, 곡" + (" (그림은 선택)" if INFO else
                "과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)") + "이 있으면 열립니다")
 elif INFO and n_files < len(data.rows):
-    st.warning(f"그림 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 임시 글자 카드로 만듭니다 (수익화용 렌더는 막힘)")
+    st.warning(f"캐릭터 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 기준 캐릭터로 만듭니다 (수익화용 렌더는 막힘)")
 
 
 def _go(accept: bool, resume_slug: str | None = None) -> None:
@@ -143,6 +176,8 @@ def _go(accept: bool, resume_slug: str | None = None) -> None:
         res = run_quick(data, path, images, slug=resume_slug or name_in.strip() or auto_name or "quick", template=tpl,
                         root=ROOT, accept_mismatch=accept, resume=resume_slug is not None,
                         hook_image=hook_file.getvalue() if hook_file else None,
+                        icons=[icon_files[i].getvalue() for i in ss.q_icon_order] if icon_files else None,
+                        title_icon=title_icon_file.getvalue() if title_icon_file else None,
                         progress=lambda f, m: bar.progress(min(f, 1.0), m))
     ss.q_result, ss.q_started = res, started
 

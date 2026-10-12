@@ -1,6 +1,6 @@
 """빠른 제작: 양식 답변 + 곡 + 그림 5장 → 버튼 하나로 시험 렌더까지.
 
-정보한장(template info_v2): 그림은 0~5장, 배경 제거 없이 그대로 쓰고 빈 자리는 임시 글자 카드.
+하늘 배지형(template sky_badge): 캐릭터 0~5장(투명 배경으로), 빈 자리는 기준 캐릭터(임시). 아이콘 5장·제목 아이콘은 선택.
 
 곡 등록 → 가사 맞추기 → 가사와 표 대조 → 표 확정 → 그림 넣기(배경 제거) → 연출 자동 추천 → 합성 → 시험 렌더(_DRAFT).
 문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다.
@@ -75,7 +75,8 @@ def new_slug(base: str, root: Path = PROJECTS_DIR) -> str:
 def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: str, template: str = ap.CHANNEL,
               root: Path = PROJECTS_DIR, accept_mismatch: bool = False, aligner=None, output_dir: Path = OUTPUT_DIR,
               capcut_root: Path | None = None, progress: ProgressFn | None = None,
-              use_claude: bool = True, resume: bool = False, hook_image: bytes | None = None) -> QuickResult:
+              use_claude: bool = True, resume: bool = False, hook_image: bytes | None = None,
+              icons: list[bytes] | None = None, title_icon: bytes | None = None) -> QuickResult:
     report = progress or (lambda f, m: None)
     if not data.ok:
         return QuickResult("stopped", "양식", "붙여 넣은 양식에 틀린 줄이 있습니다", data.errors, slug=slug)
@@ -103,6 +104,8 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         ap.set_extras(state, d, hook=data.hook, bonus=data.bonus, gauge_base=data.gauge_base, bubbles=data.bubbles)
         if hook_image:
             ap.set_hook_image(state, d, hook_image)
+        if info:  # 하늘 배지형: 값 라벨·제목 끝 아이콘 (아이콘 5장은 표 확정 뒤 자리별로)
+            ap.set_zip_extras(state, d, title_icon=title_icon, value_label=data.value_label)
         plog.append(d, "quick_input", title=data.title, rows=[r.model_dump() for r in data.rows], memos=data.memos,
                     source=f"{data.source_name} {data.source_url}", hook=data.hook, bonus=data.bonus,
                     gauge_base=data.gauge_base)
@@ -140,11 +143,13 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             return QuickResult("stopped", "표 확정", str(e), slug=slug)
 
     slots = [r.slot for r in state.rows]  # 표 순서 = 자리 5→1 (공동은 표 순서)
-    if info:  # 정보한장: 그림은 배경 그대로, 없는 자리는 임시 글자 카드 (수익화용 렌더에서 막힘)
+    if info:  # 하늘 배지형: 캐릭터는 투명 배경으로, 없는 자리는 기준 캐릭터(임시 — 수익화용 렌더에서 막힘)
         report(0.5, "그림 넣기")
         for i, slot in enumerate(slots):
-            if not state.players[slot].approved:
+            if state.players[slot].source is None:
                 ap.use_info_image(state, d, slot, images[i] if i < len(images) else None)
+        if icons and not state.icons:
+            ap.set_zip_extras(state, d, icons={slot: b for slot, b in zip(slots, icons) if b})
     report(0.5, "그림 넣기 (배경 제거)")
     for slot, img in ([] if info else zip(slots, images)):
         if not state.players[slot].approved:
@@ -155,7 +160,7 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             except Exception as e:  # noqa: BLE001
                 return QuickResult("stopped", "그림", f"{ap.row_label(state, slot)} 그림을 읽을 수 없습니다: {e}", slug=slug)
 
-    if not state.mood and not info:  # 분위기(카드 디자인)는 야구한장만 — 정보한장은 클린 카드 고정
+    if not state.mood and not info:  # 분위기(카드 디자인)는 야구한장만 — 하늘 배지형은 클린 카드 고정
         report(0.53, "분위기 판단 (카드 디자인)")
         ap.detect_mood(state, d, use_claude=use_claude)
     if state.variation is None:

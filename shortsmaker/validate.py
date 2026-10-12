@@ -90,7 +90,7 @@ def pre_render(project: Project, project_dir: Path, *, require_rights: bool = Tr
     if t.background and not t.background_path():
         r.warnings.append(f"템플릿 배경 이미지가 없어 그라데이션을 사용합니다: {t.background}")
 
-    if t.mode == "card" and t.card and t.card.auto_cards:  # 정보한장: 임시 글자 카드는 시험 렌더용
+    if t.mode == "card" and t.card and t.card.auto_cards:  # 하늘 배지형: 임시 글자 카드는 시험 렌더용
         from .info_cards import placeholder_problems
         probs = placeholder_problems(project, project_dir)
         (r.errors if require_rights else r.warnings).extend(

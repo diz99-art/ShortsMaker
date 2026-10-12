@@ -1,4 +1,4 @@
-"""정보한장 빠른 양식 → Project (또는 빠른 제작용 QuickData).
+"""하늘 배지형 빠른 양식 → Project (또는 빠른 제작용 QuickData).
 
 사용: project = parse_quick_info(text)  /  빠른 제작: data = parse_info_quick(text)
 잘못된 입력은 QuickParseInfoError.errors(줄별 오류 목록)로 확인할 수 있다.
@@ -16,11 +16,12 @@ from .quick_parse import UNSURE, QuickData, _clean
 from .rank_extract import RankRow
 
 COLUMNS = ["순위", "이름", "구분", "값", "기준 연도", "그림 설명"]
-CHANNEL = "info_v2"
+CHANNEL = "sky_badge"  # 하늘 배지형 (@sky_badge). 예전 클린 카드는 info_v2
 
 EXAMPLE = """제목: 지구에서 사람 제일 많은 나라 / 세계 인구 TOP 5
 후킹: 인구 1위는 중국일까?
 출처: World Bank | https://data.worldbank.org/indicator/SP.POP.TOTL
+값 이름: 인구
 순위 | 이름 | 구분 | 값 | 기준 연도 | 그림 설명
 5 | 파키스탄 | 아시아 | 2.5억 명 | 2024 | 붐비는 시장 거리
 4 | 인도네시아 | 아시아 | 2.8억 명 | 2024 | 섬이 많은 바다 풍경
@@ -32,9 +33,9 @@ EXAMPLE = """제목: 지구에서 사람 제일 많은 나라 / 세계 인구 TO
 
 
 def request_prompt(topic: str) -> str:
-    """ChatGPT 에 정보한장 양식으로 답하게 하는 프롬프트."""
+    """ChatGPT 에 하늘 배지형 양식으로 답하게 하는 프롬프트."""
     return f"""주제: {topic or '(주제를 적어 주세요)'}
-위 주제의 TOP 5 를 유튜브 쇼츠 '정보한장'용으로 정리해줘. 아래 양식 그대로, 다른 설명 없이 답해.
+위 주제의 TOP 5 를 유튜브 쇼츠 '하늘 배지형'용으로 정리해줘. 아래 양식 그대로, 다른 설명 없이 답해.
 
 규칙
 - 공식 통계(국제기구·정부 기관)나 믿을 만한 기사로 확인된 값만 쓴다. 확인하지 못한 칸은 '확인 필요'라고 적는다.
@@ -42,7 +43,8 @@ def request_prompt(topic: str) -> str:
 - 공동 순위는 같은 숫자로 적고 다음 순위는 건너뛴다 (예: 5, 3, 3, 2, 1). 항목은 정확히 5줄.
 - 구분은 이름 아래 작게 나올 분류 (예: 아시아, 전자제품). 없으면 비워도 된다.
 - 값은 숫자+단위 (예: 14.5억 명, 828m). 기준 연도는 4자리 (값을 잰 해).
-- 그림 설명은 항목 그림용 장면 (국기·로고·상표 글씨는 넣지 말 것).
+- 값 이름은 값이 무엇인지 2~6글자 (예: 평균 연봉, 인구, 높이).
+- 그림 설명은 오른쪽 캐릭터 그림용 모습·소품 (국기·로고·상표 글씨는 넣지 말 것).
 - 메모는 가사·해설에 쓸 사실 2~5줄 (출처에 있는 사실만, 줄마다 '메모:'로 시작).
 - 후킹은 첫 2초에 띄울 짧은 질문 (15자 안팎).
 - 보너스는 TOP 5 바로 밖 6위 (출처에 있는 값만) 또는 '예고 | 다음 편 주제'.
@@ -52,6 +54,7 @@ def request_prompt(topic: str) -> str:
 제목: 1줄 / 2줄
 후킹: 첫 2초 질문
 출처: 이름 | URL
+값 이름: 값이 무엇인지
 순위 | 이름 | 구분 | 값 | 기준 연도 | 그림 설명
 5 | 이름 | 구분 | 값 | 기준 연도 | 그림 설명
 (5줄)
@@ -97,7 +100,7 @@ def parse_quick_info(text: str) -> Project:
     출처는 기존 양식처럼 '이름 | http(s) URL'. 빈 연도·그림 설명은 허용한다.
     메모와 그림 설명은 확장 필드에 보존하며 권리 확인은 기본 False다.
     """
-    data = dict(channel=CHANNEL, title="", source_note="", hook="",
+    data = dict(channel=CHANNEL, title="", source_note="", hook="", value_label="",
                 bonus=None, bubbles={}, memos=[])
     errors: list[str] = []
     rows: list[tuple[int, InfoItem]] = []
@@ -109,7 +112,7 @@ def parse_quick_info(text: str) -> Project:
         if any(u in line for u in UNSURE):
             problem = "'확인 필요' 칸이 있습니다 — 직접 확인해 채운 뒤 다시 붙여 넣으세요"
         else:
-            meta = re.match(r"^(제목|후킹|출처|보너스|메모|말풍선)\s*[:：]\s*(.*)$", line)
+            meta = re.match(r"^(제목|후킹|출처|보너스|메모|말풍선|값 ?이름)\s*[:：]\s*(.*)$", line)
             if meta:
                 key, val = meta[1], meta[2].strip()
                 if key == "제목":
@@ -130,6 +133,10 @@ def parse_quick_info(text: str) -> Project:
                     if len(val) > 30:
                         problem = f"후킹 문구가 너무 깁니다 ({len(val)}자, 30자 이내)"
                     data["hook"] = val
+                elif key.replace(" ", "") == "값이름":
+                    if len(val) > 12:
+                        problem = f"값 이름이 너무 깁니다 ({len(val)}자, 12자 이내 — 예: 평균 연봉)"
+                    data["value_label"] = val
                 elif key == "메모":
                     if val:
                         data["memos"].append(val)
@@ -196,7 +203,7 @@ def parse_quick_info(text: str) -> Project:
 
 
 def parse_info_quick(text: str) -> QuickData:
-    """빠른 제작 화면용: 정보한장 양식 → QuickData (선수=이름, 팀=구분, 기록=값, 연도=기준 연도).
+    """빠른 제작 화면용: 하늘 배지형 양식 → QuickData (선수=이름, 팀=구분, 기록=값, 연도=기준 연도).
     오류는 예외 대신 errors 목록으로 (야구한장 parse_quick 과 같은 모양)."""
     q = QuickData()
     try:
@@ -206,6 +213,7 @@ def parse_info_quick(text: str) -> QuickData:
         return q
     m = re.fullmatch(r"출처: (.+) \((\S+)\)", p.source_note)
     q.title, q.hook, q.bubbles, q.memos = p.title, p.hook, dict(p.bubbles), list(p.memos)
+    q.value_label = p.value_label
     q.source_name, q.source_url = (m[1], m[2]) if m else (p.source_note, "")
     q.bonus = p.bonus.model_dump() if p.bonus else None
     q.rows = [RankRow(rank=it.display_rank or it.rank, player=it.name, team=it.description, record=it.value,

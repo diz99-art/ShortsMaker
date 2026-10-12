@@ -42,7 +42,7 @@ from .validate import media_duration
 
 CHANNEL = "yagu_v2"  # 기본 템플릿 (카드형). 스티커형은 "yagu_v2_sticker"
 TEMPLATES = {"yagu_v2": "카드형", "yagu_v2_sticker": "스티커형"}
-INFO_TEMPLATES = {"info_v2": "정보한장"}  # 빠른 제작 전용: 캐리커처 없이 항목 그림으로 카드를 렌더할 때 자동 합성
+INFO_TEMPLATES = {"sky_badge": "하늘 배지형", "info_v2": "정보 클린 카드 (예전)"}  # 빠른 제작 전용: 캐리커처 없이 항목 그림으로 카드를 렌더할 때 자동 합성
 GEN_MODES = {"manual": "수동 생성 (무료, ChatGPT·Gemini)", "openai": "OpenAI 자동 생성 (유료)", "mock": "Mock 시험 (무료)"}
 STATE_FILE = "auto.json"
 END_TAIL = 2.0  # 마지막 가사가 끝난 뒤 남기는 시간(초). 이 안에서 음악이 페이드아웃된다
@@ -110,6 +110,9 @@ class AutoState(BaseModel):
     mood_reason: str = ""
     mood_via: str = ""                     # claude | rules | user
     no_logo: dict[int, bool] = Field(default_factory=dict)  # 자리별 '로고·유니폼 글씨 없음' 확인
+    icons: dict[int, str] = Field(default_factory=dict)    # 하늘 배지형: 자리별 배지 아이콘 (프로젝트 폴더 기준)
+    title_icon: str | None = None                          # 하늘 배지형: 제목 끝 아이콘
+    value_label: str = ""                                  # 하늘 배지형: 배지 값 라벨 ('평균 연봉')
     suno: dict = Field(default_factory=dict)  # 곡 파일 태그의 Suno 정보 (id, created)
     suno_paid: bool = False
     suno_plan: str = ""
@@ -806,18 +809,30 @@ def set_hook_image(state: AutoState, d: Path, data: bytes) -> Path:
 
 
 def use_info_image(state: AutoState, d: Path, slot: int, data: bytes | None) -> Path:
-    """정보한장: 항목 그림을 배경 그대로 둔다 (카드는 렌더할 때 info_cards 가 합성).
+    """하늘 배지형: 항목 그림을 배경 그대로 둔다 (카드는 렌더할 때 info_cards 가 합성).
     그림이 없으면 임시 글자 카드 — 표시를 달아 두어 수익화용 렌더에서 막힌다."""
     from .info_cards import mark_placeholder, placeholder_art
     if not is_info(state):
-        raise FlowError("정보한장 프로젝트에서만 씁니다")
+        raise FlowError("하늘 배지형 프로젝트에서만 씁니다")
     r = _row(state, slot)
     (d / "images").mkdir(exist_ok=True)
     p = d / "images" / f"item{slot}.png"
     ps = state.players[slot]
-    if data:
+    zip_style = load_template(state.template).card.scene_style == "zip"
+    if data and zip_style:  # 하늘 배지형 캐릭터: 투명 배경으로 (이미 투명하면 그대로)
+        p.write_bytes(_cutout(data, "auto")[0])
+        ps.source = "upload"
+    elif data:
         Image.open(io.BytesIO(data)).convert("RGB").save(p)
         ps.source = "upload"
+    elif zip_style:  # 캐릭터 없음 → 렌더할 때 기준 캐릭터(임시)
+        ps.source = "placeholder"
+        ps.approved = ps.card = ""
+        state.no_logo[slot] = False
+        state.cards_done = False
+        save_state(state, d)
+        plog.append(d, "info_image", slot=slot, source=ps.source)
+        return p
     else:
         placeholder_art(r.player).save(p)
         mark_placeholder(p)
@@ -828,6 +843,25 @@ def use_info_image(state: AutoState, d: Path, slot: int, data: bytes | None) -> 
     save_state(state, d)
     plog.append(d, "info_image", slot=slot, source=ps.source)
     return p
+
+
+def set_zip_extras(state: AutoState, d: Path, *, icons: dict[int, bytes] | None = None,
+                   title_icon: bytes | None = None, value_label: str | None = None) -> None:
+    """하늘 배지형: 자리별 배지 아이콘(선택), 제목 끝 아이콘(선택), 값 라벨. 아이콘은 투명 배경으로."""
+    (d / "images").mkdir(exist_ok=True)
+    for slot, data in (icons or {}).items():
+        p = d / "images" / f"icon{slot}.png"
+        p.write_bytes(_cutout(data, "auto")[0])
+        state.icons[slot] = str(p.relative_to(d))
+    if title_icon:
+        p = d / "title_icon.png"
+        p.write_bytes(_cutout(title_icon, "auto")[0])
+        state.title_icon = p.name
+    if value_label is not None:
+        state.value_label = value_label.strip()
+    state.cards_done = False
+    save_state(state, d)
+    plog.append(d, "zip_extras", icons=sorted(state.icons), title_icon=state.title_icon, value_label=state.value_label)
 
 
 def set_intro_image(state: AutoState, d: Path, data: bytes, *, method: str = "auto") -> Path:
@@ -921,15 +955,16 @@ def compose_cards(state: AutoState, d: Path) -> dict[int, Path]:
     _need_table(state)
     if state.variation is None:
         raise FlowError("연출(전환·강조색·자막·인트로)을 먼저 고르세요")
-    waiting = [s for s, ps in state.players.items() if not ps.approved]
+    waiting = [s for s, ps in state.players.items()
+               if not ps.approved and not (is_info(state) and ps.source == "placeholder")]  # 하늘 배지형: 기준 캐릭터
     if waiting:
         raise FlowError("승인한 캐리커처가 없는 순위: "
                         + ", ".join(row_label(state, s) for s in sorted(waiting, reverse=True)))
     out = {}
-    if is_info(state):  # 정보한장: 카드는 렌더할 때 항목 값으로 자동 합성 (info_cards.prepare_cards)
+    if is_info(state):  # 하늘 배지형: 카드는 렌더할 때 항목 값으로 자동 합성 (info_cards.prepare_cards)
         for r in state.rows:
-            out[r.slot] = d / state.players[r.slot].approved
-            state.players[r.slot].card = state.players[r.slot].approved
+            out[r.slot] = d / (state.players[r.slot].approved or "")
+            state.players[r.slot].card = state.players[r.slot].approved or None
         state.cards_done = True
         save_state(state, d)
         return out
@@ -1064,16 +1099,17 @@ def build_project(state: AutoState, d: Path) -> Project:
     items = [{"rank": r.slot, "display_rank": r.rank, "name": r.player or r.team, "value": r.record,
               "description": " ".join(x for x in (r.team, r.year) if x), "image": state.players[r.slot].card,
               "stat_line": r.stat_line} for r in state.rows]
-    if is_info(state):  # 정보한장: 구분은 description, 기준 연도는 따로 (카드에 '2024년 기준')
+    if is_info(state):  # 하늘 배지형: 구분은 description, 기준 연도는 따로 (카드에 '2024년 기준')
         for it, r in zip(items, state.rows):
-            it.update(description=r.team, year=r.year)
+            it.update(description=r.team, year=r.year, icon=state.icons.get(r.slot))
     if _need_sung_starts(state, project):  # 가사의 순위 낱말이 표와 다르면 (예: '오위, 박한이' ↔ 공동 3위) 부른 시각을 직접
         for it, r in zip(items, state.rows):
             it["start"] = r.start
     source = state.data_source_name + (f" ({state.data_source_url})" if state.data_source_url else "")
     project = Project.model_validate({**project.model_dump(), "channel": state.template, "title": state.title,
                                       "items": items, "intro_image": state.intro_image, "variation": state.variation,
-                                      "hook_image": state.hook_image,
+                                      "hook_image": state.hook_image, "title_icon": state.title_icon,
+                                      "value_label": state.value_label,
                                       "hook": state.hook, "bonus": state.bonus, "gauge_base": state.gauge_base,
                                       "bubbles": auto_bubbles(state.mood, state.bubbles), "mood": state.mood,
                                       "source_note": f"출처: {source}" if source else "",
@@ -1105,7 +1141,7 @@ def checklist(state: AutoState, d: Path) -> list[dict]:
         f"플랜: {state.suno_plan or '미입력'} · 곡 태그: " +
         (f"Suno id {state.suno.get('id', '없음')}, 생성 {state.suno.get('created', '알 수 없음')}"
          if state.suno.get("made_with_suno") else "Suno 표시 없음 (확인 필요)"))
-    if is_info(state):  # 정보한장: 로고·캐리커처 대신 '임시 글자 카드 없음'과 그림 권리
+    if is_info(state):  # 하늘 배지형: 로고·캐리커처 대신 '임시 글자 카드 없음'과 그림 권리
         temp = [row_label(state, s) for s, ps in state.players.items() if ps.source != "upload"]
         add("info_images", "모든 항목에 실제 그림 (임시 글자 카드 없음)", not temp,
             ("임시 카드인 순위: " + ", ".join(temp)) if temp else "5개 모두 올린 그림")

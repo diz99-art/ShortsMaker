@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_valid
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = ROOT / "templates"
 FONTS_DIR = ROOT / "assets" / "fonts"
+ASSETS_DIR = ROOT / "assets"
 OUTPUT_DIR = ROOT / "output"
 PROJECTS_DIR = ROOT / "projects"
 
@@ -43,7 +44,8 @@ class Item(BaseModel):
     start: float | None = Field(default=None, ge=0)  # 이 순위 장면이 시작하는 시각(초). 노래에 맞출 때만
     display_rank: int | None = Field(default=None, ge=1, le=5)  # 화면에 보이는 순위 (공동 2위 2명 → 2, 2 / 3위 없음)
     stat_line: str = ""  # 스티커형: 자막 아래 빨간 기록 줄 (1~2줄, 줄바꿈은 '\n')
-    year: str = ""  # 정보한장: 기준 연도 ('2024' → 카드에 '2024년 기준')
+    year: str = ""  # 정보 채널: 기준 연도 ('2024' → 카드에 '2024년 기준')
+    icon: str | None = None  # 하늘 배지형: 배지의 작은 아이콘 (프로젝트 폴더 기준, 선택)
 
     @property
     def shown_rank(self) -> int:
@@ -112,6 +114,8 @@ class Project(BaseModel):
     gauge_base: str = ""            # 막대그래프 기준선 ('50홈런'). 비우면 기준선 없이 (예전 게이지 바는 삭제됨)
     bubbles: dict[str, str] = Field(default_factory=dict)  # 마스코트 말풍선 {intro, top, ending} (3~8글자)
     mood: str = ""                  # 카드 분위기 (마스코트 표정 고를 때)
+    title_icon: str | None = None   # 제목 둘째 줄 끝 작은 아이콘 (프로젝트 폴더 기준, 없으면 생략)
+    value_label: str = ""           # 하늘 배지형 배지의 값 라벨 ('평균 연봉'). 없으면 라벨 없이
 
     @field_validator("items")
     @classmethod
@@ -271,7 +275,7 @@ class PillLogo(Box):
     border_width: int = 4
     border_color: str = "#111111"
     icon_color: str = "#E23B2E"  # 오른쪽 야구공 실밥 ')(' 모양
-    icon: Literal["seam", "dot", "none"] = "seam"  # 정보한장은 dot
+    icon: Literal["seam", "dot", "none"] = "seam"  # 하늘 배지형은 dot
 
 
 class Rule(BaseModel):
@@ -376,11 +380,20 @@ class CardLayout(BaseModel):
     subtitle: TypingSubtitle
     stat_line: StatLine | None = None  # 스티커형 빨간 기록 줄
     rank_word: str = "{rank}위"        # 가사에서 장면 전환 시점을 찾을 낱말
-    auto_cards: bool = False           # 항목(이름·값·이미지)으로 클린 카드를 자동 합성 (정보한장)
+    auto_cards: bool = False           # 항목(이름·값·이미지)으로 클린 카드를 자동 합성 (하늘 배지형)
     default_look: str = "classic"      # 프로젝트 연출에 look 이 없을 때 쓰는 스타일
     hook_from_title: bool = False      # 후킹 문구가 없으면 제목 첫 줄로 (로고 인트로 없이 후킹 → 바로 5위)
     mascot_dir: str = "mascot"         # assets/<이 폴더> 의 마스코트 그림. 'mascot' 외 폴더는 비어 있으면 마스코트 없음
     main_color: str | None = None      # 클린 카드·키워드·그래프의 채널 색 (없으면 야구한장 파랑)
+    scene_style: Literal["card", "zip"] = "card"  # zip: 왼쪽 정보 배지 + 오른쪽 캐릭터 (하늘 배지형)
+    background_image: str | None = None  # 템플릿 폴더의 배경 그림 (없으면 background_color 단색)
+    brand_logo: list[str] = Field(default_factory=list)  # assets/ 기준 로고 후보 (앞에서부터 있는 것). 있으면 알약 로고 대신
+    brand_logo_box: Box | None = None
+    default_character: list[str] = Field(default_factory=list)  # assets/ 기준 기준 캐릭터 후보 (그림 없는 순위의 임시 그림)
+    outro_image: list[str] = Field(default_factory=list)  # assets/ 기준 엔딩 카드 후보. 있으면 마지막 outro_len 초
+    outro_box: Box | None = None
+    outro_len: float = 3.0
+    keep_subtitle_style: bool = False  # 클린 연출이어도 템플릿 자막 모양(흰 글씨+검은 테두리) 그대로
     accent_color: str | None = None    # 1위·후킹 밑줄 강조색 (있으면 연출의 강조색 대신 고정)
 
 
@@ -429,6 +442,11 @@ class Template(BaseModel):
             p = self._template_dir / name
             return p if p.exists() else None
         return None
+
+    @staticmethod
+    def brand_asset(candidates: list[str]) -> Path | None:
+        """assets/ 기준 후보 중 처음 있는 파일 (사용자가 넣은 원본 → 임시 순서)."""
+        return next((ASSETS_DIR / c for c in candidates if (ASSETS_DIR / c).is_file()), None)
 
     def font_path(self, key: str) -> Path:
         name = self.fonts.get(key)

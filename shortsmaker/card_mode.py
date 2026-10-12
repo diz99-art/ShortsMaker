@@ -210,10 +210,26 @@ def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list
         bounds.insert(-1, b_start)
         kinds.append("bonus")
         scene_items.append(None)
+    o_start = outro_start(project, t, top_start, b_start, c_start, fps)
+    if o_start is not None:  # 엔딩 카드 (하늘 배지형 '알면 알수록 신기한 세상')
+        bounds.insert(-1, o_start)
+        kinds.append("outro")
+        scene_items.append(None)
     scenes = []
     for i, (a, b) in enumerate(zip(bounds, bounds[1:])):
         scenes.append(Scene(index=i, kind=kinds[i], start=a, end=b, clip_duration=b - a, item=scene_items[i]))
     return scenes
+
+
+def outro_start(project: Project, t: Template, top_start: float, b_start: float | None, c_start: float | None,
+                fps: int) -> float | None:
+    """엔딩 카드 시작: 영상 끝 outro_len 초. 보너스·그래프가 있거나 1위를 3초 못 보여 주면 넣지 않음."""
+    if not t.card.outro_image or b_start is not None or c_start is not None:
+        return None
+    if t.brand_asset(t.card.outro_image) is None:
+        return None
+    start = snap(project.duration - t.card.outro_len, fps)
+    return start if start - top_start >= 3.0 else None
 
 
 def bonus_start(project: Project, top_start: float, fps: int) -> float | None:
@@ -302,11 +318,17 @@ def _title_lines(text: str, c: CardLayout, font_path: Path) -> tuple[list[str], 
         size -= 2
 
 
-def render_chrome(t: Template, project: Project) -> tuple[Image.Image, Image.Image]:
-    """(바닥 레이어 RGB: 배경+아래 버튼, 머리 레이어 RGBA: 알약 로고+제목+구분선 — 구분선 아래는 투명)."""
+def render_chrome(t: Template, project: Project, project_dir: Path | None = None) -> tuple[Image.Image, Image.Image]:
+    """(바닥 레이어 RGB: 배경+아래 버튼, 머리 레이어 RGBA: 알약 로고+제목+구분선 — 구분선 아래는 투명).
+    하늘 배지형: 배경 그림, 그림 로고(brand_logo), 제목 둘째 줄 끝 아이콘(project.title_icon)."""
     c = t.card
     W, H = t.width, t.height
-    base = Image.new("RGB", (W, H), _hex(c.background_color))
+    bg_p = t.asset_path(c.background_image) if c.background_image else None
+    if bg_p is not None:
+        with Image.open(bg_p) as im:
+            base = im.convert("RGB").resize((W, H), Image.LANCZOS)
+    else:
+        base = Image.new("RGB", (W, H), _hex(c.background_color))
     d = ImageDraw.Draw(base)
 
     # 아래: @야구한장 | 🔔구독
@@ -329,26 +351,54 @@ def render_chrome(t: Template, project: Project) -> tuple[Image.Image, Image.Ima
     # 위: 알약 로고 + 제목 + 구분선 (별도 RGBA 레이어)
     head = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     hd = ImageDraw.Draw(head)
-    hd.rectangle([0, 0, W, c.content_top - 1], fill=_hex(c.background_color) + (255,))
+    if bg_p is not None:  # 구분선 위도 같은 배경 그림
+        head.paste(base.crop((0, 0, W, c.content_top)).convert("RGBA"), (0, 0))
+    else:
+        hd.rectangle([0, 0, W, c.content_top - 1], fill=_hex(c.background_color) + (255,))
     p = c.pill
-    _rounded(hd, p, fill=_hex(p.fill), outline=_hex(p.border_color), width=p.border_width)
+    logo_p = t.brand_asset(c.brand_logo) if c.brand_logo else None
+    if logo_p is not None:  # 그림 로고 (알약 대신), 자리 안에 비율 유지·왼쪽 정렬
+        lb = c.brand_logo_box or p
+        with Image.open(logo_p) as im:
+            logo = im.convert("RGBA")
+        sc_ = min(lb.w / logo.width, lb.h / logo.height)
+        logo = logo.resize((max(1, round(logo.width * sc_)), max(1, round(logo.height * sc_))), Image.LANCZOS)
+        head.alpha_composite(logo, (lb.x, lb.y + (lb.h - logo.height) // 2))
+    else:
+        _rounded(hd, p, fill=_hex(p.fill), outline=_hex(p.border_color), width=p.border_width)
     pf = _font(str(t.font_path(p.font)), p.size)
     tx = p.x + p.h * 0.32
-    hd.text((tx, p.y + p.h / 2), p.text, font=pf, fill=_hex(p.text_color), anchor="lm")
+    if logo_p is None:
+        hd.text((tx, p.y + p.h / 2), p.text, font=pf, fill=_hex(p.text_color), anchor="lm")
     ix = tx + pf.getlength(p.text) + p.h * 0.22
-    if p.icon == "seam":
+    if logo_p is not None:
+        pass
+    elif p.icon == "seam":
         _seam_icon(hd, ix, p.y + p.h / 2, p.h * 0.56, _hex(p.icon_color))
     elif p.icon == "dot":
         r_ = p.h * 0.13
         hd.ellipse([ix, p.y + p.h / 2 - r_, ix + 2 * r_, p.y + p.h / 2 + r_], fill=_hex(p.icon_color))
 
     box = c.title
+    icon = None
+    if project.title_icon and project_dir is not None and (project_dir / project.title_icon).is_file():
+        with Image.open(project_dir / project.title_icon) as im:
+            icon = im.convert("RGBA")
     lines, tfont = _title_lines(project.title, c, t.font_path(box.font))
     pitch = tfont.size * c.title_line_pitch
     block = pitch * (len(lines) - 1) + tfont.size
     y = box.y + (box.h - block) / 2
-    for line in lines:
-        hd.text((box.x + box.w / 2, y), line, font=tfont, fill=_hex(box.color), anchor="mt")
+    for k, line in enumerate(lines):
+        if icon is not None and k == len(lines) - 1:  # 마지막 줄 끝 아이콘: 글자+아이콘을 함께 가운데 정렬
+            ih = round(tfont.size * 1.0)
+            ic = icon.resize((max(1, round(icon.width * ih / icon.height)), ih), Image.LANCZOS)
+            gap = round(tfont.size * 0.25)
+            tw = tfont.getlength(line)
+            x0 = box.x + (box.w - (tw + gap + ic.width)) / 2
+            hd.text((x0, y), line, font=tfont, fill=_hex(box.color), anchor="lt")
+            head.alpha_composite(ic, (round(x0 + tw + gap), round(y + tfont.size * 0.05)))
+        else:
+            hd.text((box.x + box.w / 2, y), line, font=tfont, fill=_hex(box.color), anchor="mt")
         y += pitch
     dv = c.divider
     hd.rectangle([0, dv.y, W - 1, dv.y + dv.h - 1], fill=_hex(dv.color) + (255,))
@@ -609,19 +659,20 @@ class CardRenderer:
 
     def __post_init__(self) -> None:
         vd = dict(self.project.variation or {})
-        vd.setdefault("look", self.t.card.default_look)  # 정보한장 등: 템플릿 기본 스타일
+        vd.setdefault("look", self.t.card.default_look)  # 하늘 배지형 등: 템플릿 기본 스타일
         self.v = Variation.model_validate(vd)
         self.clean = self.v.look in ("clean_a", "clean_b")
-        if self.clean:  # 클린: 자막은 단색 + 은은한 그림자 (두꺼운 테두리 없음), 흔들림은 1위만
+        if self.clean and not self.t.card.keep_subtitle_style:  # 클린: 자막은 단색 + 은은한 그림자 (두꺼운 테두리 없음)
             st0 = self.t.card.subtitle
             st0 = st0.model_copy(update=dict(color="#14171C", stroke_width=0, shadow_offset=(0, 5),
                                              shadow_color="#000000", shadow_opacity=0.16, shadow_blur=6))
             self.t = self.t.model_copy(update={"card": self.t.card.model_copy(update={"subtitle": st0})})
+        if self.clean:  # 흔들림은 1위만
             from .variation import CALM
             self.v = self.v.model_copy(update=dict(CALM))  # 비트 펄스·그림 움직임·2.5D 없음, 카드는 인·아웃만
         t, c = self.t, self.t.card
         self.canvas = (t.width, t.height)
-        self.base, self.head = render_chrome(t, self.project)
+        self.base, self.head = render_chrome(t, self.project, self.project_dir)
         card_m, card_dx, self.flash = transition_motion(self.v.transition, c.card_motion)
         if self.clean:
             self.flash = 0.0  # 클린: 흰 섬광 없음 (인·아웃 효과만)
@@ -650,6 +701,11 @@ class CardRenderer:
                 continue
             if s.kind == "chart":
                 self.layers[s.index] = self.layers[s.index - 1]  # 그래프 장면은 카드를 그리지 않음 (자리만)
+                continue
+            if s.kind == "outro":  # 엔딩 카드: 템플릿 자리에 (순위 카드와 같은 인·아웃)
+                outro_p = t.brand_asset(c.outro_image)
+                self.layers[s.index] = MovingLayer(_load_rgba(str(outro_p)), c.outro_box or c.card_box, card_m, t.fps,
+                                                   c.content_top, self.canvas, dx=card_dx)
                 continue
             if not s.item.image:
                 raise CardModeError(f"[{s.item.rank}위] 카드 이미지가 지정되지 않았습니다")
@@ -848,7 +904,7 @@ class CardRenderer:
             anim = "title"
         else:
             anim = since if since / fps < m.length + m.gap_frames / fps else None
-        card_scene = sc.kind in ("rank", "bonus")
+        card_scene = sc.kind in ("rank", "bonus", "outro")
         flash = since if card_scene and self.flash and 0 <= since < round(self.flash * fps) else None
         top = sc.kind == "rank" and sc.item.shown_rank == 1
         if top and 0 <= since < round(TOP_FLASH * fps) and not self.clean:  # 1위: 번쩍 (클린은 없음)
@@ -861,7 +917,7 @@ class CardRenderer:
             n = max(1, round(INOUT_LEN * fps))
             to_end = round(sc.end * fps) - frame_no
             anim = ("in", since) if 0 <= since < n else (("out", to_end) if 0 < to_end <= n and
-                                                        sc.kind != "bonus" else None)
+                                                        sc.kind not in ("bonus", "outro") else None)
         # 비트 펄스: 카드가 다 들어온 뒤
         pulse = None
         if card_scene and self.beats is not None and anim is None:
@@ -1245,6 +1301,9 @@ class CardRenderer:
         if src is None:
             self._draw_hook_text(img, t, with_image=False)
             return
+        if self.t.card.scene_style == "zip":  # 하늘 배지형: 후킹 그림만 크게 (자막 아래 ~ 구독 버튼 위)
+            self._draw_zip_hook(img, src, t)
+            return
         text_h = self._hook_text_height()
         _, (x0, y0, x1, y1) = self._hook_slots(text_h)
         key = ("hookimg", x1 - x0, y1 - y0)
@@ -1260,6 +1319,28 @@ class CardRenderer:
         dy = round((1 - (1 - (1 - k) ** 3)) * 30)
         MovingLayer._paste(img, im, round((x0 + x1) / 2 - im.width / 2), round((y0 + y1) / 2 - im.height / 2) + dy)
         self._draw_hook_text(img, t, with_image=True)
+
+    def _draw_zip_hook(self, img: Image.Image, src: Image.Image, t: float) -> None:
+        c = self.t.card
+        x0, x1 = 30, self.canvas[0] - 30
+        y0 = c.subtitle.y + c.subtitle.h + 20
+        y1 = min(c.footer.button.y, c.footer.handle.y) - 20
+        key = ("ziphook", x1 - x0, y1 - y0)
+        im = self._sub_cache.get(key)
+        if im is None:
+            from .bg_remove import has_transparency
+            if has_transparency(src):  # 투명 배경 스티커 그림: 비율 유지해 자리에 꽉
+                s_ = min((x1 - x0) / src.width, (y1 - y0) / src.height)
+                im = src.resize((max(1, round(src.width * s_)), max(1, round(src.height * s_))), Image.LANCZOS)
+            else:  # 배경 있는 그림: 둥근 모서리 카드로 꽉 채움
+                im = self._rounded_card(src, (x1 - x0, y1 - y0))
+            self._sub_cache[key] = im
+        k = min(1.0, t / 0.35)
+        if k < 1:
+            im = im.copy()
+            im.putalpha(im.getchannel("A").point(lambda v: round(v * k)))
+        dy = round((1 - (1 - (1 - k) ** 3)) * 30)
+        MovingLayer._paste(img, im, round((x0 + x1) / 2 - im.width / 2), round((y0 + y1) / 2 - im.height / 2) + dy)
 
     def _hook_src(self) -> Image.Image | None:
         if not self.project.hook_image:
@@ -1359,7 +1440,7 @@ class CardRenderer:
 
 
 def make_renderer(project: Project, project_dir: Path, t: Template, lines: list[LyricLine]) -> CardRenderer:
-    if t.card.auto_cards:  # 정보한장: 항목으로 클린 카드 자동 합성
+    if t.card.auto_cards:  # 하늘 배지형: 항목으로 클린 카드 자동 합성
         from .info_cards import prepare_cards
         project = prepare_cards(project, project_dir, t)
     if (t.card.hook_from_title or project.hook_image) and not project.hook.strip():  # 로고 없이 후킹(제목 첫 줄) → 5위

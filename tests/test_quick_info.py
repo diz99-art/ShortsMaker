@@ -70,3 +70,22 @@ def test_run_quick_info_without_images(tmp_path):
     bad = {c["key"] for c in ap.checklist(state, d) if not c["ok"]}
     assert "info_images" in bad and "no_logo" not in {c["key"] for c in ap.checklist(state, d)}
     assert Path(res.output).exists()
+
+
+def test_run_quick_sky_badge_icons_and_title_icon(tmp_path):
+    song = make_song(tmp_path / "pop.m4a", POP_SONG, seconds=40)
+    root = tmp_path / "projects"
+    q = qi.parse_info_quick(qi.EXAMPLE)
+    res = run_quick(q, song, [_png("#3366AA")], slug="zip", root=root, template="sky_badge", aligner=hr_aligner,
+                    output_dir=tmp_path, capcut_root=tmp_path, use_claude=False,
+                    icons=[_png("#22AA22"), _png("#AA2222")], title_icon=_png("#FFAA00"))
+    assert res.status == "done", (res.stage, res.message, res.issues)
+    d = root / res.slug
+    state = ap.load_state(d)
+    assert state.value_label == "인구" and state.title_icon == "title_icon.png" and len(state.icons) == 2
+    assert [state.players[r.slot].source for r in state.rows] == ["upload"] + ["placeholder"] * 4
+    p = load_project(d / "project.json")[0]
+    assert p.channel == "sky_badge" and p.value_label == "인구" and p.ordered_items[0].icon
+    im = Image.open(d / state.players[state.rows[0].slot].approved)
+    assert im.mode == "RGBA" and im.getchannel("A").getextrema()[0] == 0   # 캐릭터 배경을 지움
+    assert Path(res.output).exists()

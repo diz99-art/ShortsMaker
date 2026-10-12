@@ -50,6 +50,7 @@ class QuickData:
     bonus: dict | None = None
     gauge_base: str = ""
     bubbles: dict[str, str] = field(default_factory=dict)
+    value_label: str = ""                              # 하늘 배지형: 배지 값 라벨 ('값 이름:' 줄)
     errors: list[str] = field(default_factory=list)    # "7번째 줄: …"
     warnings: list[str] = field(default_factory=list)
 
