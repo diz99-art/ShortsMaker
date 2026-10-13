@@ -334,7 +334,17 @@ def column_problems(rows: list[RankRow], *, allow_unknown_team: bool = False) ->
             out.append(f"{who} 연도 칸 '{r.year[:20]}'이(가) 4자리 숫자가 아닙니다 — 장면 설명이 들어갔나요?")
         if r.record and re.fullmatch(r"\d{4}", r.record.strip()):
             out.append(f"{who} 기록 칸 '{r.record}'이(가) 연도처럼 보입니다 — 열이 밀리지 않았는지 확인하세요")
+        if r.record and r.record.strip() in players:
+            out.append(f"{who} 기록 칸 '{r.record}'이(가) 선수 이름입니다 — 열이 밀리지 않았는지 확인하세요")
+        elif r.record and _is_team_name(r.record):
+            out.append(f"{who} 기록 칸 '{r.record}'이(가) 팀 이름입니다 — 열이 밀리지 않았는지 확인하세요")
     return out
+
+
+def _is_team_name(text: str) -> bool:
+    """구단 이름·줄임말과 정확히 같은지 ('삼성전 5연승' 처럼 이름이 섞인 기록은 아님)."""
+    team = find_team(text)
+    return team is not None and text.strip() in (team.name, team.short, *team.aliases)
 
 
 def rows_complete(rows: list[RankRow], *, need_team: bool = True) -> list[str]:
