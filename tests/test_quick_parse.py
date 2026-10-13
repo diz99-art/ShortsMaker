@@ -63,8 +63,15 @@ def test_unknown_team_is_warning_not_error():
     assert q.ok and any("구단 사전에 없습니다" in w for w in q.warnings)
 
 
-@pytest.mark.xfail(strict=True, reason="알려진 버그: pydantic 오류의 마지막 줄(문서 URL)만 보여서 이유가 안 보임")
 def test_bonus_error_message_says_why():
+    """보너스 칸이 모자라면 이유를 보여 준다 (예전: pydantic 오류의 마지막 줄인 문서 URL 만 보였음)."""
     q = parse_quick(EXAMPLE.replace("보너스: 6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025", "보너스: 6위 디아즈"))
     assert not q.ok
-    assert not any("errors.pydantic.dev" in e for e in q.errors)
+    assert "11번째 줄: 보너스 — 보너스 순위 장면은 순위·이름·기록이 필요합니다" in q.errors
+    assert not any("errors.pydantic.dev" in e or "Value error" in e for e in q.errors)
+
+
+def test_bonus_format_error_message():
+    """형식 자체가 틀린 경우(FlowError)는 원래도 이유가 보였다 — 고친 뒤에도 그대로."""
+    q = parse_quick(EXAMPLE.replace("보너스: 6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025", "보너스: 디아즈 | 삼성"))
+    assert any("보너스는 '6위 이름 | 팀 | 기록 | 연도'" in e for e in q.errors)

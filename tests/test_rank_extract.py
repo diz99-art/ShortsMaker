@@ -201,6 +201,23 @@ def test_column_shift_single_cells():
     assert column_problems([no_year]) == []                       # 연도는 비워도 됨
 
 
+@pytest.mark.parametrize("record,what", [("박병호", "선수 이름"), ("심정수", "선수 이름"),   # 같은 행·다른 행 선수
+                                         ("넥센 히어로즈", "팀 이름"), ("삼성", "팀 이름")])
+def test_name_in_record_column_detected(record, what):
+    """기록 칸에 이름이 들어간 열 밀림 (예전: 숫자가 없어도 그냥 통과했음)."""
+    rows = [RankRow(rank=5, player="박병호", team="넥센 히어로즈", record=record, year="2014"),
+            RankRow(rank=3, player="심정수", team="현대 유니콘스", record="53홈런", year="2003")]
+    probs = column_problems(rows)
+    assert any(f"기록 칸 '{record}'이(가) {what}입니다" in p for p in probs)
+
+
+@pytest.mark.parametrize("record", ["52홈런", "16연패", "150억", "삼성전 5연승", "0.412"])
+def test_real_records_pass(record):
+    """정상 기록은 통과 (팀 이름이 섞인 기록 '삼성전 5연승' 도 기록으로 본다)."""
+    row = RankRow(rank=5, player="박병호", team="넥센 히어로즈", record=record, year="2014")
+    assert column_problems([row]) == []
+
+
 def test_team_colors_no_logo_data():
     assert team_colors("기아 타이거즈") == ("#EA0029", "#06141F")
     data = json.loads((Path(ap.__file__).parent / "data" / "kbo_teams.json").read_text(encoding="utf-8"))
