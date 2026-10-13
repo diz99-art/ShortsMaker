@@ -18,7 +18,8 @@ from shortsmaker import manual_prompt as mp
 from shortsmaker import quick_parse_info as qi
 from shortsmaker.mascot import ASSETS_DIR
 from shortsmaker.models import PROJECTS_DIR, load_template
-from shortsmaker.quick import new_slug as quick_new_slug, run_quick
+from shortsmaker.quick import new_slug as quick_new_slug
+from shortsmaker.quick import run_quick
 from shortsmaker.quick_parse import EXAMPLE, parse_quick, request_prompt
 from shortsmaker.rank_extract import label
 
@@ -41,10 +42,16 @@ if INFO:
         p_ = tpl_info.brand_asset(cands)
         return "없음" if p_ is None else (f"assets/{p_.relative_to(ASSETS_DIR)}" + (" (임시: 참고 영상에서 자름)"
                                                                                     if "/temp/" in str(p_) else ""))
-    st.caption(f"템플릿 {qi.CHANNEL} · {tpl_info.card.footer.handle_text} · 로고 {_asset(tpl_info.card.brand_logo)} · "
-               f"기준 캐릭터 {_asset(tpl_info.card.default_character)} · 엔딩 카드 {_asset(tpl_info.card.outro_image)} · "
-               f"마스코트 assets/{tpl_info.card.mascot_dir}/ " + ("(있음)" if has_mascot else "(비어 있음 → 마스코트 없이)"))
-COLS = (["순위", "이름", "구분", "값", "기준 연도", "그림 설명"] if INFO else ["순위", "선수", "팀", "기록", "연도", "장면 설명"])
+    st.caption(
+        f"템플릿 {qi.CHANNEL} · {tpl_info.card.footer.handle_text} · 로고 {_asset(tpl_info.card.brand_logo)} · "
+        f"기준 캐릭터 {_asset(tpl_info.card.default_character)} · 엔딩 카드 {_asset(tpl_info.card.outro_image)} · "
+        f"마스코트 assets/{tpl_info.card.mascot_dir}/ " + ("(있음)" if has_mascot else "(비어 있음 → 마스코트 없이)")
+    )
+COLS = (
+    ["순위", "이름", "구분", "값", "기준 연도", "그림 설명"]
+    if INFO
+    else ["순위", "선수", "팀", "기록", "연도", "장면 설명"]
+)
 
 with st.expander("ChatGPT 에 이 양식을 요청하는 프롬프트 (복사)"):
     topic = st.text_input("주제", "세계 인구 많은 나라 TOP 5" if INFO else "KBO 단일 시즌 홈런 TOP 5",
@@ -54,7 +61,8 @@ with st.expander("ChatGPT 에 이 양식을 요청하는 프롬프트 (복사)")
     if st.button("프롬프트 복사", key="q_cp"):
         mp.copy_to_clipboard(prompt)
         st.toast("복사했습니다")
-    st.caption("⚠ ChatGPT 가 준 기록·출처는 반드시 직접 확인하세요. 확인 못 한 칸이 '확인 필요'로 남아 있으면 읽지 않습니다.")
+    st.caption("⚠ ChatGPT 가 준 기록·출처는 반드시 직접 확인하세요. "
+               "확인 못 한 칸이 '확인 필요'로 남아 있으면 읽지 않습니다.")
 
 # ---------------------------------------------------------------- ① 답변
 st.header("① ChatGPT 답변 붙여넣기")
@@ -66,7 +74,8 @@ if data:
         for e in data.errors:
             st.error(e)
     else:
-        st.success(f"읽음: 제목 '{data.title.replace(chr(10), ' / ')}' · 출처 {data.source_name} · 항목 {len(data.rows)}개 · 메모 {len(data.memos)}줄")
+        st.success(f"읽음: 제목 '{data.title.replace(chr(10), ' / ')}' · 출처 {data.source_name} · "
+                   f"항목 {len(data.rows)}개 · 메모 {len(data.memos)}줄")
     for w in data.warnings:
         st.warning(w)
     if data.rows:
@@ -106,9 +115,12 @@ if files:
         with cols[pos]:
             st.markdown(f"**{labels[pos] if pos < len(labels) else f'{pos + 1}번째'}**")
             st.image(files[idx].getvalue(), use_container_width=True, caption=files[idx].name)
-            to = st.selectbox("바꿀 자리", [None] + [p for p in range(len(order)) if p != pos],
-                              format_func=lambda p: "—" if p is None else (labels[p] if p < len(labels) else f"{p + 1}번째"),
-                              key=f"q_sw{pos}")
+            to = st.selectbox(
+                "바꿀 자리",
+                [None] + [p for p in range(len(order)) if p != pos],
+                format_func=lambda p: "—" if p is None else (labels[p] if p < len(labels) else f"{p + 1}번째"),
+                key=f"q_sw{pos}",
+            )
             if to is not None and st.button("바꾸기", key=f"q_swb{pos}"):
                 order[pos], order[to] = order[to], order[pos]
                 st.rerun()
@@ -128,15 +140,18 @@ if INFO:
             with icols[pos]:
                 st.image(icon_files[idx].getvalue(), width=90,
                          caption=ilabels[pos] if pos < len(ilabels) else f"{pos + 1}번째")
-                to = st.selectbox("바꿀 자리", [None] + [p for p in range(len(icon_files)) if p != pos],
-                                  format_func=lambda p: "—" if p is None else (ilabels[p] if p < len(ilabels) else str(p + 1)),
-                                  key=f"q_isw{pos}")
+                to = st.selectbox(
+                    "바꿀 자리",
+                    [None] + [p for p in range(len(icon_files)) if p != pos],
+                    format_func=lambda p: "—" if p is None else (ilabels[p] if p < len(ilabels) else str(p + 1)),
+                    key=f"q_isw{pos}",
+                )
                 if to is not None and st.button("바꾸기", key=f"q_iswb{pos}"):
                     o = ss.q_icon_order
                     o[pos], o[to] = o[to], o[pos]
                     st.rerun()
-    title_icon_file = st.file_uploader("제목 둘째 줄 끝 작은 아이콘 (선택, 없으면 생략)", type=["png", "jpg", "jpeg", "webp"],
-                                       key="q_title_icon")
+    title_icon_file = st.file_uploader("제목 둘째 줄 끝 작은 아이콘 (선택, 없으면 생략)",
+                                       type=["png", "jpg", "jpeg", "webp"], key="q_title_icon")
 
 # ---------------------------------------------------------------- 후킹 그림
 st.header("⑤ 후킹 그림 (선택)" if INFO else "④ 후킹 그림 (선택)")
@@ -163,7 +178,8 @@ if not ready:
     st.caption("답변 양식 오류가 없고, 곡" + (" (그림은 선택)" if INFO else
                "과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)") + "이 있으면 열립니다")
 elif INFO and n_files < len(data.rows):
-    st.warning(f"캐릭터 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 기준 캐릭터로 만듭니다 (수익화용 렌더는 막힘)")
+    st.warning(f"캐릭터 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 기준 캐릭터로 만듭니다 "
+               "(수익화용 렌더는 막힘)")
 
 
 def _go(accept: bool, resume_slug: str | None = None) -> None:
@@ -203,10 +219,12 @@ if res:
         st.markdown(f"### 🎬 `{res.output}`")
         st.markdown(f"### 📁 `{ROOT / res.slug}`")
         if not fresh:
-            st.error("영상 파일이 이번에 새로 만들어지지 않았습니다 (수정 시각이 이번 제작보다 이릅니다). 다시 만들어 주세요.")
+            st.error("영상 파일이 이번에 새로 만들어지지 않았습니다 "
+                     "(수정 시각이 이번 제작보다 이릅니다). 다시 만들어 주세요.")
         else:
             st.caption(f"만든 시각: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(out.stat().st_mtime))}")
             st.video(str(out))
-        st.success(f"'노래로 자동 제작'에서 프로젝트 '{res.slug}'를 불러와 로고 확인·Suno 확인·수익화용 렌더를 이어서 하세요")
+        st.success(f"'노래로 자동 제작'에서 프로젝트 '{res.slug}'를 불러와 "
+                   "로고 확인·Suno 확인·수익화용 렌더를 이어서 하세요")
         for w in res.issues:
             st.caption(w)

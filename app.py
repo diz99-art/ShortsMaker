@@ -15,11 +15,17 @@ import streamlit as st
 from shortsmaker.capcut_export import DEFAULT_DRAFTS_DIR
 from shortsmaker.ffmpeg_builder import FFmpegError
 from shortsmaker.lyrics import check_lyrics, parse_lrc
-from shortsmaker.lyrics_align import (MODEL_CHOICES, AlignError, auto_align, embedded_lyrics, lrc_text,
-                                      missing_packages)
+from shortsmaker.lyrics_align import MODEL_CHOICES, AlignError, auto_align, embedded_lyrics, lrc_text, missing_packages
 from shortsmaker.models import (
-    MIN_DURATION, PROJECTS_DIR, ROOT, LyricLine, Project, list_channels, load_project,
-    load_template, save_project,
+    MIN_DURATION,
+    PROJECTS_DIR,
+    ROOT,
+    LyricLine,
+    Project,
+    list_channels,
+    load_project,
+    load_template,
+    save_project,
 )
 from shortsmaker.pipeline import LyricsError, prepare, render
 from shortsmaker.validate import ValidationError, pre_render
@@ -237,7 +243,8 @@ with st.expander("🎙️ 가사 자동 맞추기 (내 Mac에서 로컬 모델�
     a3.selectbox("모델", MODEL_CHOICES, key="align_model", help="large-v3가 가장 정확, small이 가장 빠름")
     align_clicked = a4.button("🎙️ 가사 자동 맞추기", type="primary", disabled=bool(missing), width="stretch")
     if missing:
-        st.info(f"필요한 패키지가 없습니다: {', '.join(missing)}\n\n설치: `.venv/bin/pip install -r requirements-align.txt`")
+        st.info(f"필요한 패키지가 없습니다: {', '.join(missing)}\n\n"
+                "설치: `.venv/bin/pip install -r requirements-align.txt`")
     st.caption("처음 실행할 때 모델을 내려받느라 몇 분 걸립니다(large-v3 약 3GB, 한 번만). 이후엔 1분 안팎.")
 
     if align_clicked:
@@ -383,7 +390,8 @@ if capcut_clicked and (got := _collect_or_error()):
         from shortsmaker.capcut_export import export_draft
         with st.spinner("CapCut 초안 만드는 중…"):
             draft = export_draft(project, project_dir, root=Path(ss.capcut_dir).expanduser())
-        st.success(f"CapCut 초안을 만들었습니다: **{draft.name}**\n\nCapCut을 열어 홈 화면 목록에서 확인하세요.\n\n`{draft.path}`")
+        st.success(f"CapCut 초안을 만들었습니다: **{draft.name}**\n\n"
+                   f"CapCut을 열어 홈 화면 목록에서 확인하세요.\n\n`{draft.path}`")
         for w in draft.warnings:
             st.warning(w)
     except Exception as e:  # noqa: BLE001

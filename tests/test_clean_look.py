@@ -1,5 +1,4 @@
 """클린 스타일 시안 A·B, 키워드 터뜨리기 규칙, 그래프 기준선 글씨, 카드 여백."""
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -70,11 +69,22 @@ def test_clean_renderer_and_chart_label(tmp_path, t, art):
     for r_ in (5, 4, 3, 2, 1):
         compose_clean(art, "clean_a", rank=r_, record=f"{50 + r_}홈런", year="2003", team="삼성 라이온즈",
                       player="선수").save(tmp_path / f"card{r_}.png")
-    p = make_project(tmp_path, hook="50홈런이 6위?!", gauge_base="50홈런",
-                     items=[{"rank": r_, "name": f"선수{r_}", "value": f"{50 + r_}홈런", "description": "삼성 라이온즈 2003",
-                             "image": f"card{r_}.png"} for r_ in (5, 4, 3, 2, 1)],
-                     variation={"look": "clean_a", "beat": "pulse_flash", "motion": "wobble", "datagfx": "bars",
-                                "mascot": "right"})
+    p = make_project(
+        tmp_path,
+        hook="50홈런이 6위?!",
+        gauge_base="50홈런",
+        items=[
+            {
+                "rank": r_,
+                "name": f"선수{r_}",
+                "value": f"{50 + r_}홈런",
+                "description": "삼성 라이온즈 2003",
+                "image": f"card{r_}.png",
+            }
+            for r_ in (5, 4, 3, 2, 1)
+        ],
+        variation={"look": "clean_a", "beat": "pulse_flash", "motion": "wobble", "datagfx": "bars", "mascot": "right"},
+    )
     r = make_renderer(p, tmp_path, t, SONG)
     assert r.clean and (r.v.beat, r.v.motion, r.v.depth) == ("off", "none", "off") and r.flash == 0   # 움직임 없음
     assert r.t.card.subtitle.stroke_width == 0                        # 자막 테두리 없음
@@ -95,7 +105,6 @@ def test_default_look_is_clean_a(tmp_path):
 
 
 def test_clean_a_rank_size_and_top_color(art):
-    from shortsmaker.card_clean import BLUE
     five = np.asarray(compose_clean(art, "clean_a", rank=5, record="52홈런", year="2014", team="넥센 히어로즈",
                                     player="박병호"))
     blue = (five[..., 0] < 20) & (np.abs(five[..., 1].astype(int) - 67) < 15) & (five[..., 2] > 180)
@@ -108,7 +117,9 @@ def test_hook_two_lines_and_wipe():
     none = fx.clean_hook_image("50홈런이 6위?!", "#F26A00", 1080, progress=0.0)
     assert full.height > 300 and full.width <= 1000                   # 두 줄로 크게
     a, b = np.asarray(full), np.asarray(none)
-    oranged = lambda x: ((x[..., 0] > 230) & (x[..., 1] < 130) & (x[..., 3] > 60) & (x[..., 3] < 160)).sum()  # 반투명 주황 띠
+    def oranged(x):  # 반투명 주황 띠
+        return ((x[..., 0] > 230) & (x[..., 1] < 130) & (x[..., 3] > 60) & (x[..., 3] < 160)).sum()
+
     assert oranged(a) > 5000 and oranged(b) == 0                      # 밑줄이 그어지는 효과
     assert fx.hook_wipe(0.0) == 0 and fx.hook_wipe(1.0) == 1
 
@@ -117,10 +128,18 @@ def test_info_v2_auto_cards(tmp_path):
     from shortsmaker.models import Project, load_template
     for r_ in (5, 4, 3, 2, 1):
         Image.new("RGB", (600, 560), (40 * r_, 90, 160)).save(tmp_path / f"img{r_}.png")
-    p = Project.model_validate(dict(channel="info_v2", title="세계 인구 TOP 5", duration=30,
-                                    lyrics=[l.model_dump() for l in SONG],
-                                    items=[{"rank": r_, "name": f"나라{r_}", "value": f"{r_}억 명", "image": f"img{r_}.png"}
-                                           for r_ in (5, 4, 3, 2, 1)]))
+    p = Project.model_validate(
+        dict(
+            channel="info_v2",
+            title="세계 인구 TOP 5",
+            duration=30,
+            lyrics=[l.model_dump() for l in SONG],
+            items=[
+                {"rank": r_, "name": f"나라{r_}", "value": f"{r_}억 명", "image": f"img{r_}.png"}
+                for r_ in (5, 4, 3, 2, 1)
+            ],
+        )
+    )
     t2 = load_template("info_v2")
     r = make_renderer(p, tmp_path, t2, SONG)
     assert r.v.look == "clean_a" and t2.card.pill.text == "정보한장"
@@ -133,10 +152,22 @@ def test_info_v2_auto_cards(tmp_path):
 
 def test_bubble_moves_off_card_text(tmp_path, t, art):
     meta_cards(tmp_path, art)
-    p = make_project(tmp_path, bubbles={"ending": "구독 꾹!"}, mood="record",
-                     items=[{"rank": r_, "name": f"선수{r_}", "value": f"{50 + r_}홈런", "description": "삼성 라이온즈 2003",
-                             "image": f"card{r_}.png"} for r_ in (5, 4, 3, 2, 1)],
-                     variation={"look": "clean_a", "mascot": "right"})
+    p = make_project(
+        tmp_path,
+        bubbles={"ending": "구독 꾹!"},
+        mood="record",
+        items=[
+            {
+                "rank": r_,
+                "name": f"선수{r_}",
+                "value": f"{50 + r_}홈런",
+                "description": "삼성 라이온즈 2003",
+                "image": f"card{r_}.png",
+            }
+            for r_ in (5, 4, 3, 2, 1)
+        ],
+        variation={"look": "clean_a", "mascot": "right"},
+    )
     r = make_renderer(p, tmp_path, t, SONG)
     i = len(r.mascot.bubbles) - 1
     a, _, _ = r.mascot.bubbles[i]
@@ -172,8 +203,8 @@ def test_info_v2_hook_from_title_mascot_folder_and_placeholder_block(tmp_path):
         Image.new("RGB", (600, 560), (40 * r_, 90, 160)).save(tmp_path / f"img{r_}.png")
     mark_placeholder(tmp_path / "img3.png")
     assert is_placeholder(tmp_path / "img3.png") and not is_placeholder(tmp_path / "img2.png")
-    data = dict(channel="info_v2", title="세계 인구 TOP 5\n2024 기준", duration=30, lyrics=[l.model_dump() for l in SONG],
-                variation={"mascot": "right"}, rights_confirmed=True,
+    data = dict(channel="info_v2", title="세계 인구 TOP 5\n2024 기준", duration=30,
+                lyrics=[l.model_dump() for l in SONG], variation={"mascot": "right"}, rights_confirmed=True,
                 items=[{"rank": r_, "name": f"나라{r_}", "value": f"{r_}억 명", "image": f"img{r_}.png"}
                        for r_ in (5, 4, 3, 2, 1)])
     p = Project.model_validate(data)

@@ -7,9 +7,12 @@ import json
 import pytest
 
 from shortsmaker.capcut_export import (
-    CapCutExportError, build_srt, export_draft, export_manual_kit,
+    CapCutExportError,
+    build_srt,
+    export_draft,
+    export_manual_kit,
 )
-from shortsmaker.models import LyricLine, ROOT, load_project
+from shortsmaker.models import ROOT, LyricLine, load_project
 
 
 @pytest.fixture

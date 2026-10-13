@@ -33,7 +33,8 @@ def test_refuses_existing_destination(tmp_path):
 
 
 def test_experimental_adapter(tmp_path):
-    adapter_spec = importlib.util.spec_from_file_location("adapter", Path(__file__).parents[1] / "scripts/adapt_capcut_probe.py")
+    adapter_path = Path(__file__).parents[1] / "scripts/adapt_capcut_probe.py"
+    adapter_spec = importlib.util.spec_from_file_location("adapter", adapter_path)
     adapter = importlib.util.module_from_spec(adapter_spec)
     adapter_spec.loader.exec_module(adapter)
     source = probe.generate(tmp_path / "source")

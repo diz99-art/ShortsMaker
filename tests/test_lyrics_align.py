@@ -5,8 +5,16 @@ import subprocess
 import pytest
 
 from shortsmaker.lyrics import check_lyrics, parse_lrc
-from shortsmaker.lyrics_align import (AlignedLine, AlignError, auto_align, clean_lyrics_text, embedded_lyrics,
-                                      lrc_text, match_segments, to_video_lyrics)
+from shortsmaker.lyrics_align import (
+    AlignedLine,
+    AlignError,
+    auto_align,
+    clean_lyrics_text,
+    embedded_lyrics,
+    lrc_text,
+    match_segments,
+    to_video_lyrics,
+)
 from shortsmaker.models import LyricLine, Project
 
 SUNO = """백억은 기본, 몸값이 뛴다
@@ -115,6 +123,7 @@ def test_real_alignment_orders_lines(tmp_path):
 
 def test_eval_align_compare():
     import importlib.util as iu
+
     from shortsmaker.models import ROOT
     spec = iu.spec_from_file_location("eval_align", ROOT / "scripts" / "eval_align.py")
     mod = iu.module_from_spec(spec)

@@ -8,7 +8,12 @@ from pydantic import ValidationError
 
 from shortsmaker import card_mode
 from shortsmaker.card_mode import (
-    CardModeError, card_timeline, char_times, layout_subtitle, make_renderer, rank_starts_from_lyrics,
+    CardModeError,
+    card_timeline,
+    char_times,
+    layout_subtitle,
+    make_renderer,
+    rank_starts_from_lyrics,
     render_chrome,
 )
 from shortsmaker.lyrics_align import AlignedLine, match_segments, refine_onsets, to_video_lyrics
@@ -38,7 +43,12 @@ def line(start, end, text, words=()):
 
 SONG = [
     line(1.0, 4.0, "KBO 역대 최악의 연패는?"),
-    line(6.0, 8.0, "5위, 기아 타이거즈 16연패", [(6.0, 6.5, "5위,"), (6.5, 7.0, "기아"), (7.0, 7.6, "타이거즈"), (7.6, 8.0, "16연패")]),
+    line(
+        6.0,
+        8.0,
+        "5위, 기아 타이거즈 16연패",
+        [(6.0, 6.5, "5위,"), (6.5, 7.0, "기아"), (7.0, 7.6, "타이거즈"), (7.6, 8.0, "16연패")],
+    ),
     line(10.0, 12.0, "4위, 롯데 자이언츠"),
     line(14.0, 16.0, "3위, 쌍방울 레이더스"),
     line(18.0, 20.0, "2위, 한화 이글스"),
@@ -145,7 +155,8 @@ def test_card_punch_gap_frame_and_scale(tmp_path, t):
     rest = r.frame(start + 3 * FPS)                               # 제자리 (card_box x222~858)
     assert rest.getpixel((150, 1300)) == (252, 252, 252)
     assert rest.getpixel((540, 1300)) != (252, 252, 252)
-    assert first.getpixel((540, 300))[2] > 150 or first.getpixel((540, 300)) == (252, 252, 252)  # 제목 영역은 가려지지 않음
+    # 제목 영역은 가려지지 않음
+    assert first.getpixel((540, 300))[2] > 150 or first.getpixel((540, 300)) == (252, 252, 252)
 
 
 def test_typing_keeps_positions_and_two_lines(t):
@@ -202,7 +213,8 @@ def test_capcut_card_draft(tmp_path, t):
 # ---------------------------------------------------------------- 가사 단어 타이밍
 
 def test_words_kept_and_onset_refined():
-    aligned = match_segments(["5위, 기아"], [(9.1, 12.3, "5위, 기아", [0.9], [(9.1, 11.8, " 5위,"), (11.8, 12.3, " 기아")])])
+    segment = (9.1, 12.3, "5위, 기아", [0.9], [(9.1, 11.8, " 5위,"), (11.8, 12.3, " 기아")])
+    aligned = match_segments(["5위, 기아"], [segment])
     assert aligned[0].words == [(9.1, 11.8, "5위,"), (11.8, 12.3, "기아")]
     db = [-20.0] * 2000
     for i in range(905, 1140):  # 9.05~11.4초 조용, 11.4초부터 노래
@@ -229,8 +241,8 @@ def ts():
 def make_sticker_project(tmp_path, **kw):
     make_cards(tmp_path)
     Image.new("RGBA", (600, 800), "#336699").save(tmp_path / "intro.png")
-    items = [{"rank": r, "name": f"선수{r}", "image": f"card{r}.png", "stat_line": "2022 | 104G 0.267 4HR\n38타점, 21도루"}
-             for r in (5, 4, 3, 2, 1)]
+    stat = "2022 | 104G 0.267 4HR\n38타점, 21도루"
+    items = [{"rank": r, "name": f"선수{r}", "image": f"card{r}.png", "stat_line": stat} for r in (5, 4, 3, 2, 1)]
     data = dict(channel="yagu_v2_sticker", title="야구선수 한 명에 152억?!\nKBO 역대 FA 몸값 TOP 5", duration=30,
                 items=items, lyrics=[l.model_dump() for l in SONG], rights_confirmed=True, intro_image="intro.png")
     data.update(kw)

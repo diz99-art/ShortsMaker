@@ -57,13 +57,15 @@ def test_column_shift_detected():
     assert "기록처럼" in probs and "4자리" in probs and "연도처럼" in probs and "구단 사전" in probs
     ok = [RankRow(rank=5, player="박병호", team="넥센 히어로즈", record="52홈런", year="2014")]
     assert column_problems(ok) == []
-    assert column_problems([RankRow(rank=5, player="오타니", team="LA 다저스", record="54홈런")], allow_unknown_team=True) == []
+    row = RankRow(rank=5, player="오타니", team="LA 다저스", record="54홈런")
+    assert column_problems([row], allow_unknown_team=True) == []
 
 
 def test_card_never_prints_scene_text(tmp_path):
     src = tmp_path / "c.png"
     Image.new("RGBA", (600, 900), (0, 0, 0, 0)).save(src)
-    with_scene = compose_card(src, rank=5, record="52홈런", year="힘차게 풀스윙하는 타격 자세", team="넥센 히어로즈", player="박병호")
+    with_scene = compose_card(src, rank=5, record="52홈런", year="힘차게 풀스윙하는 타격 자세",
+                              team="넥센 히어로즈", player="박병호")
     no_year = compose_card(src, rank=5, record="52홈런", year="", team="넥센 히어로즈", player="박병호")
     assert with_scene.tobytes() == no_year.tobytes()               # 4자리 연도가 아니면 그 줄을 그리지 않음
 
@@ -132,9 +134,16 @@ def test_motion_frames_change_and_top_flash(tmp_path):
     from tests.test_card_mode import SONG, make_cards
     make_cards(tmp_path)
     t = load_template("yagu_v2")
-    p = Project.model_validate(dict(channel="yagu_v2", title="t\nu", duration=30, lyrics=[l.model_dump() for l in SONG],
-                                    items=[{"rank": r, "name": f"선수{r}", "image": f"card{r}.png"} for r in (5, 4, 3, 2, 1)],
-                                    variation={"motion": "float"}))
+    p = Project.model_validate(
+        dict(
+            channel="yagu_v2",
+            title="t\nu",
+            duration=30,
+            lyrics=[l.model_dump() for l in SONG],
+            items=[{"rank": r, "name": f"선수{r}", "image": f"card{r}.png"} for r in (5, 4, 3, 2, 1)],
+            variation={"motion": "float"},
+        )
+    )
     r = make_renderer(p, tmp_path, t, p.lyrics)
     a, b = r.frame_at(8.0), r.frame_at(8.5)                         # 5위 장면, 등장 끝난 뒤
     assert a.tobytes() != b.tobytes()                              # 그림이 계속 움직임
@@ -154,7 +163,8 @@ def test_parse_example_and_errors():
     assert any(e.startswith("2번째 줄: 출처 URL") for e in bad.errors)
     assert any(e.startswith("4번째 줄: 칸이 5개") for e in bad.errors)
     assert any(e.startswith("5번째 줄: 순위") for e in bad.errors)
-    assert "확인 필요" in request_prompt("홈런") and "순위 | 선수 | 팀 | 기록 | 연도 | 장면 설명" in request_prompt("홈런")
+    prompt = request_prompt("홈런")
+    assert "확인 필요" in prompt and "순위 | 선수 | 팀 | 기록 | 연도 | 장면 설명" in prompt
 
 
 def test_compare_lyrics_finds_mismatch():

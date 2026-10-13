@@ -5,8 +5,18 @@ from pathlib import Path
 import streamlit as st
 
 from shortsmaker.editing_package import build
-from shortsmaker.player_assets import (MockEditor, OpenAIEditor, Player, Style, approve_image,
-    connect_to_composition, download_photo, generate, generation_plan, search_photos)
+from shortsmaker.player_assets import (
+    MockEditor,
+    OpenAIEditor,
+    Player,
+    Style,
+    approve_image,
+    connect_to_composition,
+    download_photo,
+    generate,
+    generation_plan,
+    search_photos,
+)
 
 ROOT = Path(__file__).parent.resolve()
 st.set_page_config(page_title="ShortsMaker 선수 캐리커처", layout="wide")
@@ -34,7 +44,8 @@ if search:
     photos = search["photos"]
     st.write(f"검색 대상: {search['player'].name} / {search['player'].team} / {search['player'].season}")
     if not photos:
-        st.info("조건에 맞는 PNG/JPG가 없습니다. 이름과 당시 팀의 Commons 표기를 확인하세요. 조건을 자동으로 완화하지 않습니다.")
+        st.info("조건에 맞는 PNG/JPG가 없습니다. 이름과 당시 팀의 Commons 표기를 확인하세요. "
+                "조건을 자동으로 완화하지 않습니다.")
     else:
         for index, photo in enumerate(photos):
             with st.container(border=True):
@@ -48,7 +59,8 @@ if search:
                 right.write(photo.description[:500])
                 right.warning(photo.warning)
         with st.form("select-photo"):
-            selected = st.selectbox("선택할 사진", range(len(photos)), format_func=lambda n: f"{n+1}. {photos[n].title}")
+            selected = st.selectbox("선택할 사진", range(len(photos)),
+                                    format_func=lambda n: f"{n+1}. {photos[n].title}")
             player_id = st.text_input("새 선수 폴더", value="player_01")
             identity = st.checkbox("사진이 입력한 선수·팀·시즌에 해당함을 직접 확인했습니다")
             rights = st.checkbox("사진의 다운로드·변형·상업적 이용 권한과 표시 조건을 확인했습니다")
@@ -60,7 +72,8 @@ if search:
                 st.session_state.pop("generation", None)
                 st.success("원본 다운로드 및 출처 저장 완료")
             except Exception as error:
-                st.error(f"다운로드 실패: {type(error).__name__}. 확인 체크, 파일 형식, 기존 폴더 및 네트워크를 확인하세요.")
+                st.error(f"다운로드 실패: {type(error).__name__}. "
+                         "확인 체크, 파일 형식, 기존 폴더 및 네트워크를 확인하세요.")
 
 folder = st.session_state.get("folder")
 if folder:
@@ -76,12 +89,14 @@ if folder:
     plan = generation_plan(folder, style)
     st.code(plan["prompt"], language=None)
     st.write(f"모델: {style.model} · {style.size} · 출력 이미지 비용 약 ${plan['estimated_output_usd']:.3f}")
-    st.write(f"입력 포함 계획용 추정 ${plan['estimated_total_usd_range'][0]:.3f}~${plan['estimated_total_usd_range'][1]:.3f}. "
+    low, high = plan["estimated_total_usd_range"]
+    st.write(f"입력 포함 계획용 추정 ${low:.3f}~${high:.3f}. "
              "실제 입력 토큰에 따라 달라지며 청구 상한은 아닙니다. 선수별 실제 요청 최대 3회, 실패도 포함합니다.")
     st.markdown(f"[공식 가격 확인]({plan['pricing_url']})")
     st.caption("투명 PNG 편집·가격이 확인된 gpt-image-1.5를 명시적으로 사용합니다. 다른 모델로 자동 변경하지 않습니다.")
     with st.form("edit-request"):
-        approved = st.checkbox("위 사진과 프롬프트를 OpenAI Images 편집 API로 전송하고 위 예상 비용의 유료 요청 1회를 실행하는 것을 승인합니다")
+        approved = st.checkbox("위 사진과 프롬프트를 OpenAI Images 편집 API로 전송하고 "
+                               "위 예상 비용의 유료 요청 1회를 실행하는 것을 승인합니다")
         requested = st.form_submit_button("Mock 실행" if mock else "승인한 요청 1회 생성 / 재생성")
     if requested:
         try:
@@ -90,7 +105,8 @@ if folder:
             editor = MockEditor() if mock else OpenAIEditor()
             st.session_state["generation"] = generate(folder, style, editor,
                 approved_plan_id=plan["id"] if approved else None, paid_and_upload_approved=approved)
-            st.success("Mock 저장 완료 (캐리커처 변환 아님)" if mock else "편집 이미지 저장 완료 · 아래에서 확인 후 승인하세요")
+            st.success("Mock 저장 완료 (캐리커처 변환 아님)" if mock
+                       else "편집 이미지 저장 완료 · 아래에서 확인 후 승인하세요")
         except Exception as error:
             st.error(f"생성 실패: {error}. 요청 상태는 선수 폴더에 보존됩니다.")
     generation = st.session_state.get("generation")
@@ -98,7 +114,8 @@ if folder:
         result = json.loads((generation / "result.json").read_text())
         st.image(str(generation / "caricature.png"), caption=result["status"], width=360)
         if result["status"] == "mock_success":
-            st.warning("Mock은 원본을 투명 캔버스에 배치한 저장 시험입니다. GPT 캐리커처가 아니며 실제 패키지 승인 대상이 아닙니다.")
+            st.warning("Mock은 원본을 투명 캔버스에 배치한 저장 시험입니다. "
+                       "GPT 캐리커처가 아니며 실제 패키지 승인 대상이 아닙니다.")
         elif st.button("미리본 생성 이미지 승인"):
             try:
                 st.session_state["approved_image"] = approve_image(folder, generation, confirmed=True)

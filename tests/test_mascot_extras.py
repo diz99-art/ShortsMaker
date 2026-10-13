@@ -82,9 +82,22 @@ def test_real_mascot_files_present():
 
 
 def test_renderer_draws_mascot_and_chart(tmp_path, t):
-    p = make_project(tmp_path, variation=FX, gauge_base="12연패", mood="record",
-                     items=[{"rank": r, "name": f"팀{r}", "value": f"{10 + r}연패", "description": f"KIA 타이거즈 20{10 + r}",
-                             "image": f"card{r}.png"} for r in (5, 4, 3, 2, 1)])
+    p = make_project(
+        tmp_path,
+        variation=FX,
+        gauge_base="12연패",
+        mood="record",
+        items=[
+            {
+                "rank": r,
+                "name": f"팀{r}",
+                "value": f"{10 + r}연패",
+                "description": f"KIA 타이거즈 20{10 + r}",
+                "image": f"card{r}.png",
+            }
+            for r in (5, 4, 3, 2, 1)
+        ],
+    )
     r = make_renderer(p, tmp_path, t, SONG)
     kinds = [s.kind for s in r.scenes]
     assert kinds[-1] == "chart" and r.scenes[-1].start == pytest.approx(30 - fx.CHART_LEN)
@@ -92,7 +105,8 @@ def test_renderer_draws_mascot_and_chart(tmp_path, t):
     assert x + msc.SIZE <= t.width and y + msc.SIZE <= t.card.footer.button.y + t.card.footer.button.h
     assert y > t.card.subtitle.y + t.card.subtitle.h                  # 자막과 안 겹침
     frame = np.asarray(r.frame_at(8.0))
-    assert frame[y + msc.SIZE // 2 - 30:y + msc.SIZE // 2 + 30, x + 40:x + msc.SIZE - 40].std() > 10   # 마스코트가 그려짐
+    # 마스코트가 그려짐
+    assert frame[y + msc.SIZE // 2 - 30:y + msc.SIZE // 2 + 30, x + 40:x + msc.SIZE - 40].std() > 10
     st = r.state(round(29.5 * 30))
     assert st[13] is not None and st[16][0] == "wave"                 # 그래프 장면 + 손 흔들기
     assert r._chart_bounds()["right"] < x                              # 그래프가 마스코트 자리를 비움

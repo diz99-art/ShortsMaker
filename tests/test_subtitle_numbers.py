@@ -5,8 +5,8 @@ import pytest
 
 from shortsmaker import auto_pipeline as ap
 from shortsmaker.card_mode import char_times
-from shortsmaker.lyrics_gen import auto_subtitles, pair_problems, parse_response, save_brief
 from shortsmaker.lyrics_check import check_lyrics_text
+from shortsmaker.lyrics_gen import auto_subtitles, pair_problems, parse_response, save_brief
 from shortsmaker.models import LyricLine, Word
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
 from shortsmaker.rank_extract import display_text
@@ -81,7 +81,8 @@ def test_brief_subtitles_used_in_project(hr, tmp_path):  # noqa: F811
     state, d = ap.start_from_song(song, "hb", title="x", root=root, brief="hr")
     ap.align(state, d, aligner=hr_aligner)
     q = parse_quick(EXAMPLE)
-    ap.confirm_table(state, d, [r.model_copy(update={"lyric": e.lyric, "start": e.start}) for r, e in zip(q.rows, state.rows)])
+    rows = [r.model_copy(update={"lyric": e.lyric, "start": e.start}) for r, e in zip(q.rows, state.rows)]
+    ap.confirm_table(state, d, rows)
     texts = [l.text for l in ap.load_project(d / "project.json")[0].lyrics]
     assert "심정수보다 딱 3개 더" in texts and "1위 이승엽 56홈런" in texts
     proj = ap.load_project(d / "project.json")[0]
@@ -93,9 +94,11 @@ def test_number_preview_and_apply(hr):  # noqa: F811
     state, d = ap.start_from_song(song, "np", title="x", root=root)
     ap.align(state, d, aligner=hr_aligner)
     q = parse_quick(EXAMPLE)
-    ap.confirm_table(state, d, [r.model_copy(update={"lyric": e.lyric, "start": e.start}) for r, e in zip(q.rows, state.rows)])
+    rows = [r.model_copy(update={"lyric": e.lyric, "start": e.start}) for r, e in zip(q.rows, state.rows)]
+    ap.confirm_table(state, d, rows)
     proj = ap.load_project(d / "project.json")[0]
-    old = [l.model_copy(update={"text": l.sung or l.text, "sung": ""}) for l in proj.lyrics]   # 옛 프로젝트처럼 한글 숫자
+    # 옛 프로젝트처럼 한글 숫자
+    old = [l.model_copy(update={"text": l.sung or l.text, "sung": ""}) for l in proj.lyrics]
     ap.save_project(proj.model_copy(update={"lyrics": old}), d)
     prev = ap.number_preview(state, d)
     assert any(c["from"] == "1위 이승엽 오십육 홈런" and c["to"] == "1위 이승엽 56홈런" for c in prev)

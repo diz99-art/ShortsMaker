@@ -89,11 +89,15 @@ def test_rule_mood():
 
 
 def test_detect_mood_claude_then_rules():
-    ok = lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=json.dumps(
-        {"result": '{"mood": "retro", "reason": "2003년 추억"}'}), stderr="")
+    def ok(cmd, **kw):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(
+            {"result": '{"mood": "retro", "reason": "2003년 추억"}'}), stderr="")
+
     r = detect_mood("50홈런도 6위라고?!", runner=ok)
     assert (r.mood, r.via) == ("retro", "claude") and r.designs[0] == "newspaper"
-    bad = lambda cmd, **kw: SimpleNamespace(returncode=1, stdout="", stderr="x")
+    def bad(cmd, **kw):
+        return SimpleNamespace(returncode=1, stdout="", stderr="x")
+
     r = detect_mood("KBO 역대 최장 연패", runner=bad)
     assert (r.mood, r.via) == ("humiliation", "rules")
 
