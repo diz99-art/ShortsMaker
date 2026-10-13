@@ -8,7 +8,8 @@ from PIL import Image
 from shortsmaker import effects as fx
 from shortsmaker import mascot as msc
 from shortsmaker import variation as var
-from shortsmaker.card_mode import card_timeline, make_renderer, sfx_cues
+from shortsmaker.card_mode import make_renderer
+from shortsmaker.card_timing import card_timeline, sfx_cues
 from shortsmaker.models import LyricLine, Word, load_template
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
 from tests.test_card_mode import SONG, make_project
@@ -122,7 +123,7 @@ def test_pick_bursts_rules():
     lines = [wl(10.0, 12.0, "1위 이승엽 56홈런", [(10.0, 10.5, "1위"), (10.5, 11.0, "이승엽"), (11.0, 12.0, "56홈런")]),
              wl(12.0, 14.0, "첫 50홈런 시대", [(12.0, 12.4, "첫"), (12.4, 13.2, "50홈런"), (13.2, 14.0, "시대")]),
              wl(20.0, 22.0, "54홈런 이승엽", [(20.0, 21.0, "54홈런"), (21.0, 22.0, "이승엽")])]
-    from shortsmaker.card_mode import char_times
+    from shortsmaker.card_timing import char_times
     got = fx.pick_bursts(lines, lambda i: char_times(lines[i]), ["이승엽"], strong=[(9.0, 25.0)], blocked=[])
     assert [w for _, w in got] == ["1위", "54홈런"]                    # 5초 간격, 강한 구간만
     assert all(b - a >= fx.BURST_GAP for (a, _), (b, _) in zip(got, got[1:]))

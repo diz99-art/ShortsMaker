@@ -1121,7 +1121,7 @@ def used_sfx(state: AutoState, d: Path) -> tuple[list, str]:
     v = Variation.model_validate(state.variation or {})
     if v.sfx == "off" or not state.cards_done:
         return [], ""
-    from .card_mode import card_timeline, sfx_cues
+    from .card_timing import card_timeline, sfx_cues
     try:
         project = build_project(state, d)
         t = load_template(project.channel)
@@ -1133,7 +1133,7 @@ def used_sfx(state: AutoState, d: Path) -> tuple[list, str]:
 
 def _need_sung_starts(state: AutoState, project: Project) -> bool:
     """표의 순위 낱말('3위' 세 번 …)로 가사에서 장면 시각을 못 찾고, 행마다 부른 시각이 다 있을 때."""
-    from .card_mode import CardModeError, rank_times
+    from .card_timing import CardModeError, rank_times
     starts = [r.start for r in sorted(state.rows, key=lambda r: -r.slot)]
     if any(s_ is None for s_ in starts) or starts != sorted(starts) or len(set(starts)) != len(starts):
         return False

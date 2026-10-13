@@ -233,7 +233,8 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
     """MP4 렌더와 같은 배치. 확대는 키프레임으로 옮기고, 모션 블러·글자별 타이밍은 CapCut 효과로 근사한다."""
     from PIL import Image
 
-    from .card_mode import char_times, make_renderer
+    from .card_mode import make_renderer
+    from .card_timing import char_times
     from .variation import ACCENTS
     r = make_renderer(project, project_dir, t, lines)
     c = t.card

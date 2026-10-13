@@ -4,7 +4,7 @@ import json
 import pytest
 
 from shortsmaker import auto_pipeline as ap
-from shortsmaker.card_mode import char_times
+from shortsmaker.card_timing import char_times
 from shortsmaker.lyrics_check import check_lyrics_text
 from shortsmaker.lyrics_gen import auto_subtitles, pair_problems, parse_response, save_brief
 from shortsmaker.models import LyricLine, Word

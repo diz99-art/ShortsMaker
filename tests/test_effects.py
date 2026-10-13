@@ -11,7 +11,8 @@ from shortsmaker import auto_pipeline as ap
 from shortsmaker import effects as fx
 from shortsmaker import sfx
 from shortsmaker import variation as var
-from shortsmaker.card_mode import card_timeline, hook_length, make_renderer, render_video, sfx_cues
+from shortsmaker.card_mode import make_renderer, render_video
+from shortsmaker.card_timing import card_timeline, hook_length, sfx_cues
 from shortsmaker.models import Bonus, load_template
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
 from tests.test_card_mode import SONG, make_project

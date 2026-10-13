@@ -6,16 +6,10 @@ import pytest
 from PIL import Image, ImageDraw
 from pydantic import ValidationError
 
-from shortsmaker import card_mode
-from shortsmaker.card_mode import (
-    CardModeError,
-    card_timeline,
-    char_times,
-    layout_subtitle,
-    make_renderer,
-    rank_starts_from_lyrics,
-    render_chrome,
-)
+from shortsmaker import card_layers
+from shortsmaker.card_layers import layout_subtitle, render_chrome
+from shortsmaker.card_mode import make_renderer
+from shortsmaker.card_timing import CardModeError, card_timeline, char_times, rank_starts_from_lyrics
 from shortsmaker.lyrics_align import AlignedLine, match_segments, refine_onsets, to_video_lyrics
 from shortsmaker.models import LyricLine, Motion, Project, Template, Word, load_template
 from shortsmaker.validate import pre_render
@@ -164,8 +158,8 @@ def test_typing_keeps_positions_and_two_lines(t):
     font = t.font_path(st.font)
     lay = layout_subtitle("5위, 기아 타이거즈 16연패", st, font, 655)
     assert len(lay.lines) <= 2
-    part = card_mode.render_subtitle(lay, 3, st, (1080, 1920)).getbbox()
-    full = card_mode.render_subtitle(lay, 99, st, (1080, 1920)).getbbox()
+    part = card_layers.render_subtitle(lay, 3, st, (1080, 1920)).getbbox()
+    full = card_layers.render_subtitle(lay, 99, st, (1080, 1920)).getbbox()
     assert part[0] == full[0] and part[1] == full[1] and part[2] < full[2]  # 왼쪽·위는 그대로, 글자만 늘어남
     long = layout_subtitle("팬들 입장에선 오늘은 이기겠지라는 기대마저 힘들던 시간", st, font, 655)
     assert len(long.lines) == 2 and not long.overflow                     # 폭을 넓혀서라도 2줄

@@ -57,7 +57,7 @@ def test_bursts_skip_card_words():
              LyricLine(start=16, end=19, text="역대 최고 6위?!",
                        words=[Word(start=16, end=17, text="역대"), Word(start=17, end=18, text="최고"),
                               Word(start=18, end=19, text="6위?!")])]
-    from shortsmaker.card_mode import char_times
+    from shortsmaker.card_timing import char_times
     got = fx.pick_bursts(lines, lambda i: char_times(lines[i]), [], [(0, 30)], [],
                          on_cards=["56홈런", "이승엽", "1위", "삼성 라이온즈 2003"])
     assert [w for _, w in got] == ["역대 최고"]                          # 카드에 있는 말은 생략, 5초 간격

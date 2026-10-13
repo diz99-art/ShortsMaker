@@ -6,7 +6,8 @@ import numpy as np
 from PIL import Image
 
 from shortsmaker import quick_parse_info as qi
-from shortsmaker.card_mode import card_timeline, render_chrome
+from shortsmaker.card_layers import render_chrome
+from shortsmaker.card_timing import card_timeline
 from shortsmaker.card_zip import CHAR_BOX, PANEL, SIZE, compose_zip
 from shortsmaker.info_cards import is_placeholder, prepare_cards
 from shortsmaker.models import Project, load_template

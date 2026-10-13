@@ -346,7 +346,7 @@ def test_full_mock_flow_with_tie(tmp_path):
     assert [(it.rank, it.shown_rank, it.name) for it in project.ordered_items] == [
         (5, 5, "오지환"), (4, 4, "박민우"), (3, 2, "나성범"), (2, 2, "이대호"), (1, 1, "양의지")]
     assert [project.rank_label(it) for it in project.ordered_items] == ["5위", "4위", "공동 2위", "공동 2위", "1위"]
-    from shortsmaker.card_mode import card_timeline
+    from shortsmaker.card_timing import card_timeline
     from shortsmaker.models import load_template
     scenes = card_timeline(project, load_template("yagu_v2"), project.lyrics)
     starts = [s.start for s in scenes if s.kind == "rank"]
