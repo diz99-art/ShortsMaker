@@ -1,13 +1,60 @@
+# ── 비밀 정보 ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+client_secret*.json
+token*.json
+
+# ── 파이썬·도구 ───────────────────────────────────────────
 .venv
 __pycache__/
 *.pyc
 .pytest_cache/
-output/
-build/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 .DS_Store
 .claude/
-.env
-.env.*
-!.env.example
-assets/players/
+
+# ── 내 컴퓨터에서만 쓰는 작업물 ────────────────────────────
+output/
+build/
+projects/*
+!projects/.gitkeep
 reference/
+local/
+capcut_drafts/
+*.local.json
+
+# ── 모델 (whisper·demucs 는 처음 실행 때 캐시로 내려받음) ──
+models/
+pretrained_models/
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+
+# ── 미디어: 폰트·노래·효과음·그림·영상은 올리지 않는다 ────
+# 폰트는 scripts/setup_assets.py 가 공식 배포처에서 받는다 (assets/fonts/README.md)
+*.ttf
+*.otf
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+# 예외: 직접 만든 임시 그림·예시 자료·문서용 캡처만 허용
+!assets/placeholders/*.png
+!examples/**
+!docs/images/**
