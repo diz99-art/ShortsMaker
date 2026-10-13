@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from shortsmaker import auto_pipeline as ap
@@ -49,6 +50,7 @@ def test_info_template_colors_and_no_mascot_folder():
     assert c.title.color == c.main_color and c.mascot_dir == "mascot_info"
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_run_quick_info_without_images(tmp_path):
     song = make_song(tmp_path / "pop.m4a", POP_SONG, seconds=40)
     root = tmp_path / "projects"
@@ -72,6 +74,7 @@ def test_run_quick_info_without_images(tmp_path):
     assert Path(res.output).exists()
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_run_quick_sky_badge_icons_and_title_icon(tmp_path):
     song = make_song(tmp_path / "pop.m4a", POP_SONG, seconds=40)
     root = tmp_path / "projects"

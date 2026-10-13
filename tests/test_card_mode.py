@@ -174,6 +174,7 @@ def test_subtitle_replaced_when_next_line_starts(tmp_path, t):
     assert shown == sorted(shown) and shown[0] < shown[-1]
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_render_short_video(tmp_path, t):
     from shortsmaker.pipeline import render
     p = make_project(tmp_path)

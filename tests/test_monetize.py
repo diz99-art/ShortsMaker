@@ -210,6 +210,7 @@ def test_checklist_blocks_monetize_until_all_ok(manual_project, tmp_path):
         ap.render_all(state, d, rights_confirmed=False, kind="monetize", capcut_root=tmp_path, output_dir=tmp_path)
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_draft_and_monetize_render_and_upload(manual_project, tmp_path):
     state, d = manual_project
     chosen = var.Variation(transition="pop", accent="green_gold", subtitle="word", intro="title_card")
