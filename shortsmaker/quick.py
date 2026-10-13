@@ -1,6 +1,7 @@
 """빠른 제작: 양식 답변 + 곡 + 그림 5장 → 버튼 하나로 시험 렌더까지.
 
-하늘 배지형(template sky_badge): 캐릭터 0~5장(투명 배경으로), 빈 자리는 기준 캐릭터(임시). 아이콘 5장·제목 아이콘은 선택.
+하늘 배지형(template sky_badge): 캐릭터 0~5장(투명 배경으로), 빈 자리는 기준 캐릭터(임시).
+아이콘 5장·제목 아이콘은 선택.
 
 곡 등록 → 가사 맞추기 → 가사와 표 대조 → 표 확정 → 그림 넣기(배경 제거) → 연출 자동 추천 → 합성 → 시험 렌더(_DRAFT).
 문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다.
@@ -11,9 +12,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from . import auto_pipeline as ap
 from . import production_log as plog
@@ -45,7 +46,8 @@ def compare_lyrics(sung: str, rows: list[RankRow]) -> list[str]:
         idx = next((i for i, l in enumerate(lines) if i not in used and re.search(rf"(?<!\d){r.rank}\s*위", l)
                     and (not r.player or r.player in l)), None)
         if idx is None:
-            idx = next((i for i, l in enumerate(lines) if i not in used and re.search(rf"(?<!\d){r.rank}\s*위", l)), None)
+            idx = next((i for i, l in enumerate(lines)
+                        if i not in used and re.search(rf"(?<!\d){r.rank}\s*위", l)), None)
             if idx is None:
                 issues.append(f"{who}: 가사에서 '{r.rank}위'를 부르는 줄을 찾지 못했습니다 (장면 전환 시점을 못 정함)")
                 continue
@@ -82,7 +84,8 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         return QuickResult("stopped", "양식", "붙여 넣은 양식에 틀린 줄이 있습니다", data.errors, slug=slug)
     info = template in ap.INFO_TEMPLATES
     if info and len(images) > len(data.rows):
-        return QuickResult("stopped", "그림", f"그림이 {len(images)}장입니다 ({len(data.rows)}장까지, 순위 순서대로)", slug=slug)
+        return QuickResult("stopped", "그림",
+                           f"그림이 {len(images)}장입니다 ({len(data.rows)}장까지, 순위 순서대로)", slug=slug)
     if not info and len(images) != len(data.rows):
         return QuickResult("stopped", "그림", f"그림이 {len(images)}장입니다 ({len(data.rows)}장 필요, 순위 순서대로)",
                            slug=slug)
@@ -121,14 +124,14 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
         report(0.4, "가사와 표 대조")
         issues = compare_lyrics(ap.sung_lyrics(d), data.rows)
         if issues and not accept_mismatch:
-            return QuickResult("stopped", "가사·표 대조", "곡 가사와 표가 다른 곳이 있습니다. 표대로 계속할까요?", issues,
-                               slug=slug)
+            return QuickResult("stopped", "가사·표 대조",
+                               "곡 가사와 표가 다른 곳이 있습니다. 표대로 계속할까요?", issues, slug=slug)
         if issues:
             plog.append(d, "quick_mismatch_accepted", issues=issues)
         extracted = {(r.rank, i): r for i, r in enumerate(state.rows)}
         rows = []
         used: set[int] = set()
-        for i, r in enumerate(data.rows):  # 가사 근거·시각은 추출 결과에서, 값은 표에서
+        for r in data.rows:  # 가사 근거·시각은 추출 결과에서, 값은 표에서
             # 1) 그 선수 이름을 부르는 순위 줄 (가사 순위가 표와 달라도: '오위, 박한이' ↔ 표 공동 3위)
             # 2) 같은 순위를 부르는 줄 (이름 없이 부르는 곡)
             ex = next((e for (rk, k), e in extracted.items() if k not in used and r.player and r.player in e.lyric),
@@ -158,7 +161,8 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             try:
                 ap.use_manual_image(state, d, slot, img, source_name="빠른 제작 업로드")
             except Exception as e:  # noqa: BLE001
-                return QuickResult("stopped", "그림", f"{ap.row_label(state, slot)} 그림을 읽을 수 없습니다: {e}", slug=slug)
+                return QuickResult("stopped", "그림",
+                                   f"{ap.row_label(state, slot)} 그림을 읽을 수 없습니다: {e}", slug=slug)
 
     if not state.mood and not info:  # 분위기(카드 디자인)는 야구한장만 — 하늘 배지형은 클린 카드 고정
         report(0.53, "분위기 판단 (카드 디자인)")

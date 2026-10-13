@@ -37,7 +37,8 @@ def placeholder_face(path: Path, label: str, color: str, size: int = 800, varian
     # 머리
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#F6D3B3", outline="#3a2a20", width=8)
     # 모자(야구모자 느낌)
-    d.chord([cx - r - 6, cy - r - 30, cx + r + 6, cy + r // 2], 180, 360, fill=_shade(color, 0.6), outline="#3a2a20", width=8)
+    d.chord([cx - r - 6, cy - r - 30, cx + r + 6, cy + r // 2], 180, 360,
+            fill=_shade(color, 0.6), outline="#3a2a20", width=8)
     d.rectangle([cx - 10, cy - r // 4 - 4, cx + r + 70, cy - r // 4 + 18], fill=_shade(color, 0.5))
     # 눈
     eye_dy = r // 5
@@ -56,7 +57,7 @@ def placeholder_face(path: Path, label: str, color: str, size: int = 800, varian
 def _shade(hex_color: str, k: float) -> str:
     h = hex_color.lstrip("#")
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return "#%02x%02x%02x" % (int(r * k), int(g * k), int(b * k))
+    return f"#{int(r * k):02x}{int(g * k):02x}{int(b * k):02x}"
 
 
 def synth_music(path: Path, seconds: float, bpm: int = 100) -> None:

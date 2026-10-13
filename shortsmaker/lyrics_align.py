@@ -20,9 +20,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from .ffmpeg_builder import ProgressFn, run_ffmpeg
 from .lyrics import MAX_HOLD

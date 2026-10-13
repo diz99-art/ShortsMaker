@@ -68,7 +68,7 @@ class LyricLine(BaseModel):
     sung: str = ""  # 실제로 부른 가사 (자막 표기가 다를 때 글자 시각을 이 원문 기준으로 나눈다: '오십육 홈런'→'56홈런')
 
     @model_validator(mode="after")
-    def _end_after_start(self) -> "LyricLine":
+    def _end_after_start(self) -> LyricLine:
         if self.end <= self.start:
             raise ValueError(f"가사 끝 시간({self.end})이 시작 시간({self.start})보다 커야 합니다")
         return self
@@ -86,7 +86,7 @@ class Bonus(BaseModel):
     image: str | None = None  # 보너스 카드 PNG (프로젝트 폴더 기준). 없으면 렌더러가 글자 카드를 그린다
 
     @model_validator(mode="after")
-    def _filled(self) -> "Bonus":
+    def _filled(self) -> Bonus:
         if self.kind == "rank" and not (self.rank and self.name and self.value):
             raise ValueError("보너스 순위 장면은 순위·이름·기록이 필요합니다")
         if self.kind == "teaser" and not self.text.strip():
@@ -133,13 +133,13 @@ class Project(BaseModel):
         return items
 
     @model_validator(mode="after")
-    def _one_lyrics_source(self) -> "Project":
+    def _one_lyrics_source(self) -> Project:
         if self.lyrics and self.lyrics_lrc:
             raise ValueError("lyrics(직접 입력)와 lyrics_lrc 중 하나만 사용하세요")
         return self
 
     @model_validator(mode="after")
-    def _scene_starts(self) -> "Project":
+    def _scene_starts(self) -> Project:
         """장면 시작 시간(items[].start, outro_start)은 모두 주거나 모두 비워야 하고, 순서대로 커져야 한다."""
         starts = [i.start for i in self.ordered_items]
         given = [s is not None for s in starts]
@@ -364,7 +364,8 @@ class StatLine(TextBox):
 
 
 class CardLayout(BaseModel):
-    style: Literal["card", "sticker"] = "card"  # card: 정보가 다 든 카드 / sticker: 글씨 없는 치비 스티커 + 빨간 기록 줄
+    # card: 정보가 다 든 카드 / sticker: 글씨 없는 치비 스티커 + 빨간 기록 줄
+    style: Literal["card", "sticker"] = "card"
     background_color: str = "#FCFCFC"
     pill: PillLogo
     title: TextBox                     # 파란 2줄 제목 (project.title, 줄바꿈은 '\n' 또는 자동)
@@ -388,9 +389,11 @@ class CardLayout(BaseModel):
     main_color: str | None = None      # 클린 카드·키워드·그래프의 채널 색 (없으면 야구한장 파랑)
     scene_style: Literal["card", "zip"] = "card"  # zip: 왼쪽 정보 배지 + 오른쪽 캐릭터 (하늘 배지형)
     background_image: str | None = None  # 템플릿 폴더의 배경 그림 (없으면 background_color 단색)
-    brand_logo: list[str] = Field(default_factory=list)  # assets/ 기준 로고 후보 (앞에서부터 있는 것). 있으면 알약 로고 대신
+    # assets/ 기준 로고 후보 (앞에서부터 있는 것). 있으면 알약 로고 대신
+    brand_logo: list[str] = Field(default_factory=list)
     brand_logo_box: Box | None = None
-    default_character: list[str] = Field(default_factory=list)  # assets/ 기준 기준 캐릭터 후보 (그림 없는 순위의 임시 그림)
+    # assets/ 기준 기준 캐릭터 후보 (그림 없는 순위의 임시 그림)
+    default_character: list[str] = Field(default_factory=list)
     outro_image: list[str] = Field(default_factory=list)  # assets/ 기준 엔딩 카드 후보. 있으면 마지막 outro_len 초
     outro_box: Box | None = None
     outro_len: float = 3.0
@@ -416,7 +419,7 @@ class Template(BaseModel):
     effects: Effects = Field(default_factory=Effects)
 
     @model_validator(mode="after")
-    def _mode_blocks(self) -> "Template":
+    def _mode_blocks(self) -> Template:
         if self.mode == "classic":
             missing = [k for k in ("intro", "rank", "outro", "lyrics") if getattr(self, k) is None]
             if missing:

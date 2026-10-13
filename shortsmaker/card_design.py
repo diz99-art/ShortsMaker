@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
@@ -31,7 +31,7 @@ def _rgba(c: str, a: int = 255) -> RGBA:
 
 def _mix(a: str, b: str, f: float) -> str:
     x, y = _hex(a), _hex(b)
-    return "#%02X%02X%02X" % tuple(round(x[i] + (y[i] - x[i]) * f) for i in range(3))
+    return "#{:02X}{:02X}{:02X}".format(*(round(x[i] + (y[i] - x[i]) * f) for i in range(3)))
 
 
 def _lum(c: str) -> float:
@@ -260,8 +260,9 @@ class Design:
     back: Callable[[Ctx], Image.Image]                       # 캐리커처 뒤
     rank_text: Callable[[str, int, Ctx], Image.Image]          # 순위 글자
     record_text: Callable[[str, int, Ctx], Image.Image]        # 기록 글자
-    front: Callable[[Ctx], Image.Image | None] = lambda c: None   # 캐리커처 앞 (비, 유리 금, 반짝이)
-    banner_fill: Callable[[Ctx], tuple[str, str, str]] = lambda c: (c.primary, c.secondary, "#FFFFFF")  # 띠, 테두리, 글자
+    front: Callable[[Ctx], Image.Image | None] = lambda c: None  # 캐리커처 앞 (비, 유리 금, 반짝이)
+    # 띠, 테두리, 글자
+    banner_fill: Callable[[Ctx], tuple[str, str, str]] = lambda c: (c.primary, c.secondary, "#FFFFFF")
     ribbon: str = "#111111"
     year_color: str = "#FFFFFF"
     tags: tuple[str, ...] = field(default_factory=tuple)
@@ -599,7 +600,7 @@ def _bolt_front(c: Ctx) -> Image.Image | None:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     rnd = random.Random(c.seed)
-    for k in range(4 if c.top else 2):
+    for _ in range(4 if c.top else 2):
         bolt(d, rnd.uniform(60, W - 60), 0, c.y_rank * rnd.uniform(0.6, 0.95), rnd, (255, 250, 200, 255), 10)
     return _glow_canvas(img, "#B9A8FF", 16, 1.8)
 
@@ -614,7 +615,7 @@ def _flame_back(c: Ctx) -> Image.Image:
     flames = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(flames)
     rnd = random.Random(c.seed)
-    for layer, (col, scale) in enumerate((("#FF3D00", 1.0), ("#FF9100", 0.75), ("#FFE066", 0.45))):
+    for col, scale in (("#FF3D00", 1.0), ("#FF9100", 0.75), ("#FFE066", 0.45)):
         for k in range(9):
             x = k * W / 8 + rnd.uniform(-30, 30)
             hgt = rnd.uniform(500, 900) * scale * (1.25 if c.top else 1)

@@ -18,7 +18,20 @@ from .lyrics_align import clean_lyrics_text
 from .models import PROJECTS_DIR
 from .rank_extract import find_team, load_teams, normalize_numbers
 
-TWIST = ("하지만", "그런데", "근데", "그러나", "반전", "의외로", "오히려", "사실은", "알고 보면", "뜻밖", "놀랍게도", "그래도")
+TWIST = (
+    "하지만",
+    "그런데",
+    "근데",
+    "그러나",
+    "반전",
+    "의외로",
+    "오히려",
+    "사실은",
+    "알고 보면",
+    "뜻밖",
+    "놀랍게도",
+    "그래도",
+)
 COMPARE = ("보다", "만큼", "비교", "차이", "두 배", "절반", "더 많", "더 적", "넘었", "넘어", "앞질", "뒤집", "맞먹")
 COMMENT = ("왜", "이유", "덕분", "때문", "의미", "생각", "기억", "결국", "그래서", "그만큼", "말해", "보여",
            "믿음", "기대", "가치", "증명", "무게", "크기", "상징", "뜻", "꿈", "자존심", "역사")
@@ -150,7 +163,7 @@ def check_lyrics_text(text: str, rows: list[dict] | None = None, *,
             bad = sorted(_numbers(l, names) - allowed, key=lambda x: float(x))
             if bad:
                 r.errors.append(f"데이터에 없는 숫자 {', '.join(bad)}: \"{l}\"")
-        data_teams = {find_team(str(row.get("team") or "")).name for row in rows if find_team(str(row.get("team") or ""))}
+        data_teams = {t.name for row in rows if (t := find_team(str(row.get("team") or "")))}
         teams, _ = load_teams()
         for l in lines:
             for t in teams:
@@ -177,7 +190,8 @@ def check_lyrics_text(text: str, rows: list[dict] | None = None, *,
                 continue
             n = int(m.group(1))
             # 이 줄에 나온 데이터 선수(팀) 중 그 순위의 선수(팀)가 하나도 없으면 어긋남 ('5위 양의지')
-            for names, own, what in ((all_players, players.get(n, set()), "선수"), (all_teams, teams_by.get(n, set()), "팀")):
+            checks = ((all_players, players.get(n, set()), "선수"), (all_teams, teams_by.get(n, set()), "팀"))
+            for names, own, what in checks:
                 here = {x for x in names if len(x) >= 2 and x in l}
                 if here and not here & own:
                     r.errors.append(f"{n}위와 {what} 이름이 데이터와 다릅니다: \"{l}\"")

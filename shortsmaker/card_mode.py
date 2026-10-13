@@ -18,26 +18,36 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
+from . import effects as fx
+from . import mascot as msc
+from .effects import BONUS_LEN, BONUS_MIN_TOP, CHART_LEN, HOOK_IMPACT
 from .ffmpeg_builder import FINAL_ACODEC, FINAL_VCODEC, TO_TV_YUV420, FFmpegError, _f, ffmpeg_bin
 from .models import MIN_SCENE, Box, CardLayout, LyricLine, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import SceneBuildResult, SceneLayers, _font, _hex, _wrap
-from .timeline import Scene, snap
-from . import effects as fx
-from . import mascot as msc
-from .effects import BONUS_LEN, BONUS_MIN_TOP, CHART_LEN, HOOK_IMPACT, HOOK_LEN
 from .sfx import Cue, mix_filter
-from .variation import INOUT_LEN
-from .variation import (ACCENTS, FLASH, LINE_RISE, TITLE_CARD, TOP_FLASH, TOP_GAIN, TOP_SHAKE, Variation, idle_transform,
-                        intro_motion, top_shake, transition_motion)
+from .timeline import Scene, snap
+from .variation import (
+    ACCENTS,
+    INOUT_LEN,
+    LINE_RISE,
+    TITLE_CARD,
+    TOP_FLASH,
+    TOP_GAIN,
+    Variation,
+    idle_transform,
+    intro_motion,
+    top_shake,
+    transition_motion,
+)
 
 ProgressFn = Callable[[float, str], None]
 
@@ -441,7 +451,7 @@ class MovingLayer:
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
             (round(self.w * max_s), round(self.h * max_s)), Image.LANCZOS)
 
-    def variant(self, img: Image.Image) -> "MovingLayer":
+    def variant(self, img: Image.Image) -> MovingLayer:
         """같은 자리·움직임에 그림만 바꾼 레이어 (카운트업 숫자)."""
         return MovingLayer(img, self.box, self.motion, self.fps, self.top, self.canvas, dx=self.dx)
 
@@ -739,7 +749,8 @@ class CardRenderer:
                              else fx.hook_image(self.project.hook, self.accent_rank, self.stat_color or "#EB1B1B",
                                                 t.width))
         if self.project.bonus is not None and not any(s.kind == "bonus" for s in self.scenes):
-            self.warnings.append("1위 장면 뒤 시간이 모자라 보너스 장면을 넣지 못했습니다 (영상 끝을 '반주 끝까지'로 해 보세요)")
+            self.warnings.append("1위 장면 뒤 시간이 모자라 보너스 장면을 넣지 못했습니다 "
+                                 "(영상 끝을 '반주 끝까지'로 해 보세요)")
         # 비트 (카드 펄스·마스코트 까딱·키워드 터뜨리기가 같이 씀)
         self.beatmap: fx.BeatMap | None = None
         need = self.v.beat != "off" or self.v.mascot != "off" or self.v.burst != "off"
@@ -993,10 +1004,22 @@ class CardRenderer:
             img.alpha_composite(self.title_card)
         elif chart is not None:
             c = self.t.card
-            fx.draw_chart(img, self.chart_bars, chart / fps, base=self.chart_base, base_label=self.project.gauge_base,
-                          years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
-                          accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
-                          bottom_y=c.footer.button.y - 30, clean=self.clean, main=self.main_color, **self._chart_bounds())
+            fx.draw_chart(
+                img,
+                self.chart_bars,
+                chart / fps,
+                base=self.chart_base,
+                base_label=self.project.gauge_base,
+                years=self.v.datagfx == "bars_years",
+                hot=self.stat_color or "#EB1B1B",
+                accent=self.accent_rank,
+                font_path=self._label_font,
+                top_y=c.subtitle.y + c.subtitle.h + 40,
+                bottom_y=c.footer.button.y - 30,
+                clean=self.clean,
+                main=self.main_color,
+                **self._chart_bounds(),
+            )
         else:
             transform = None
             if idle is not None:
@@ -1218,10 +1241,22 @@ class CardRenderer:
         if sc.kind == "chart":
             lay = Image.new("RGBA", self.canvas, (0, 0, 0, 0))
             c = self.t.card
-            fx.draw_chart(lay, self.chart_bars, 9.0, base=self.chart_base, base_label=self.project.gauge_base,
-                          years=self.v.datagfx == "bars_years", hot=self.stat_color or "#EB1B1B",
-                          accent=self.accent_rank, font_path=self._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
-                          bottom_y=c.footer.button.y - 30, clean=self.clean, main=self.main_color, **self._chart_bounds())
+            fx.draw_chart(
+                lay,
+                self.chart_bars,
+                9.0,
+                base=self.chart_base,
+                base_label=self.project.gauge_base,
+                years=self.v.datagfx == "bars_years",
+                hot=self.stat_color or "#EB1B1B",
+                accent=self.accent_rank,
+                font_path=self._label_font,
+                top_y=c.subtitle.y + c.subtitle.h + 40,
+                bottom_y=c.footer.button.y - 30,
+                clean=self.clean,
+                main=self.main_color,
+                **self._chart_bounds(),
+            )
             mask = lay.getchannel("A")
         elif sc.kind in ("rank", "bonus"):
             layer = self.layers[idx]
@@ -1484,7 +1519,8 @@ def render_video(r: CardRenderer, output: Path, *, progress: ProgressFn | None =
     v = r.v
     sfx_args, sfx_graph, _ = mix_filter(r.cues, v.sfx, 2) if v.sfx != "off" else ([], "", [])
     cmd += sfx_args
-    music_chain = f"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,apad,atrim=0:{_f(p.duration)},asetpts=PTS-STARTPTS"
+    music_chain = (f"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,apad,atrim=0:{_f(p.duration)},"
+                   "asetpts=PTS-STARTPTS")
     if sfx_graph:  # 효과음은 음악 위에 작게 (sfx.MIX_GAIN)
         audio = (f"{music_chain}[mus];{sfx_graph};[mus][sfx]amix=inputs=2:duration=first:normalize=0:"
                  f"dropout_transition=0,afade=t=out:st={_f(p.duration - fade)}:d={_f(fade)}[aout]")

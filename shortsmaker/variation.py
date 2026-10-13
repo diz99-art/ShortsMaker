@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, field_validator
@@ -44,11 +44,27 @@ DATAGFX = {"bars": "1위 뒤 기록 막대그래프", "bars_years": "막대그�
 DEPTHS = {"pan": "2.5D 옆으로 흐르기", "dolly": "2.5D 다가가기", "off": "입체 없음"}
 BURSTS = {"zoom": "키워드 크게 터뜨리기", "stamp": "키워드 도장 쾅", "off": "키워드 없음"}
 # 카드 디자인 (분위기별 3종, shortsmaker/card_design.py). '' 은 예전 붓 터치 카드
-CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold_rays": "금색 광선", "medal": "메달·리본",
-                "fall": "추락 그래프", "rain": "어두운 비", "glass": "금 간 유리", "bills": "지폐 비", "coins": "금화 더미",
-                "receipt": "계약서 영수증", "vs_split": "VS 분할", "lightning": "번개", "flames": "불꽃 대결",
-                "newspaper": "신문 지면", "film": "옛날 필름", "polaroid": "빛바랜 사진", "scoreboard": "전광판",
-                "neon": "네온", "breaking": "속보 LIVE"}
+CARD_DESIGNS = {
+    "": "기본 붓 터치",
+    "stadium": "스타디움 조명",
+    "gold_rays": "금색 광선",
+    "medal": "메달·리본",
+    "fall": "추락 그래프",
+    "rain": "어두운 비",
+    "glass": "금 간 유리",
+    "bills": "지폐 비",
+    "coins": "금화 더미",
+    "receipt": "계약서 영수증",
+    "vs_split": "VS 분할",
+    "lightning": "번개",
+    "flames": "불꽃 대결",
+    "newspaper": "신문 지면",
+    "film": "옛날 필름",
+    "polaroid": "빛바랜 사진",
+    "scoreboard": "전광판",
+    "neon": "네온",
+    "breaking": "속보 LIVE",
+}
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
         "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
         "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS,
@@ -152,7 +168,7 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
 
 def record(slug: str, v: Variation, root: Path = PROJECTS_DIR, kind: str = "render") -> None:
     h = load_history(root)
-    h.append({"slug": slug, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind,
+    h.append({"slug": slug, "at": datetime.now(UTC).isoformat(timespec="seconds"), "kind": kind,
               "variation": v.model_dump()})
     root.mkdir(parents=True, exist_ok=True)
     history_path(root).write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")

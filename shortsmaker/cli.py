@@ -18,9 +18,9 @@ from pathlib import Path
 from .ffmpeg_builder import FFmpegError
 from .models import load_project, load_template, save_project
 from .pipeline import LyricsError, prepare, render, work_dir_for
-from .validate import ValidationError, pre_render
 from .scenes import contact_sheet
 from .timeline import build_timeline, format_timeline
+from .validate import ValidationError, pre_render
 
 
 def cmd_timeline(args: argparse.Namespace) -> int:

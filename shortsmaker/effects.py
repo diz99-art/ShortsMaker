@@ -14,7 +14,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .card_compose import H as CARD_H, W as CARD_W, brush_band, styled_text
+from .card_compose import H as CARD_H
+from .card_compose import W as CARD_W
+from .card_compose import brush_band, styled_text
 from .rank_extract import team_colors
 from .scenes import _font, _hex
 
@@ -37,7 +39,7 @@ class BeatMap:
     beats: list[float] = field(default_factory=list)          # 곡 기준 초
     strong: list[tuple[float, float]] = field(default_factory=list)  # 강한 구간 [시작, 끝]
 
-    def shifted(self, offset: float) -> "BeatMap":
+    def shifted(self, offset: float) -> BeatMap:
         """영상 기준 시각으로 (music_start 만큼 당김)."""
         return BeatMap(self.tempo, [b - offset for b in self.beats if b >= offset],
                        [(a - offset, b - offset) for a, b in self.strong if b > offset])
@@ -329,7 +331,8 @@ def chart_bars(items) -> list[ChartBar]:
             continue
         year = next(iter(re.findall(r"(?<!\d)(\d{4})(?!\d)", it.description or "")), "")
         team = re.sub(r"\s*\d{4}\s*$", "", it.description or "").strip()
-        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.shown_rank == 1))  # 공동 1위 모두
+        # top: 공동 1위 모두
+        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.shown_rank == 1))
     return bars
 
 
@@ -409,7 +412,20 @@ BURST_GAP = 5.0          # 터뜨림 사이 최소 간격
 BURST_MAX = 3
 
 
-KEYWORDS = ("역대 최고", "역대 최다", "역대 최초", "신기록", "최초", "최고", "최다", "최악", "레전드", "전설", "반전", "충격")
+KEYWORDS = (
+    "역대 최고",
+    "역대 최다",
+    "역대 최초",
+    "신기록",
+    "최초",
+    "최고",
+    "최다",
+    "최악",
+    "레전드",
+    "전설",
+    "반전",
+    "충격",
+)
 
 
 def _norm(t: str) -> str:

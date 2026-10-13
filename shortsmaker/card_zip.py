@@ -109,8 +109,8 @@ def _rank_badge(label: str) -> Image.Image:
         f = _fit_font(label, FONT_DISPLAY, 60, int(r * 1.8))
         d.text((cx, cy), label, font=f, anchor="mm", fill=(255, 255, 255), stroke_width=6, stroke_fill=(18, 59, 140))
     _crown(d, cx - r * 0.25, cy - r * 0.86, r * 0.8)
-    for k, (a, b) in enumerate([((cx + r * 0.95, cy - r * 1.05), (cx + r * 1.12, cy - r * 1.35)),
-                                ((cx + r * 1.2, cy - r * 0.8), (cx + r * 1.5, cy - r * 0.98))]):
+    for a, b in [((cx + r * 0.95, cy - r * 1.05), (cx + r * 1.12, cy - r * 1.35)),
+                 ((cx + r * 1.2, cy - r * 0.8), (cx + r * 1.5, cy - r * 0.98))]:
         d.line([a, b], fill=(255, 196, 26), width=9)
     return im
 

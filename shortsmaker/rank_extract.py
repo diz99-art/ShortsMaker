@@ -346,7 +346,8 @@ def rows_complete(rows: list[RankRow], *, need_team: bool = True) -> list[str]:
     if len(filled) != 5:
         problems.append(f"항목은 5개여야 합니다 (현재 {len(filled)}개). 공동 순위면 같은 순위를 두 행에 적으세요")
     elif not competition_ranks_ok(ranks):
-        problems.append(f"순위가 공동 순위 규칙에 맞지 않습니다 (현재 {ranks}). 예: 공동 2위 2명이면 1, 2, 2, 4, 5 (3위 없음)")
+        problems.append(f"순위가 공동 순위 규칙에 맞지 않습니다 (현재 {ranks}). "
+                        "예: 공동 2위 2명이면 1, 2, 2, 4, 5 (3위 없음)")
     for r in filled:
         for field, name in [("team", "팀"), ("player", "선수"), ("record", "기록")]:
             if not getattr(r, field).strip() and (need_team or field != "team"):  # 하늘 배지형: 구분(team)은 비어도 됨

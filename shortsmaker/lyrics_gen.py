@@ -48,8 +48,11 @@ def _data_lines(rows: list[dict]) -> str:
 
 def build_prompt(topic: str, title: str, rows: list[dict], source: str, *, avoid: list[str] | None = None,
                  n: int = 3) -> str:
-    avoid_txt = ("\n이미 다른 영상에 쓴 표현이니 피할 것: " + ", ".join(f"\"{a}\"" for a in avoid[:30])) if avoid else ""
-    return f"""너는 유튜브 쇼츠 '야구한장' 채널의 작사가야. 아래 '확정 데이터'만 사용해서 Suno로 만들 노래 가사를 {n}가지 버전으로 써줘.
+    avoid_txt = ""
+    if avoid:
+        avoid_txt = "\n이미 다른 영상에 쓴 표현이니 피할 것: " + ", ".join(f"\"{a}\"" for a in avoid[:30])
+    return f"""너는 유튜브 쇼츠 '야구한장' 채널의 작사가야. \
+아래 '확정 데이터'만 사용해서 Suno로 만들 노래 가사를 {n}가지 버전으로 써줘.
 
 주제: {topic}
 영상 제목(참고): {title.replace(chr(10), ' / ')}
@@ -159,15 +162,34 @@ def check_versions(draft: Draft, rows: list[dict], history) -> list[LyricsReport
 
 def brief_markdown(title: str, style: str, lyrics: str, *, topic: str = "", source: str = "",
                    subtitles: str = "") -> str:
-    return "\n".join([
-        f"# {title}", "",
-        "## 제목 (Title)", "", title, "",
-        "## Style", "", style, "",
-        "## Lyrics (노래용 — Suno 에 이것을 붙여 넣기)", "", lyrics.strip(), "",
-        *(["## 자막용 (영상 자막에 자동으로 쓰임, Suno 에 넣지 않음)", "", subtitles.strip(), ""] if subtitles.strip() else []),
-        "---", f"주제: {topic}" if topic else "", f"데이터 출처: {source}" if source else "",
-        "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).", "",
-    ])
+    return "\n".join(
+        [
+            f"# {title}",
+            "",
+            "## 제목 (Title)",
+            "",
+            title,
+            "",
+            "## Style",
+            "",
+            style,
+            "",
+            "## Lyrics (노래용 — Suno 에 이것을 붙여 넣기)",
+            "",
+            lyrics.strip(),
+            "",
+            *(
+                ["## 자막용 (영상 자막에 자동으로 쓰임, Suno 에 넣지 않음)", "", subtitles.strip(), ""]
+                if subtitles.strip()
+                else []
+            ),
+            "---",
+            f"주제: {topic}" if topic else "",
+            f"데이터 출처: {source}" if source else "",
+            "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).",
+            "",
+        ]
+    )
 
 
 def save_brief(folder: Path, title: str, style: str, lyrics: str, report: LyricsReport, *, topic: str = "",

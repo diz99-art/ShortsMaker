@@ -6,7 +6,7 @@ import io
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -68,7 +68,8 @@ class Style(BaseModel):
     def prompt(self) -> str:
         text = DEFAULT_PROMPT
         if self.framing == "upper":
-            text = text.replace("머리부터 발끝까지 잘리지 않도록 하고,", "머리와 양 어깨가 잘리지 않는 상반신 구도로 만들고,")
+            text = text.replace("머리부터 발끝까지 잘리지 않도록 하고,",
+                                "머리와 양 어깨가 잘리지 않는 상반신 구도로 만들고,")
         if not self.transparent:
             text = text.replace("캐릭터 외의 배경은 투명하게 만들어줘.", "캐릭터 뒤 배경은 단순한 흰색으로 만들어줘.")
         level = {"low": "약하게", "medium": "보통으로", "high": "강하게"}[self.exaggeration]
@@ -77,7 +78,7 @@ class Style(BaseModel):
 
 
 def stamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def digest(data: bytes) -> str:
@@ -132,14 +133,17 @@ def search_photos(player: Player, session=None, limit=12, query: str | None = No
         except (ValueError, KeyError):
             continue
         meta = info.get("extmetadata", {})
-        field = lambda name: clean(meta.get(name, {}).get("value", ""))
+        def field(name: str, meta: dict = meta) -> str:
+            return clean(meta.get(name, {}).get("value", ""))
+
         license_name = field("LicenseShortName") or "확인 불가"
         normalized = license_name.upper().replace("_", "-")
         commercial = (normalized.startswith(("CC BY ", "CC BY-SA ", "CC-BY-", "CC-BY-SA-"))
                       or normalized in ("CC0", "CC0 1.0", "PUBLIC DOMAIN"))
         if "NC" in normalized or "ND" in normalized:
             commercial = False
-        warning = "라이선스 메타데이터만으로 이용 권한을 보장하지 않습니다. 출처·저작자·표시/동일조건 및 초상권을 확인하세요."
+        warning = ("라이선스 메타데이터만으로 이용 권한을 보장하지 않습니다. "
+                   "출처·저작자·표시/동일조건 및 초상권을 확인하세요.")
         if not commercial:
             warning = "상업적 이용·변형 권한을 확인할 수 없습니다. 다운로드·변환 전에 직접 확인해야 합니다. " + warning
         results.append(Photo(page_id=page["pageid"], title=clean(page["title"]), url=info["url"],

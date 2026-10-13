@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 LOG_FILE = "production_log.json"
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 def log_path(project_dir: Path) -> Path:
@@ -39,8 +39,10 @@ def diff_rows(before: list[dict], after: list[dict], fields: tuple[str, ...]) ->
     changes = []
     used = set()
     for i, a in enumerate(after):
-        b = next((x for j, x in enumerate(before) if j not in used and x.get("lyric") and x.get("lyric") == a.get("lyric")),
-                 before[i] if i < len(before) and i not in used else None)
+        b = next(
+            (x for j, x in enumerate(before) if j not in used and x.get("lyric") and x.get("lyric") == a.get("lyric")),
+            before[i] if i < len(before) and i not in used else None,
+        )
         if b is None:
             changes.append({"row": i, "added": {f: a.get(f) for f in fields}})
             continue

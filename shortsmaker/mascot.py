@@ -257,7 +257,8 @@ def make_plan(scenes, lines, *, mood: str, bubbles: dict[str, str], hook_len: fl
         elif sc.kind == "bonus":
             plan.exprs.append((sc.start, sc.end, "shock"))
     wave_from = max(0.0, duration - WAVE_LEN)
-    plan.exprs = [(a, min(b, wave_from), e) for a, b, e in plan.exprs if a < wave_from] + [(wave_from, duration, "wave")]
+    kept = [(a, min(b, wave_from), e) for a, b, e in plan.exprs if a < wave_from]
+    plan.exprs = kept + [(wave_from, duration, "wave")]
     for t in adlib_times(lines):
         plan.reactions.append((t, t + REACT_LEN, "laugh" if mood == "humiliation" else "cheer"))
 

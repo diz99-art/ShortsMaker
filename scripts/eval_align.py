@@ -45,8 +45,10 @@ def main() -> int:
     a = ap.parse_args()
     res = compare(Path(a.auto).read_text(encoding="utf-8-sig"), Path(a.reference).read_text(encoding="utf-8-sig"))
     print(f"{'정답 시작':>8} {'자동 시작':>8} {'시작 차':>7} {'끝 차':>7}  가사")
+    def fmt(v: float | None) -> str:
+        return f"{v:8.2f}" if v is not None else "       -"
+
     for text, rs, as_, ds, de in res["rows"]:
-        fmt = lambda v: f"{v:8.2f}" if v is not None else "       -"
         print(f"{fmt(rs)} {fmt(as_)} {fmt(ds)[1:]} {fmt(de)[1:]}  {text}")
     n = res["total"]
     print(f"\n전체 {n}줄 (자동 결과에서 찾은 줄 {res['matched']})")

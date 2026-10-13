@@ -8,10 +8,10 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .models import Template
 from .scenes import SceneLayers

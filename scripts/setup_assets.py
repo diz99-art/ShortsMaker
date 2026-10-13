@@ -98,7 +98,7 @@ def setup_sfx() -> list[str]:
 
 
 def setup_samples() -> list[str]:
-    if (ROOT / "samples" / "yagu_demo" / "music.mp3").exists() and (ROOT / "samples" / "info_demo" / "music.mp3").exists():
+    if all((ROOT / "samples" / name / "music.mp3").exists() for name in ("yagu_demo", "info_demo")):
         return []
     subprocess.run([sys.executable, str(ROOT / "scripts" / "make_samples.py")], check=True)
     return ["samples/yagu_demo", "samples/info_demo"]
