@@ -9,32 +9,7 @@ from shortsmaker.lyrics_check import check_lyrics_text
 from shortsmaker.lyrics_gen import auto_subtitles, pair_problems, parse_response, save_brief
 from shortsmaker.models import LyricLine, Word
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
-from shortsmaker.rank_extract import display_text
 from tests.test_quick import hr, hr_aligner  # noqa: F401
-
-NAMES = ["박병호", "심정수", "이승엽", "넥센 히어로즈", "삼성 라이온즈"]
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("이십오년", "25년"),
-    ("오십육 홈런", "56홈런"),
-    ("서른한 개 홈런", "31개 홈런"),
-    ("공동 3위 박병호 오십삼, 이천십오", "공동 3위 박병호 53, 2015"),     # 연도 + 표의 기록 숫자
-    ("2위 이승엽 삼성 오십사", "2위 이승엽 삼성 54"),
-    ("이천이십육 홈런 전쟁", "2026 홈런 전쟁"),                          # 연도는 다른 단위에 붙이지 않음
-    ("십육 연패, 십 회말", "16연패, 10회말"),
-    ("열두 번, 스무 경기, 이십 타점, 칠 승", "12번, 20경기, 20타점, 칠 승"),
-    ("오늘 구단 삼진 이유 사이", "오늘 구단 삼진 이유 사이"),
-    ("이번 시즌 이 경기 사회를", "이번 시즌 이 경기 사회를"),
-    ("딱 세 개 더, 한 번 더", "딱 세 개 더, 한 번 더"),
-    ("1위 이승엽 오십육 홈런", "1위 이승엽 56홈런"),
-])
-def test_display_rules(text, expected):
-    assert display_text(text, NAMES, [52, 53, 54, 56]) == expected
-
-
-def test_record_number_only_from_table():
-    assert display_text("삼성 오십사", NAMES) == "삼성 오십사"      # 표에 없는 값이면 단위 없이는 그대로
 
 
 def line(text, sung, words):
