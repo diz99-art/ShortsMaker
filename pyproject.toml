@@ -1,0 +1,60 @@
+# 도구 설정만 둔다 (패키지 배포는 하지 않음). 실행: make lint / make typecheck / make cov
+[project]
+name = "shortsmaker"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E741",  # l·I 같은 짧은 변수 이름 — 좌표 계산 코드에서 관례적으로 씀
+    "B905",  # zip(strict=) — 길이가 다른 목록을 일부러 짧은 쪽에 맞추는 곳이 있음
+]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["shortsmaker"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# 아직 오류가 남아 있는 모듈 — 고칠 때마다 이 목록에서 빼서 검사 대상으로 옮긴다 (docs/decisions.md)
+[[tool.mypy.overrides]]
+module = [
+    "shortsmaker.auto_pipeline",
+    "shortsmaker.bg_remove",
+    "shortsmaker.capcut_export",
+    "shortsmaker.card_clean",
+    "shortsmaker.card_compose",
+    "shortsmaker.card_design",
+    "shortsmaker.card_mode",
+    "shortsmaker.card_zip",
+    "shortsmaker.editing_package",
+    "shortsmaker.effects",
+    "shortsmaker.info_cards",
+    "shortsmaker.lyrics",
+    "shortsmaker.lyrics_align",
+    "shortsmaker.lyrics_check",
+    "shortsmaker.mascot",
+    "shortsmaker.models",
+    "shortsmaker.player_assets",
+    "shortsmaker.quick",
+    "shortsmaker.quick_parse",
+    "shortsmaker.quick_parse_info",
+    "shortsmaker.rank_extract",
+    "shortsmaker.scenes",
+    "shortsmaker.timeline",
+    "shortsmaker.validate",
+    "shortsmaker.variation",
+]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["shortsmaker"]
+
+[tool.coverage.report]
+skip_empty = true
