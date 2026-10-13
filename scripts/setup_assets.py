@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -32,9 +33,18 @@ GMARKET_FILES = ("GmarketSansTTFMedium.ttf", "GmarketSansTTFBold.ttf")
 CHEER_START = {"cheer_a.wav": 0.3, "cheer_b.wav": 0.2}  # credits.json 의 edit 기록과 같은 값
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """python.org 판 macOS 파이썬은 인증서 묶음이 없을 수 있어 certifi(requests 와 같이 설치됨)를 쓴다."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 def _get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "ShortsMaker-setup"})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as r:
         return r.read()
 
 
