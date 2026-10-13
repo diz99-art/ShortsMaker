@@ -11,7 +11,7 @@ from shortsmaker.info_cards import is_placeholder, prepare_cards
 from shortsmaker.models import Project, load_template
 from tests.test_quick import hr_aligner  # noqa: F401  (같은 가짜 정렬기를 쓰는 다른 테스트와 맞춤)
 
-T = load_template("sky_badge")
+T = load_template("sky_badge", local=False)  # 내 컴퓨터의 template.local.json 과 무관하게 공개 템플릿으로
 
 
 def _project(tmp_path: Path, **kw) -> Project:

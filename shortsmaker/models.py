@@ -470,17 +470,18 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
-def load_template(channel: str) -> Template:
+def load_template(channel: str, *, local: bool = True) -> Template:
     """templates/<channel>/template.json 을 읽는다.
-    같은 폴더에 template.local.json 이 있으면 그 값으로 덮어쓴다 (git 에 넣지 않는 채널 이름·핸들 등)."""
+    같은 폴더에 template.local.json 이 있으면 그 값으로 덮어쓴다 (git 에 넣지 않는 채널 이름·핸들 등).
+    local=False 면 덮어쓰지 않은 공개 템플릿 그대로 (테스트용)."""
     tdir = TEMPLATES_DIR / channel
     path = tdir / "template.json"
     if not path.exists():
         raise FileNotFoundError(f"템플릿이 없습니다: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
-    local = tdir / "template.local.json"
-    if local.is_file():
-        data = _deep_merge(data, json.loads(local.read_text(encoding="utf-8")))
+    override = tdir / "template.local.json"
+    if local and override.is_file():
+        data = _deep_merge(data, json.loads(override.read_text(encoding="utf-8")))
     t = Template.model_validate(data)
     t._template_dir = tdir
     return t

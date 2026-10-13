@@ -40,6 +40,7 @@ def test_local_template_override(tmp_path, monkeypatch):
     t = models.load_template("sky_badge")
     assert t.name == "내 채널" and t.card.footer.handle_text == "@my_channel"
     assert t.card.title == base.card.title                      # 나머지는 그대로 (깊은 병합)
+    assert models.load_template("sky_badge", local=False).name == base.name
 
 
 def test_repo_file_check(tmp_path, monkeypatch):
