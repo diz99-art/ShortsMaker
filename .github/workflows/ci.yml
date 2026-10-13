@@ -1,8 +1,13 @@
 name: CI
 
+# PR: 빠른 검사 (실제 MP4 렌더 테스트 제외, 목표 5분 이내)
+# main 에 합쳐질 때·수동 실행(Actions → CI → Run workflow): 렌더 테스트까지 전체
+# 브랜치 push 는 PR 에서 검사한다 (같은 검사가 두 번 돌지 않게). 기록: docs/decisions.md
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +21,8 @@ jobs:
     name: ruff → mypy → pytest
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      FULL: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +34,20 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
+      # 설치가 끝난 파이썬 폴더를 통째로 캐시 → 요구 사항이 그대로면 pip install 을 건너뜀
+      - name: 패키지 캐시
+        id: pkgs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.pythonLocation }}
+          key: pkgs-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+
+      - name: 패키지 설치 (whisper·demucs·torch 는 설치하지 않음 → 실제 모델 테스트는 건너뜀)
+        if: steps.pkgs.outputs.cache-hit != 'true'
+        run: pip install -r requirements-dev.txt
+
       - name: FFmpeg 설치
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
-
-      - name: 패키지 설치 (가사 자동 맞추기용 whisper·demucs 는 설치하지 않음 → 그 테스트는 건너뜀)
-        run: pip install -r requirements-dev.txt
 
       - name: 올리면 안 되는 파일 검사 (폰트·오디오·그림·5MB 초과·.env)
         run: python scripts/check_repo_files.py --all
@@ -54,8 +70,15 @@ jobs:
       - name: 폰트(OFL)·효과음·샘플 준비
         run: python scripts/setup_assets.py
 
-      - name: pytest (커버리지)
-        run: pytest -q -n auto --cov --cov-report=term-missing:skip-covered --cov-report=xml
+      - name: pytest (PR 은 렌더 제외, main·수동은 전체 + 커버리지 하한 89%)
+        env:
+          COVERAGE_CORE: sysmon  # Python 3.12 의 sys.monitoring 으로 측정 (기존 방식보다 빠름)
+        run: |
+          if [ "$FULL" = "true" ]; then
+            pytest -q -n auto --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-fail-under=89
+          else
+            pytest -q -n auto -m "not slow" --cov --cov-report=term-missing:skip-covered --cov-report=xml
+          fi
 
       - name: 커버리지 보고서 보관
         if: always()
