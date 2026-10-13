@@ -6,17 +6,15 @@
 ## 설치 (macOS)
 
 ```sh
-brew install ffmpeg                      # ffmpeg·ffprobe
-python3.12 -m venv .venv                 # Python 3.11 이상
-.venv/bin/pip install -r requirements.txt
+brew install ffmpeg      # ffmpeg·ffprobe
+make setup               # .venv + 패키지 + 폰트·효과음·샘플 내려받기/만들기 (이미 있으면 건너뜀)
+make demo                # examples/demo 가짜 자료로 30초 시험 영상 → output/demo.mp4
+make hooks               # (선택) 폰트·노래·그림이 커밋되지 않게 막는 git hook
 ```
 
-- 한글 폰트: `assets/fonts/`에 Pretendard(OFL, `Pretendard-LICENSE.txt`)가 들어 있다.
-  다른 폰트를 쓰려면 파일을 넣고 `templates/<채널>/template.json`의 `fonts`를 바꾼다.
-- 테스트용 샘플 생성 (placeholder 캐리커처 + 직접 합성한 음악):
-  ```sh
-  .venv/bin/python scripts/make_samples.py   # samples/yagu_demo (50초, 직접 입력 가사), samples/info_demo (40초, LRC)
-  ```
+- 폰트·노래·그림은 git 에 넣지 않는다. 폰트는 `make setup` 이 공식 배포처에서 받는다 (`assets/fonts/README.md`).
+- 채널 로고·배경·캐릭터 원본이 없으면 `assets/placeholders/` 의 단색 도형 임시 그림으로 대신한다 (임시 기본 캐릭터가 들어간 카드는 수익화용 렌더에서 막힘).
+- 내 컴퓨터에서만 쓰는 채널 이름·핸들은 `templates/<채널>/template.local.json` 에 적으면 template.json 을 덮어쓴다 (git 제외).
 
 ## 실행
 
