@@ -1,5 +1,9 @@
 # ShortsMaker
 
+[![CI](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml)
+![coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
+![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+
 '야구한장', '정보 TOP 5' 채널용 **TOP 5 유튜브 쇼츠 자동 제작** 프로그램 (1차).
 제목·5개 항목·이미지·음악·가사 타이밍을 입력하면 1080×1920 / 30fps MP4(기본 50초)를 만든다.
 
