@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ruff → mypy → pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: FFmpeg 설치
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+
+      - name: 패키지 설치 (가사 자동 맞추기용 whisper·demucs 는 설치하지 않음 → 그 테스트는 건너뜀)
+        run: pip install -r requirements-dev.txt
+
+      - name: 올리면 안 되는 파일 검사 (폰트·오디오·그림·5MB 초과·.env)
+        run: python scripts/check_repo_files.py --all
+
+      - name: ruff
+        run: ruff check .
+
+      - name: mypy
+        run: mypy
+
+      - name: 폰트·효과음 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            assets/fonts/*.ttf
+            assets/fonts/*.otf
+            assets/sfx/*.wav
+          key: assets-${{ hashFiles('scripts/setup_assets.py') }}
+
+      - name: 폰트(OFL)·효과음·샘플 준비
+        run: python scripts/setup_assets.py
+
+      - name: pytest (커버리지)
+        run: pytest -q -n auto --cov --cov-report=term-missing:skip-covered --cov-report=xml
+
+      - name: 커버리지 보고서 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
