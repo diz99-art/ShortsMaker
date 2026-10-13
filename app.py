@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -107,7 +108,7 @@ def _collect_project(lyrics_df: pd.DataFrame) -> tuple[Project, Path]:
     target = _target_dir()
     target.mkdir(parents=True, exist_ok=True)
 
-    def place(upload, existing: str | None, stem: str) -> str | None:
+    def place(upload: Any, existing: str | None, stem: str) -> str | None:  # upload: st.file_uploader 결과
         if upload is not None:
             name = f"{stem}{Path(upload.name).suffix.lower()}"
             (target / name).write_bytes(upload.getvalue())

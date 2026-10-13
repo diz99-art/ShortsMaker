@@ -32,7 +32,7 @@ class Composition(BaseModel):
     lyrics: list[Lyric] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_timing(self):
+    def validate_timing(self) -> "Composition":
         if [s.kind for s in self.scenes] != ["intro", *(["rank"] * 5), "outro"]:
             raise ValueError("장면은 인트로, 5개 순위, 아웃트로 순서여야 합니다")
         if [s.rank for s in self.scenes[1:6]] != [5, 4, 3, 2, 1]:
@@ -64,7 +64,7 @@ class Composition(BaseModel):
         return self
 
 
-def run(command):
+def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(command, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as error:

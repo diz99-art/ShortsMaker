@@ -8,7 +8,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import requests
@@ -85,12 +85,12 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def write_json_new(path: Path, data: dict):
+def write_json_new(path: Path, data: dict) -> None:
     with path.open("x", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
-def safe_media_url(url: str):
+def safe_media_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "upload.wikimedia.org" or parsed.username or parsed.password:
         raise ValueError("Wikimedia HTTPS 미디어 URL만 허용합니다")
@@ -98,7 +98,7 @@ def safe_media_url(url: str):
         raise ValueError("허용하지 않는 포트입니다")
 
 
-def new_session():
+def new_session() -> requests.Session:
     session = requests.Session()
     session.trust_env = False
     session.headers.update({"User-Agent": "ShortsMaker/0.3 (local media preparation; Wikimedia Commons API)"})
@@ -109,7 +109,8 @@ def default_query(player: Player) -> str:
     return f'"{player.name.strip()}" "{player.team.strip()}" {player.season} baseball'
 
 
-def search_photos(player: Player, session=None, limit=12, query: str | None = None) -> list[Photo]:
+def search_photos(player: Player, session: requests.Session | None = None, limit: int = 12,
+                  query: str | None = None) -> list[Photo]:
     # No silent broadening: an empty strict search stays empty. 넓힌 검색어는 사용자가 화면에서 직접 고친 것만 쓴다.
     query = (query or default_query(player)).strip()
     session = session or new_session()
@@ -165,7 +166,7 @@ def validate_image(data: bytes) -> dict:
     return info
 
 
-def fetch_image(url: str, session=None) -> bytes:
+def fetch_image(url: str, session: requests.Session | None = None) -> bytes:
     safe_media_url(url)
     session = session or new_session()
     # Redirects deliberately rejected; no unchecked remote destination.
@@ -233,6 +234,13 @@ def generation_plan(folder: Path, style: Style) -> dict:
     return plan
 
 
+class Editor(Protocol):
+    """사진 → 캐리커처 편집기 (MockEditor·OpenAIEditor 가 같은 모양)."""
+    is_mock: bool
+
+    def edit(self, original: Path, style: Style, prompt: str) -> tuple[bytes, dict]: ...
+
+
 class MockEditor:
     """Offline transport fixture, explicitly NOT a GPT-created caricature."""
     is_mock = True
@@ -250,7 +258,7 @@ class MockEditor:
 class OpenAIEditor:
     is_mock = False
 
-    def __init__(self, client=None):
+    def __init__(self, client: Any = None) -> None:
         if client is None:
             if not os.environ.get("OPENAI_API_KEY"):
                 raise ValueError("OPENAI_API_KEY 환경변수가 필요합니다. 키를 채팅이나 코드에 넣지 마세요")
@@ -271,7 +279,7 @@ class OpenAIEditor:
         return base64.b64decode(response.data[0].b64_json, validate=True), usage
 
 
-def generate(folder: Path, style: Style, editor, *, approved_plan_id: str | None = None,
+def generate(folder: Path, style: Style, editor: Editor, *, approved_plan_id: str | None = None,
              paid_and_upload_approved: bool = False, max_requests: int = 3) -> Path:
     plan = generation_plan(folder, style)
     mock = bool(editor.is_mock)
@@ -316,7 +324,7 @@ def generate(folder: Path, style: Style, editor, *, approved_plan_id: str | None
         lock.rmdir()
 
 
-def approve_image(folder: Path, generation: Path, *, confirmed: bool, allow_mock=False) -> Path:
+def approve_image(folder: Path, generation: Path, *, confirmed: bool, allow_mock: bool = False) -> Path:
     if not confirmed:
         raise PermissionError("이미지 미리보기 후 승인이 필요합니다")
     generation = generation.resolve()
@@ -341,7 +349,8 @@ def approve_image(folder: Path, generation: Path, *, confirmed: bool, allow_mock
     return destination
 
 
-def connect_to_composition(config: Path, destination: Path, image: Path, rank: int, *, allow_mock=False) -> Path:
+def connect_to_composition(config: Path, destination: Path, image: Path, rank: int, *,
+                           allow_mock: bool = False) -> Path:
     from shortsmaker.editing_package import Composition
     approval = json.loads(image.with_suffix(".approval.json").read_text())
     if approval["mock"] and not allow_mock:

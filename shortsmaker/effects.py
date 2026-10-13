@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from PIL import Image, ImageDraw
 from .card_compose import H as CARD_H
 from .card_compose import W as CARD_W
 from .card_compose import brush_band, styled_text
+from .models import Item, LyricLine
 from .rank_extract import team_colors
 from .scenes import _font, _hex
 
@@ -322,7 +324,7 @@ class ChartBar:
     top: bool = False
 
 
-def chart_bars(items) -> list[ChartBar]:
+def chart_bars(items: list[Item]) -> list[ChartBar]:
     """영상 순서(5위→1위)대로. items: Project.ordered_items."""
     bars = []
     for it in items:
@@ -432,8 +434,9 @@ def _norm(t: str) -> str:
     return re.sub(r"[\s?!.,…~]+", "", t)
 
 
-def pick_bursts(lines, times_of, names: list[str], strong: list[tuple[float, float]],
-                blocked: list[tuple[float, float]], on_cards: list[str] | None = None) -> list[tuple[float, str]]:
+def pick_bursts(lines: list[LyricLine], times_of: Callable[[int], list[float]], names: list[str],
+                strong: list[tuple[float, float]], blocked: list[tuple[float, float]],
+                on_cards: list[str] | None = None) -> list[tuple[float, str]]:
     """강한 구간(후렴)에서 숫자·순위·핵심 단어('역대 최고' 등)를 부르는 순간. 간격 BURST_GAP 이상, 최대 BURST_MAX 번.
 
     on_cards: 카드에 이미 크게 나오는 글자(기록·이름·순위·팀·연도) — 같은 말이면 터뜨리지 않는다."""

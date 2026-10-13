@@ -9,6 +9,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -83,7 +84,7 @@ NAME = ss.brief
 b = load(NAME)
 
 
-def log(event: str, **data) -> None:
+def log(event: str, **data: Any) -> None:
     b["log"].append({"at": plog.now(), "event": event, **data})
     save(NAME, b)
 

@@ -10,11 +10,13 @@ import json
 import logging
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .card_design import MOODS, designs_for
 
 TIMEOUT = 120
+Runner = Callable[..., subprocess.CompletedProcess[str]]  # subprocess.run 과 같은 모양 (테스트에서 바꿔 끼움)
 log = logging.getLogger(__name__)
 
 # 키워드 규칙 (위에서부터 먼저 맞는 것, 정규식)
@@ -79,7 +81,7 @@ def mood_prompt(title: str, topic: str, memos: list[str], rows: list[dict]) -> s
 답은 JSON 하나만: {{"mood": "record", "reason": "한 줄 이유"}}"""
 
 
-def claude_mood(prompt: str, *, runner=subprocess.run, timeout: int = TIMEOUT) -> MoodResult:
+def claude_mood(prompt: str, *, runner: Runner = subprocess.run, timeout: int = TIMEOUT) -> MoodResult:
     cmd = ["claude", "-p", "--output-format", "json", "--tools", "", "--no-session-persistence"]
     proc = runner(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
@@ -102,7 +104,7 @@ def claude_mood(prompt: str, *, runner=subprocess.run, timeout: int = TIMEOUT) -
 
 
 def detect_mood(title: str, topic: str = "", memos: list[str] | None = None, rows: list[dict] | None = None, *,
-                use_claude: bool = True, runner=subprocess.run) -> MoodResult:
+                use_claude: bool = True, runner: Runner = subprocess.run) -> MoodResult:
     rows = rows or []
     memos = memos or []
     if use_claude:

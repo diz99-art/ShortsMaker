@@ -172,7 +172,7 @@ class MovingLayer:
     """박스 가운데를 중심으로 배율 s, 가로 이동 dx 로 그린다. 모션 블러는 셔터 동안의 위치·배율을 평균."""
 
     def __init__(self, path: Path | Image.Image, box: Box, motion: Motion, fps: int, top: int, canvas: tuple[int, int],
-                 dx: list[tuple[float, float]] | None = None):
+                 dx: list[tuple[float, float]] | None = None) -> None:
         self.src = path.convert("RGBA") if isinstance(path, Image.Image) else _load_rgba(str(path))
         self.box, self.motion, self.fps, self.top, self.canvas, self.dx = box, motion, fps, top, canvas, dx
         self.w, self.h = fit_size(self.src.size, box)

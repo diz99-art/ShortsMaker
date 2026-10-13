@@ -217,7 +217,7 @@ else:
     if st.button("표 확정", key="confirm", type="primary"):
         starts = {r.lyric: r.start for r in state.rows if r.lyric}
 
-        def _s(v) -> str:
+        def _s(v: object) -> str:
             return "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v).strip()
 
         rows = [RankRow(rank=int(x["순위"]), team=_s(x["팀"]), player=_s(x["선수"]), record=_s(x["기록"]),

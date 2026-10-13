@@ -10,6 +10,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from .lyrics_check import LyricsReport, check_lyrics_text
 
 TIMEOUT = 300
+Runner = Callable[..., subprocess.CompletedProcess[str]]  # subprocess.run 과 같은 모양 (테스트에서 바꿔 끼움)
 DEFAULT_STYLE = "K-pop hip-hop, energetic, punchy drums, catchy hook, Korean male rap and female hook, 120 BPM"
 
 
@@ -133,7 +135,7 @@ def claude_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subprocess.run,
+def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner: Runner = subprocess.run,
                          rows: list[dict] | None = None) -> Draft:
     """`claude -p` (도구 없이, 세션 저장 없이). 실패하면 LyricsGenError — 화면은 수동 모드로 넘어간다."""
     if runner is subprocess.run and not claude_available():
@@ -156,7 +158,7 @@ def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subproce
     return parse_response(body, rows)
 
 
-def check_versions(draft: Draft, rows: list[dict], history) -> list[LyricsReport]:
+def check_versions(draft: Draft, rows: list[dict], history: list[tuple[str, list[str]]] | None) -> list[LyricsReport]:
     return [check_lyrics_text(v.lyrics, rows, history=history) for v in draft.versions]
 
 

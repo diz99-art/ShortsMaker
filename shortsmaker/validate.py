@@ -29,7 +29,7 @@ class Report:
 
 
 class ValidationError(ValueError):
-    def __init__(self, report: Report):
+    def __init__(self, report: Report) -> None:
         self.report = report
         super().__init__("\n".join(report.errors))
 

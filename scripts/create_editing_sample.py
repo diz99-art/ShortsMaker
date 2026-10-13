@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-def create(destination: Path):
+def create(destination: Path) -> Path:
     destination.mkdir(parents=True, exist_ok=False)
     font = ImageFont.truetype(str(Path(__file__).parents[1] / "assets/fonts/Pretendard-Bold.otf"), 60)
     image = Image.new("RGB", (720, 1280), (20, 80, 140))

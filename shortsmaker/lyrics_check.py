@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,7 +57,7 @@ class LyricsReport:
                 "overlaps": self.overlaps, "stats": self.stats}
 
 
-def _numbers(text: str, names=()) -> set[str]:
+def _numbers(text: str, names: Iterable[str] = ()) -> set[str]:
     return {n.replace(",", "") for n in _NUM.findall(normalize_numbers(text, names))}
 
 

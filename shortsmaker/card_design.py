@@ -11,6 +11,7 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
@@ -274,7 +275,7 @@ def _player_text(player: str) -> Image.Image:
     return _fit_text(player, 116, W - 120, fill="#FFFFFF", stroke="#111111", stroke_w=8, skew=0.06, shadow=0)
 
 
-def _plain(text: str, size: int, fill, **kw) -> Image.Image:
+def _plain(text: str, size: int, fill: str | tuple[str, ...], **kw: Any) -> Image.Image:
     base = dict(stroke="#111111", stroke_w=11, skew=0.14, shadow=8)
     base.update(kw)
     return styled_text(text, size, fill, **base)

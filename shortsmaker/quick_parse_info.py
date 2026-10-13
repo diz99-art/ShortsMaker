@@ -75,7 +75,7 @@ class InfoProject(Project):
 
 
 class QuickParseInfoError(ValueError):
-    def __init__(self, errors: list[str]):
+    def __init__(self, errors: list[str]) -> None:
         self.errors = errors
         super().__init__("\n".join(errors))
 

@@ -118,7 +118,7 @@ def render(
 
 
 def _render_card(project: Project, project_dir: Path, t: Template, output: Path | None,
-                 report, pre_warnings: list[str]) -> RenderResult:
+                 report: ProgressFn, pre_warnings: list[str]) -> RenderResult:
     """카드 모드: 프레임을 직접 그려 인코딩 (장면 클립·xfade 없음)."""
     from . import card_mode
     lines = resolve_lyrics(project, project_dir)
