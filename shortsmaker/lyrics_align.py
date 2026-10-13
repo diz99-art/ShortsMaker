@@ -20,9 +20,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any
 
 from .ffmpeg_builder import ProgressFn, run_ffmpeg
 from .lyrics import MAX_HOLD
@@ -136,7 +137,7 @@ def separate_vocals(music: Path, work_dir: Path) -> Path:
 _MODELS: dict[str, object] = {}  # Streamlit 재실행 사이에도 모델을 다시 읽지 않도록
 
 
-def _load_model(size: str):
+def _load_model(size: str) -> Any:  # stable_whisper 모델 (타입 정보 없음)
     if size not in _MODELS:
         import stable_whisper
         _MODELS[size] = stable_whisper.load_faster_whisper(size, device="cpu", compute_type="int8")

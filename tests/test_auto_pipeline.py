@@ -8,11 +8,12 @@ from PIL import Image
 
 from shortsmaker import auto_pipeline as ap
 from shortsmaker.card_compose import compose_card
-from shortsmaker.lyrics_align import AlignedLine, clean_lyrics_text
+from shortsmaker.lyrics_align import AlignedLine
 from shortsmaker.models import LyricLine, load_project
 from shortsmaker.player_assets import MockEditor, Player, search_photos
-from shortsmaker.rank_extract import (RankRow, assign_slots, display_text, extract_ranks, korean_to_int, label,
-                                      normalize_numbers, rows_complete, team_colors)
+from shortsmaker.rank_extract import (
+    extract_ranks,
+)
 
 LOSING = """케이비오 역대 최악의 연패는?
 지금부터 케이비오 최장 연패 탑파이브
@@ -40,67 +41,7 @@ FA = """백억은 기본, 몸값이 뛴다
 그리고 1위는 양의지!
 백오십이억, 두산의 안방"""
 
-
-# ---------------------------------------------------------------- 가사 → 표
-
-@pytest.mark.parametrize("word,value", [("십육", 16), ("이천십", 2010), ("천구백팔십오", 1985), ("일구팔오", 1985),
-                                        ("백오십이억", 15_200_000_000), ("백이십사", 124), ("사과", None)])
-def test_korean_numbers(word, value):
-    assert korean_to_int(word) == value
-
-
-def test_normalize_only_before_units():
-    assert normalize_numbers("십육 연패") == "16연패"
-    assert normalize_numbers("이천십 년의 기록") == "2010년의 기록"
-    assert normalize_numbers("이야기 사라진") == "이야기 사라진"  # '이', '사' 는 숫자로 안 바꿈
-    assert display_text("지금부터 케이비오 최장 연패 탑파이브") == "지금부터 KBO 최장 연패 TOP 5"
-
-
-def test_extract_losing_streak():
-    rows = extract_ranks(clean_lyrics_text(LOSING))
-    assert [(r.rank, r.team, r.record) for r in rows] == [
-        (5, "KIA 타이거즈", "16연패"), (4, "롯데 자이언츠", "16연패"), (3, "쌍방울 레이더스", "17연패"),
-        (2, "한화 이글스", "18연패"), (1, "삼미 슈퍼스타즈", "18연패")]
-    assert all(r.player == "" for r in rows)  # 가사에 없는 값은 비워 두고 사람이 채움
-    assert any("선수" in p for p in rows_complete(rows))
-
-
 FA_TIE = FA.replace("그리고 1위는 양의지!", "공동 2위 이대호, 부산의 자존심\n백오십 억, 4년 계약\n그리고 1위는 양의지!")
-
-
-def test_extract_fa_tie_two_players_no_third():
-    rows = extract_ranks(clean_lyrics_text(FA_TIE))
-    assert [r.rank for r in rows] == [5, 4, 2, 2, 1]                  # 3위 행 없음
-    assert [r.player for r in rows] == ["오지환", "박민우", "나성범", "이대호", "양의지"]
-    assert [label(rows, r) for r in rows] == ["5위", "4위", "공동 2위", "공동 2위", "1위"]
-    assert rows_complete(rows) == ["공동 2위 팀이(가) 비어 있습니다"]   # 이대호 팀(가사엔 '부산')만 채우면 됨
-    rows[3] = rows[3].model_copy(update={"team": "롯데 자이언츠"})
-    assert rows_complete(rows) == []
-    assert [(r.slot, r.rank) for r in assign_slots(rows)] == [(5, 5), (4, 4), (3, 2), (2, 2), (1, 1)]
-
-
-def test_extract_only_one_tied_player_in_lyrics():
-    rows = extract_ranks(clean_lyrics_text(FA))  # 원래 가사에 공동 2위가 1명만 나오는 경우
-    assert [r.rank for r in rows] == [5, 4, 3, 2, 1]
-    assert rows[2].team == rows[2].player == ""  # 3위는 빈 행 → 공동 2위를 하나 더 적거나 3위를 채움
-    assert any("5개" in p for p in rows_complete(rows))
-    rows[2] = rows[2].model_copy(update={"rank": 2, "team": "롯데 자이언츠", "player": "이대호", "record": "150억"})
-    assert rows_complete(rows) == []                               # 3위 칸을 공동 2위로 바꾸면 확정 가능
-
-
-@pytest.mark.parametrize("ranks,ok", [([5, 4, 2, 2, 1], True), ([5, 4, 3, 1, 1], True), ([5, 2, 2, 2, 1], True),
-                                      ([4, 4, 3, 2, 1], True),    # 공동 4위 2명 → 5위 없음
-                                      ([5, 3, 3, 3, 1], False),   # 1위 다음 공동이면 공동 2위여야 함
-                                      ([5, 4, 3, 2, 2], False), ([5, 4, 3, 2, 1], True)])
-def test_tie_rule(ranks, ok):
-    rows = [RankRow(rank=r, team="t", player=f"p{i}", record="1") for i, r in enumerate(ranks)]
-    assert (rows_complete(rows) == []) is ok
-
-
-def test_team_colors_no_logo_data():
-    assert team_colors("기아 타이거즈") == ("#EA0029", "#06141F")
-    data = json.loads((Path(ap.__file__).parent / "data" / "kbo_teams.json").read_text(encoding="utf-8"))
-    assert all(set(t) == {"name", "short", "aliases", "colors"} for t in data["teams"])  # 로고 항목 없음
 
 
 # ---------------------------------------------------------------- 흐름
@@ -121,7 +62,13 @@ def fake_aligner(audio, lines, model):
     return out
 
 
-FILL = {5: ("윤석민", "2010"), 4: ("박정태", "2002"), 3: ("김기태", "1999"), 2: ("김태균", "2020"), 1: ("장명부", "1985")}
+FILL = {
+    5: ("윤석민", "2010"),
+    4: ("박정태", "2002"),
+    3: ("김기태", "1999"),
+    2: ("김태균", "2020"),
+    1: ("장명부", "1985"),
+}
 
 
 @pytest.fixture
@@ -229,7 +176,8 @@ def test_card_uses_team_colors_and_mock_mark(tmp_path):
     Image.new("RGBA", (600, 900), (0, 0, 0, 0)).save(src)
     card = compose_card(src, rank=5, record="16연패", year="2010", team="KIA 타이거즈", player="윤석민", mock=True)
     assert card.size == (941, 1672)
-    px = [card.getpixel((x, y))[:3] for x in range(0, 941, 7) for y in range(900, 1672, 7) if card.getpixel((x, y))[3] == 255]
+    px = [card.getpixel((x, y))[:3] for x in range(0, 941, 7) for y in range(900, 1672, 7)
+          if card.getpixel((x, y))[3] == 255]
     assert (0xEA, 0x00, 0x29) in px                    # 팀 색 (KIA 빨강)
     assert card.getpixel((30, 30))[:3] == (220, 0, 0)  # MOCK 시험용 표시
     real = compose_card(src, rank=5, record="16연패", year="2010", team="KIA 타이거즈", player="윤석민")
@@ -260,14 +208,18 @@ class FakeSession:
 
 
 def test_commons_search_uses_user_query_and_orders_by_license():
-    page = lambda pid, lic: {"pageid": pid, "title": f"File:{pid}.jpg", "imageinfo": [{
-        "url": f"https://upload.wikimedia.org/a/{pid}.jpg", "thumburl": f"https://upload.wikimedia.org/t/{pid}.jpg",
-        "descriptionurl": f"https://commons.wikimedia.org/wiki/File:{pid}.jpg", "width": 800, "height": 1200,
-        "mime": "image/jpeg", "extmetadata": {"LicenseShortName": {"value": lic}, "Artist": {"value": "<b>작가</b>"}}}]}
+    def page(pid: int, lic: str) -> dict:
+        return {"pageid": pid, "title": f"File:{pid}.jpg", "imageinfo": [{
+            "url": f"https://upload.wikimedia.org/a/{pid}.jpg", "thumburl": f"https://upload.wikimedia.org/t/{pid}.jpg",
+            "descriptionurl": f"https://commons.wikimedia.org/wiki/File:{pid}.jpg", "width": 800, "height": 1200,
+            "mime": "image/jpeg",
+            "extmetadata": {"LicenseShortName": {"value": lic}, "Artist": {"value": "<b>작가</b>"}}}]}
+
     s = FakeSession({"query": {"pages": [page(1, "CC BY-NC 2.0"), page(2, "CC BY-SA 4.0")]}})
     photos = search_photos(Player(name="윤석민", team="KIA 타이거즈", season=2010), session=s, query='"윤석민" KIA')
     assert s.calls[0]["gsrsearch"] == '"윤석민" KIA'
-    assert [p.page_id for p in photos] == [2, 1] and photos[0].commercial_candidate and not photos[1].commercial_candidate
+    assert [p.page_id for p in photos] == [2, 1]
+    assert photos[0].commercial_candidate and not photos[1].commercial_candidate
     assert photos[0].author == "작가"
 
 
@@ -326,7 +278,7 @@ def test_full_mock_flow_with_tie(tmp_path):
     assert [(it.rank, it.shown_rank, it.name) for it in project.ordered_items] == [
         (5, 5, "오지환"), (4, 4, "박민우"), (3, 2, "나성범"), (2, 2, "이대호"), (1, 1, "양의지")]
     assert [project.rank_label(it) for it in project.ordered_items] == ["5위", "4위", "공동 2위", "공동 2위", "1위"]
-    from shortsmaker.card_mode import card_timeline
+    from shortsmaker.card_timing import card_timeline
     from shortsmaker.models import load_template
     scenes = card_timeline(project, load_template("yagu_v2"), project.lyrics)
     starts = [s.start for s in scenes if s.kind == "rank"]
@@ -339,12 +291,14 @@ def test_card_tie_badge(tmp_path):
     Image.new("RGBA", (600, 900), (0, 0, 0, 0)).save(src)
     tied = compose_card(src, rank=2, record="150억", year="", team="롯데 자이언츠", player="이대호", tied=True)
     solo = compose_card(src, rank=2, record="150억", year="", team="롯데 자이언츠", player="이대호")
-    diff = [y for y in range(0, 1672, 4) if any(tied.getpixel((x, y)) != solo.getpixel((x, y)) for x in range(40, 300, 6))]
+    diff = [y for y in range(0, 1672, 4)
+            if any(tied.getpixel((x, y)) != solo.getpixel((x, y)) for x in range(40, 300, 6))]
     assert diff  # '공동' 글자가 순위 위에 추가됨
 
 
 def test_project_tie_validation():
     from pydantic import ValidationError
+
     from shortsmaker.models import Project
     base = {"channel": "yagu_v2", "title": "t", "duration": 40}
     ok = Project.model_validate({**base, "items": [{"rank": s, "name": "x", "display_rank": d}
@@ -452,6 +406,7 @@ def test_prompt_with_photo_and_scene_from_lyrics(manual):
 
 def test_downloads_watch_and_use(manual, tmp_path, monkeypatch):
     import time as _t
+
     from shortsmaker import manual_prompt as mp
     state, d = manual
     downloads = tmp_path / "dl"

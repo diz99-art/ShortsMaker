@@ -10,6 +10,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from .lyrics_check import LyricsReport, check_lyrics_text
 
 TIMEOUT = 300
+Runner = Callable[..., subprocess.CompletedProcess[str]]  # subprocess.run 과 같은 모양 (테스트에서 바꿔 끼움)
 DEFAULT_STYLE = "K-pop hip-hop, energetic, punchy drums, catchy hook, Korean male rap and female hook, 120 BPM"
 
 
@@ -48,8 +50,11 @@ def _data_lines(rows: list[dict]) -> str:
 
 def build_prompt(topic: str, title: str, rows: list[dict], source: str, *, avoid: list[str] | None = None,
                  n: int = 3) -> str:
-    avoid_txt = ("\n이미 다른 영상에 쓴 표현이니 피할 것: " + ", ".join(f"\"{a}\"" for a in avoid[:30])) if avoid else ""
-    return f"""너는 유튜브 쇼츠 '야구한장' 채널의 작사가야. 아래 '확정 데이터'만 사용해서 Suno로 만들 노래 가사를 {n}가지 버전으로 써줘.
+    avoid_txt = ""
+    if avoid:
+        avoid_txt = "\n이미 다른 영상에 쓴 표현이니 피할 것: " + ", ".join(f"\"{a}\"" for a in avoid[:30])
+    return f"""너는 유튜브 쇼츠 '야구한장' 채널의 작사가야. \
+아래 '확정 데이터'만 사용해서 Suno로 만들 노래 가사를 {n}가지 버전으로 써줘.
 
 주제: {topic}
 영상 제목(참고): {title.replace(chr(10), ' / ')}
@@ -130,7 +135,7 @@ def claude_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subprocess.run,
+def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner: Runner = subprocess.run,
                          rows: list[dict] | None = None) -> Draft:
     """`claude -p` (도구 없이, 세션 저장 없이). 실패하면 LyricsGenError — 화면은 수동 모드로 넘어간다."""
     if runner is subprocess.run and not claude_available():
@@ -153,21 +158,40 @@ def generate_with_claude(prompt: str, *, timeout: int = TIMEOUT, runner=subproce
     return parse_response(body, rows)
 
 
-def check_versions(draft: Draft, rows: list[dict], history) -> list[LyricsReport]:
+def check_versions(draft: Draft, rows: list[dict], history: list[tuple[str, list[str]]] | None) -> list[LyricsReport]:
     return [check_lyrics_text(v.lyrics, rows, history=history) for v in draft.versions]
 
 
 def brief_markdown(title: str, style: str, lyrics: str, *, topic: str = "", source: str = "",
                    subtitles: str = "") -> str:
-    return "\n".join([
-        f"# {title}", "",
-        "## 제목 (Title)", "", title, "",
-        "## Style", "", style, "",
-        "## Lyrics (노래용 — Suno 에 이것을 붙여 넣기)", "", lyrics.strip(), "",
-        *(["## 자막용 (영상 자막에 자동으로 쓰임, Suno 에 넣지 않음)", "", subtitles.strip(), ""] if subtitles.strip() else []),
-        "---", f"주제: {topic}" if topic else "", f"데이터 출처: {source}" if source else "",
-        "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).", "",
-    ])
+    return "\n".join(
+        [
+            f"# {title}",
+            "",
+            "## 제목 (Title)",
+            "",
+            title,
+            "",
+            "## Style",
+            "",
+            style,
+            "",
+            "## Lyrics (노래용 — Suno 에 이것을 붙여 넣기)",
+            "",
+            lyrics.strip(),
+            "",
+            *(
+                ["## 자막용 (영상 자막에 자동으로 쓰임, Suno 에 넣지 않음)", "", subtitles.strip(), ""]
+                if subtitles.strip()
+                else []
+            ),
+            "---",
+            f"주제: {topic}" if topic else "",
+            f"데이터 출처: {source}" if source else "",
+            "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).",
+            "",
+        ]
+    )
 
 
 def save_brief(folder: Path, title: str, style: str, lyrics: str, report: LyricsReport, *, topic: str = "",

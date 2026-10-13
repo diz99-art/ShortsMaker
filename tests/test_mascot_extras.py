@@ -8,7 +8,8 @@ from PIL import Image
 from shortsmaker import effects as fx
 from shortsmaker import mascot as msc
 from shortsmaker import variation as var
-from shortsmaker.card_mode import card_timeline, make_renderer, sfx_cues
+from shortsmaker.card_mode import make_renderer
+from shortsmaker.card_timing import card_timeline, sfx_cues
 from shortsmaker.models import LyricLine, Word, load_template
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
 from tests.test_card_mode import SONG, make_project
@@ -82,9 +83,22 @@ def test_real_mascot_files_present():
 
 
 def test_renderer_draws_mascot_and_chart(tmp_path, t):
-    p = make_project(tmp_path, variation=FX, gauge_base="12연패", mood="record",
-                     items=[{"rank": r, "name": f"팀{r}", "value": f"{10 + r}연패", "description": f"KIA 타이거즈 20{10 + r}",
-                             "image": f"card{r}.png"} for r in (5, 4, 3, 2, 1)])
+    p = make_project(
+        tmp_path,
+        variation=FX,
+        gauge_base="12연패",
+        mood="record",
+        items=[
+            {
+                "rank": r,
+                "name": f"팀{r}",
+                "value": f"{10 + r}연패",
+                "description": f"KIA 타이거즈 20{10 + r}",
+                "image": f"card{r}.png",
+            }
+            for r in (5, 4, 3, 2, 1)
+        ],
+    )
     r = make_renderer(p, tmp_path, t, SONG)
     kinds = [s.kind for s in r.scenes]
     assert kinds[-1] == "chart" and r.scenes[-1].start == pytest.approx(30 - fx.CHART_LEN)
@@ -92,7 +106,8 @@ def test_renderer_draws_mascot_and_chart(tmp_path, t):
     assert x + msc.SIZE <= t.width and y + msc.SIZE <= t.card.footer.button.y + t.card.footer.button.h
     assert y > t.card.subtitle.y + t.card.subtitle.h                  # 자막과 안 겹침
     frame = np.asarray(r.frame_at(8.0))
-    assert frame[y + msc.SIZE // 2 - 30:y + msc.SIZE // 2 + 30, x + 40:x + msc.SIZE - 40].std() > 10   # 마스코트가 그려짐
+    # 마스코트가 그려짐
+    assert frame[y + msc.SIZE // 2 - 30:y + msc.SIZE // 2 + 30, x + 40:x + msc.SIZE - 40].std() > 10
     st = r.state(round(29.5 * 30))
     assert st[13] is not None and st[16][0] == "wave"                 # 그래프 장면 + 손 흔들기
     assert r._chart_bounds()["right"] < x                              # 그래프가 마스코트 자리를 비움
@@ -108,7 +123,7 @@ def test_pick_bursts_rules():
     lines = [wl(10.0, 12.0, "1위 이승엽 56홈런", [(10.0, 10.5, "1위"), (10.5, 11.0, "이승엽"), (11.0, 12.0, "56홈런")]),
              wl(12.0, 14.0, "첫 50홈런 시대", [(12.0, 12.4, "첫"), (12.4, 13.2, "50홈런"), (13.2, 14.0, "시대")]),
              wl(20.0, 22.0, "54홈런 이승엽", [(20.0, 21.0, "54홈런"), (21.0, 22.0, "이승엽")])]
-    from shortsmaker.card_mode import char_times
+    from shortsmaker.card_timing import char_times
     got = fx.pick_bursts(lines, lambda i: char_times(lines[i]), ["이승엽"], strong=[(9.0, 25.0)], blocked=[])
     assert [w for _, w in got] == ["1위", "54홈런"]                    # 5초 간격, 강한 구간만
     assert all(b - a >= fx.BURST_GAP for (a, _), (b, _) in zip(got, got[1:]))

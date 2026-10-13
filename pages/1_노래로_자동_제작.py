@@ -149,17 +149,29 @@ else:
                "'공동 2위'로 표시되고 다음 순위(3위)는 비워 둡니다. 장면 설명은 캐리커처 그림에 쓰입니다"
                + (", 빨간 기록 줄은 자막 아래에 1~2줄로 나옵니다 (줄바꿈은 ' / ')." if sticker else "."))
     # 열 순서는 가사 만들기·빠른 제작 양식과 같다 (순위|선수|팀|기록|연도|장면 설명), 읽기 전용 열은 맨 뒤
-    df = pd.DataFrame([{"순위": r.rank, "선수": r.player, "팀": r.team, "기록": r.record, "연도": r.year,
-                        "장면 설명": r.scene, "기록 줄(빨간)": r.stat_line.replace("\n", " / "),
-                        "표시": label(state.rows, r),
-                        "확인 필요": ", ".join(missing_fields(r)) + (" (가사에 없음 — 직접 입력)" if missing_fields(r) else ""),
-                        "근거 가사": r.lyric} for r in state.rows])
+    df = pd.DataFrame(
+        [
+            {
+                "순위": r.rank,
+                "선수": r.player,
+                "팀": r.team,
+                "기록": r.record,
+                "연도": r.year,
+                "장면 설명": r.scene,
+                "기록 줄(빨간)": r.stat_line.replace("\n", " / "),
+                "표시": label(state.rows, r),
+                "확인 필요": ", ".join(missing_fields(r)) + (" (가사에 없음 — 직접 입력)" if missing_fields(r) else ""),
+                "근거 가사": r.lyric,
+            }
+            for r in state.rows
+        ]
+    )
     if not sticker:
         df = df.drop(columns=["기록 줄(빨간)"])
     empty = [f"{label(state.rows, r)}: {', '.join(missing_fields(r))}" for r in state.rows if missing_fields(r)]
     if empty and not state.table_confirmed:
-        st.warning("가사에 없어 비워 둔 칸이 있습니다 (별명만 나오는 팀 등은 추측하지 않습니다). 표에서 직접 채우세요 — "
-                   + " / ".join(empty))
+        st.warning("가사에 없어 비워 둔 칸이 있습니다 (별명만 나오는 팀 등은 추측하지 않습니다). "
+                   "표에서 직접 채우세요 — " + " / ".join(empty))
     edited = st.data_editor(df, hide_index=True, disabled=["표시", "확인 필요", "근거 가사"], key="table",
                             num_rows="dynamic", column_config={
                                 "순위": st.column_config.NumberColumn(min_value=1, max_value=5, step=1, required=True),
@@ -173,9 +185,16 @@ else:
         e1, e2, e3 = st.columns([2, 3, 1])
         hook_in = e1.text_input("후킹 문구 (첫 2초)", state.hook, key="x_hook", placeholder="50홈런이 6위?!")
         b = state.bonus or {}
-        b_txt = ("" if not b else (f"예고 | {b.get('text', '')}" if b.get("kind") == "teaser" else
-                                   f"{b.get('rank')}위 {b.get('name', '')} | {b.get('team', '')} | {b.get('value', '')} | "
-                                   f"{b.get('year', '')}"))
+        b_txt = (
+            ""
+            if not b
+            else (
+                f"예고 | {b.get('text', '')}"
+                if b.get("kind") == "teaser"
+                else f"{b.get('rank')}위 {b.get('name', '')} | {b.get('team', '')} | {b.get('value', '')} | "
+                f"{b.get('year', '')}"
+            )
+        )
         bonus_in = e2.text_input("엔딩 보너스 (출처에 있는 값만)", b_txt, key="x_bonus",
                                  placeholder="6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025  또는  예고 | 다음 편: …")
         gauge_in = e3.text_input("그래프 기준선", state.gauge_base, key="x_gauge", placeholder="50홈런")
@@ -193,11 +212,12 @@ else:
             except (ap.FlowError, ValueError) as e:
                 _err(e)
     unknown_ok = st.checkbox("사전에 없는 팀 허용 (MLB·해외 팀 등)", key="unknown_team")
-    merge = st.checkbox("자막: 'N위, 팀' 줄과 기록 줄을 한 자막으로 합치기", value=state.merge_record_lines, key="merge")
+    merge = st.checkbox("자막: 'N위, 팀' 줄과 기록 줄을 한 자막으로 합치기",
+                        value=state.merge_record_lines, key="merge")
     if st.button("표 확정", key="confirm", type="primary"):
         starts = {r.lyric: r.start for r in state.rows if r.lyric}
 
-        def _s(v) -> str:
+        def _s(v: object) -> str:
             return "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v).strip()
 
         rows = [RankRow(rank=int(x["순위"]), team=_s(x["팀"]), player=_s(x["선수"]), record=_s(x["기록"]),
@@ -231,7 +251,8 @@ else:
             st.error(e)
         for w in rep_.get("warnings", []):
             st.warning(w)
-        st.caption("이미 만든 곡이라 가사를 고칠 수는 없습니다. 결과를 보고 확인하세요 (다음 곡은 '가사 만들기'에서 검사를 통과한 가사로).")
+        st.caption("이미 만든 곡이라 가사를 고칠 수는 없습니다. 결과를 보고 확인하세요 "
+                   "(다음 곡은 '가사 만들기'에서 검사를 통과한 가사로).")
         if not state.lyrics_ack and st.button("가사 검사 결과를 확인했습니다", key="lyr_ack"):
             ap.ack_lyrics(state, D)
             st.rerun()
@@ -258,8 +279,8 @@ else:
                         st.toast(f"{n}줄 바꿨습니다")
                         st.rerun()
             proj = load_project(D / "project.json")[0]
-            sub = st.data_editor(pd.DataFrame([{"시작": l.start, "자막": l.text} for l in proj.lyrics]), hide_index=True,
-                                 disabled=["시작"], key="subs")
+            sub = st.data_editor(pd.DataFrame([{"시작": l.start, "자막": l.text} for l in proj.lyrics]),
+                                 hide_index=True, disabled=["시작"], key="subs")
             if st.button("자막 저장", key="subs_save"):
                 try:
                     ap.edit_subtitles(state, D, [str(x) for x in sub["자막"].tolist()])
@@ -335,12 +356,17 @@ elif state.gen_mode == "manual":
                "② 그림을 내려받기 ③ 아래 '다운로드 폴더 지켜보기'에 뜬 그림에서 순위를 골라 '이 순위에 사용' "
                "(배경을 지워 넣습니다)")
     bg_methods = ["auto"] + (["rembg"] if rembg_available() else [])
-    method = st.selectbox("배경 제거", bg_methods, key="bg",
-                          help="auto: 투명이면 그대로, 아니면 테두리에 이어진 단색 배경 제거. rembg 는 설치돼 있을 때만")
+    method = st.selectbox(
+        "배경 제거",
+        bg_methods,
+        key="bg",
+        help="auto: 투명이면 그대로, 아니면 테두리에 이어진 단색 배경 제거. rembg 는 설치돼 있을 때만",
+    )
     for r in state.rows:
         k = r.slot
         ps = state.players[k]
-        with st.expander(f"{label(state.rows, r)} {r.player}" + (" ✅" if ps.approved else ""), expanded=not ps.approved):
+        exp_title = f"{label(state.rows, r)} {r.player}" + (" ✅" if ps.approved else "")
+        with st.expander(exp_title, expanded=not ps.approved):
             folder, prompt = ap.manual_prepare(state, D, k)
             st.code(prompt, language=None)
             c1, c2 = st.columns(2)
@@ -459,7 +485,8 @@ else:
     for i, r in enumerate(state.rows):
         ps = state.players[r.slot]
         with cols[i]:
-            ok = st.checkbox(f"{label(state.rows, r)} {r.player}: 로고·글씨 없음", value=state.no_logo.get(r.slot, False), key=f"nl{r.slot}")
+            ok = st.checkbox(f"{label(state.rows, r)} {r.player}: 로고·글씨 없음",
+                             value=state.no_logo.get(r.slot, False), key=f"nl{r.slot}")
             if ok != state.no_logo.get(r.slot, False):
                 ap.confirm_no_logo(state, D, r.slot, ok)
                 st.rerun()
@@ -479,8 +506,8 @@ else:
     mo = v5.selectbox("그림 움직임 (화려한 스타일만)", list(var.MOTIONS), index=list(var.MOTIONS).index(cur.motion),
                       format_func=var.MOTIONS.get, key="v_mo", help="1위는 더 강하게 + 등장 때 번쩍·흔들림")
     extra = {}
-    axes_ui = [("hook", "후킹 등장"), ("beat", "비트 맞춤 (화려한 스타일만)"), ("count", "기록 숫자"), ("sfx", "효과음"),
-               ("progress", "진행 표시"), ("ending", "보너스 등장"), ("mascot", "마스코트 한장이"),
+    axes_ui = [("hook", "후킹 등장"), ("beat", "비트 맞춤 (화려한 스타일만)"), ("count", "기록 숫자"),
+               ("sfx", "효과음"), ("progress", "진행 표시"), ("ending", "보너스 등장"), ("mascot", "마스코트 한장이"),
                ("datagfx", "1위 뒤 그래프"), ("depth", "2.5D 입체 (화려한 스타일만)"), ("burst", "키워드 터뜨리기"),
                ("inout", "카드 인·아웃 (클린)")]
     cols_ui = st.columns(6) + st.columns(5)
@@ -490,8 +517,14 @@ else:
                                  key=f"v_{k}")
     looks = list(var.LOOKS)
     cur_look = cur.look if state.variation and "look" in state.variation else var.DEFAULT_LOOK
-    lk = st.selectbox("스타일", looks, index=looks.index(cur_look), format_func=var.LOOKS.get, key="v_look",
-                      help="기본은 클린 A. 예전 화려한 스타일은 선택해서만 씀 (분위기별 카드 디자인은 화려한 스타일에서만)")
+    lk = st.selectbox(
+        "스타일",
+        looks,
+        index=looks.index(cur_look),
+        format_func=var.LOOKS.get,
+        key="v_look",
+        help="기본은 클린 A. 예전 화려한 스타일은 선택해서만 씀 (분위기별 카드 디자인은 화려한 스타일에서만)",
+    )
     pick = var.Variation(transition=tr, accent=ac, subtitle=sb, intro=it, motion=mo, design=cur.design, look=lk,
                          **extra)
     bad = var.conflicts(pick, D.parent, exclude=state.slug)
@@ -520,7 +553,8 @@ else:
         mood = m2.selectbox("분위기", moods, index=moods.index(state.mood) if state.mood in moods else 0,
                             format_func=MOODS.get, key="mood_pick")
         if state.mood:
-            m2.caption(f"판단: {MOODS[state.mood]} ({'claude' if state.mood_via == 'claude' else '키워드 규칙' if state.mood_via == 'rules' else '사람'}) — {state.mood_reason}")
+            via = {"claude": "claude", "rules": "키워드 규칙"}.get(state.mood_via, "사람")
+            m2.caption(f"판단: {MOODS[state.mood]} ({via}) — {state.mood_reason}")
         if mood != state.mood and st.button("이 분위기로", key="mood_set"):
             ap.set_mood(state, D, mood, "사람이 고름", "user")
             st.rerun()
@@ -565,7 +599,8 @@ else:
     st.caption("곡 파일 태그: " + (f"Suno 곡 id {info.get('id', '없음')} · 생성 {info.get('created', '알 수 없음')}"
                                   if info.get("made_with_suno") else "Suno 표시를 찾지 못함"))
     q1, q2 = st.columns([1, 2])
-    paid = q1.checkbox("Suno 유료 플랜으로 생성한 곡입니다", value=state.suno_paid, key="suno_paid", disabled=state.mock)
+    paid = q1.checkbox("Suno 유료 플랜으로 생성한 곡입니다", value=state.suno_paid, key="suno_paid",
+                       disabled=state.mock)
     plan = q2.text_input("플랜 이름 (예: Pro, Premier)", state.suno_plan, key="suno_plan", disabled=state.mock)
     if (paid, plan.strip()) != (state.suno_paid, state.suno_plan) and st.button("Suno 확인 저장", key="suno_save"):
         ap.set_suno(state, D, paid=paid, plan=plan)
@@ -582,7 +617,8 @@ else:
     bar = st.progress(0.0)
     for col, kind, lab, ok in ((r1, "draft", "시험 렌더 (_DRAFT, 언제나 가능)", True),
                                (r2, "monetize", "수익화용 렌더", all_ok and rights)):
-        if col.button(lab, key=f"render_{kind}", type="primary" if kind == "monetize" else "secondary", disabled=not ok):
+        kind_type = "primary" if kind == "monetize" else "secondary"
+        if col.button(lab, key=f"render_{kind}", type=kind_type, disabled=not ok):
             try:
                 res = ap.render_all(state, D, rights_confirmed=rights, kind=kind,
                                     progress=lambda f, m: bar.progress(min(f, 1.0), m))

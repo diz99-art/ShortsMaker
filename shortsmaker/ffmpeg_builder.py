@@ -8,10 +8,10 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .models import Template
 from .scenes import SceneLayers
@@ -27,7 +27,7 @@ FINAL_ACODEC = ["-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
 
 
 class FFmpegError(RuntimeError):
-    def __init__(self, cmd: list[str], stderr: str):
+    def __init__(self, cmd: list[str], stderr: str) -> None:
         self.cmd = cmd
         self.stderr_tail = "\n".join(stderr.strip().splitlines()[-25:])
         super().__init__(f"FFmpeg 실패\n명령: {self.command_line}\n--- stderr (끝부분) ---\n{self.stderr_tail}")

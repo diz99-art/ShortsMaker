@@ -7,17 +7,24 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .card_design import MOODS, designs_for
 
 TIMEOUT = 120
+Runner = Callable[..., subprocess.CompletedProcess[str]]  # subprocess.run 과 같은 모양 (테스트에서 바꿔 끼움)
+log = logging.getLogger(__name__)
 
 # 키워드 규칙 (위에서부터 먼저 맞는 것, 정규식)
 RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("humiliation", ("연패", "최악", "굴욕", "불운", "패배", "최다패", "실책", "꼴찌", "최하위", "흑역사", "망한", "먹튀")),
+    (
+        "humiliation",
+        ("연패", "최악", "굴욕", "불운", "패배", "최다패", "실책", "꼴찌", "최하위", "흑역사", "망한", "먹튀"),
+    ),
     ("money", (r"\d+\s*억", "억 원", "연봉", "계약", "FA", "몸값", "총액")),
     ("rivalry", ("VS", "vs", "라이벌", "대결", "맞대결", "더비", "경쟁")),
     ("live", ("올해", "이번 시즌", "현재", "실시간", "신기록 경신", "진행 중", "2026")),
@@ -74,7 +81,7 @@ def mood_prompt(title: str, topic: str, memos: list[str], rows: list[dict]) -> s
 답은 JSON 하나만: {{"mood": "record", "reason": "한 줄 이유"}}"""
 
 
-def claude_mood(prompt: str, *, runner=subprocess.run, timeout: int = TIMEOUT) -> MoodResult:
+def claude_mood(prompt: str, *, runner: Runner = subprocess.run, timeout: int = TIMEOUT) -> MoodResult:
     cmd = ["claude", "-p", "--output-format", "json", "--tools", "", "--no-session-persistence"]
     proc = runner(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
@@ -97,7 +104,7 @@ def claude_mood(prompt: str, *, runner=subprocess.run, timeout: int = TIMEOUT) -
 
 
 def detect_mood(title: str, topic: str = "", memos: list[str] | None = None, rows: list[dict] | None = None, *,
-                use_claude: bool = True, runner=subprocess.run) -> MoodResult:
+                use_claude: bool = True, runner: Runner = subprocess.run) -> MoodResult:
     rows = rows or []
     memos = memos or []
     if use_claude:
@@ -105,8 +112,8 @@ def detect_mood(title: str, topic: str = "", memos: list[str] | None = None, row
             import shutil
             if runner is not subprocess.run or shutil.which("claude"):
                 return claude_mood(mood_prompt(title, topic, memos, rows), runner=runner)
-        except Exception:  # noqa: BLE001 — 키워드 규칙으로
-            pass
+        except Exception as e:  # noqa: BLE001 — 어떤 실패든 키워드 규칙으로 넘어간다
+            log.warning("claude 분위기 판단 실패, 키워드 규칙을 씁니다: %s: %s", type(e).__name__, e)
     years = [int(y) for r in rows for y in [str(r.get("year", ""))] if re.fullmatch(r"\d{4}", y)]
     extra = " ".join([*memos] + [str(r.get("record", "")) for r in rows])
     return rule_mood(f"{title} {topic}", years, extra=extra)

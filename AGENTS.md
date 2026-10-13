@@ -137,6 +137,8 @@ Codex(작업 폴더 `~/Projects/ShortsMaker-codex`, `codex/work` 브랜치, git 
 - 새 기능은 가능하면 새 파일(모듈)로 만든다. 기존 파일에는 새 모듈을 연결하는 최소한의 수정만 한다.
 - 가상환경은 같이 쓴다: 작업 폴더의 `.venv` 는 `~/Projects/ShortsMaker/.venv` 를 가리키는 링크다.
   패키지 설치·삭제는 두 쪽 모두에 영향을 주므로 사용자에게 먼저 묻는다.
+- git 검사(hook)를 건너뛰지 않는다: `git commit --no-verify`, `git push --no-verify`(`-n`), `core.hooksPath` 바꾸기는 절대 쓰지 않는다.
+  검사에 걸리면 원인을 고치고, 고칠 수 없으면 멈추고 사용자에게 묻는다.
 - `projects/`, `output/`, `reference/` 는 git 에 없어서 작업 폴더마다 따로다. 실제 프로젝트로 렌더할 때는 메인 폴더의 프로젝트를 복사해서 쓴다 (원본은 고치지 않는다).
 - 작업이 끝나면 `.venv/bin/python -m pytest -q` 가 모두 통과하는지 확인하고, 답변 맨 끝에 아래 요약을 출력한다.
   표는 쓰지 말고 줄글과 목록만, 15줄 이내, 한국어.

@@ -21,9 +21,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .lyrics import check_lyrics, resolve_lyrics
-from .models import OUTPUT_DIR, LyricLine, Project
+from .models import OUTPUT_DIR, Box, LyricLine, Project, Template
 from .pipeline import prepare
 from .validate import media_duration
 
@@ -215,7 +216,7 @@ def export_draft(
 
 # ---------------------------------------------------------------- 카드 모드 (yagu_v2)
 
-def _fit_ratio(img_size: tuple[int, int], box, t) -> float:
+def _fit_ratio(img_size: tuple[int, int], box: Box, t: Template) -> float:
     """CapCut 은 이미지를 캔버스 안에 맞춰(contain) 넣는다. 박스 크기로 보이려면 그 위에 곱할 배율."""
     iw, ih = img_size
     canvas_fit = min(t.width / iw, t.height / ih)
@@ -223,17 +224,18 @@ def _fit_ratio(img_size: tuple[int, int], box, t) -> float:
     return box_fit / canvas_fit
 
 
-def _transform(t, cx: float, cy: float) -> tuple[float, float]:
+def _transform(t: Template, cx: float, cy: float) -> tuple[float, float]:
     """픽셀 중심 → CapCut transform (캔버스 반 크기 단위, 위가 +)."""
     return round((cx - t.width / 2) / (t.width / 2), 4), round((t.height / 2 - cy) / (t.height / 2), 4)
 
 
-def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list[LyricLine], media: Path
-                 ) -> list[str]:
+def _card_tracks(cc: Any, script: Any, project: Project, project_dir: Path, t: Template, lines: list[LyricLine],
+                 media: Path) -> list[str]:
     """MP4 렌더와 같은 배치. 확대는 키프레임으로 옮기고, 모션 블러·글자별 타이밍은 CapCut 효과로 근사한다."""
     from PIL import Image
 
-    from .card_mode import char_times, make_renderer
+    from .card_mode import make_renderer
+    from .card_timing import char_times
     from .variation import ACCENTS
     r = make_renderer(project, project_dir, t, lines)
     c = t.card
@@ -258,7 +260,8 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                           font_path=r._label_font, top_y=c.subtitle.y + c.subtitle.h + 40,
                           bottom_y=c.footer.button.y - 30, **r._chart_bounds())
             full.save(dst)
-            script.add_segment(cc.VideoSegment(str(dst), cc.Timerange(us(sc.start), us(sc.end) - us(sc.start))), "로고·카드")
+            card_seg = cc.VideoSegment(str(dst), cc.Timerange(us(sc.start), us(sc.end) - us(sc.start)))
+            script.add_segment(card_seg, "로고·카드")
             continue
         if sc.kind == "intro" and project.intro_image:
             src, box, motion = project_dir / project.intro_image, c.intro_box or c.logo_box, c.intro_motion
@@ -280,8 +283,11 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         with Image.open(dst) as im:
             ratio = _fit_ratio(im.size, box, t)
         tx, ty = _transform(t, box.x + box.w / 2, box.y + box.h / 2)
-        seg = cc.VideoSegment(str(dst), cc.Timerange(us(start), us(sc.end) - us(start)),
-                              clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio, transform_x=tx, transform_y=ty))
+        seg = cc.VideoSegment(
+            str(dst),
+            cc.Timerange(us(start), us(sc.end) - us(start)),
+            clip_settings=cc.ClipSettings(scale_x=ratio, scale_y=ratio, transform_x=tx, transform_y=ty),
+        )
         layer = r.layers[sc.index]  # 연출(variation)이 반영된 움직임
         for sec, scale in layer.motion.curve:  # 확대 곡선을 그대로 키프레임으로
             if sec < sc.end - start:
@@ -347,11 +353,20 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
             script.add_segment(seg, "자막")
     if r.hook_len:  # 후킹 문구: 큰 글자 + 튀어 오르는 등장
         script.add_track(cc.TrackType.text, "후킹")
-        seg = cc.TextSegment(project.hook, cc.Timerange(0, us(r.hook_len)),
-                             style=cc.TextStyle(size=28.0, bold=True, color=_rgb01(r.stat_color or "#EB1B1B"),
-                                                align=1, auto_wrapping=True, max_line_width=0.9),
-                             border=cc.TextBorder(color=(1.0, 1.0, 1.0), width=60.0),
-                             clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]))
+        seg = cc.TextSegment(
+            project.hook,
+            cc.Timerange(0, us(r.hook_len)),
+            style=cc.TextStyle(
+                size=28.0,
+                bold=True,
+                color=_rgb01(r.stat_color or "#EB1B1B"),
+                align=1,
+                auto_wrapping=True,
+                max_line_width=0.9,
+            ),
+            border=cc.TextBorder(color=(1.0, 1.0, 1.0), width=60.0),
+            clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]),
+        )
         seg.add_animation(cc.TextIntro["弹入"], us(0.3))
         script.add_segment(seg, "후킹")
     if v.progress != "none":  # 진행 표시: 장면마다 글자로 (●●○○○ / 2 / 5)
@@ -400,10 +415,13 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
         from . import effects as fx
         script.add_track(cc.TrackType.text, "키워드")
         for at, word in r.bursts:
-            seg = cc.TextSegment(word, cc.Timerange(us(at), us(fx.BURST_LEN)),
-                                 style=cc.TextStyle(size=40.0, bold=True, color=_rgb01(r.accent_rank[1]), align=1),
-                                 border=cc.TextBorder(color=(0.23, 0.04, 0.0), width=60.0),
-                                 clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]))
+            seg = cc.TextSegment(
+                word,
+                cc.Timerange(us(at), us(fx.BURST_LEN)),
+                style=cc.TextStyle(size=40.0, bold=True, color=_rgb01(r.accent_rank[1]), align=1),
+                border=cc.TextBorder(color=(0.23, 0.04, 0.0), width=60.0),
+                clip_settings=cc.ClipSettings(transform_y=_transform(t, 0, (c.content_top + c.footer.button.y) / 2)[1]),
+            )
             seg.add_animation(cc.TextIntro["放大"], us(0.2))
             script.add_segment(seg, "키워드")
     if r.cues and v.sfx != "off":  # 효과음: 종류별 트랙 (같은 트랙에서 겹치지 않게)
@@ -424,11 +442,18 @@ def _card_tracks(cc, script, project: Project, project_dir: Path, t, lines: list
                 if dur > 0.05:
                     script.add_segment(cc.AudioSegment(str(dst), cc.Timerange(us(q.at), us(dur)),
                                                        volume=MIX_GAIN[kind]), names[kind])
-    return [f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 모션 블러·흰 섬광·제목 카드는 없습니다. "
-            "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, 글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."
-            + (" 비트 펄스·기록 카운트업은 CapCut 초안에 없습니다 (MP4 에만)." if v.beat != "off" or v.count != "static"
-               else "")
-            + (" 2.5D 입체·마스코트 까딱은 CapCut 초안에 없습니다." if v.depth != "off" or v.mascot != "off" else "")]
+    return [
+        f"카드 모드 CapCut 초안 (연출: {v.describe()}): 확대·이동은 키프레임으로 옮겼지만 "
+        "모션 블러·흰 섬광·제목 카드는 없습니다. "
+        "자막 등장 방식은 CapCut 텍스트 등장 효과(줄 단위 속도)로 근사했고, "
+        "글자 그림자는 pyCapCut 이 지원하지 않아 빠졌습니다."
+        + (
+            " 비트 펄스·기록 카운트업은 CapCut 초안에 없습니다 (MP4 에만)."
+            if v.beat != "off" or v.count != "static"
+            else ""
+        )
+        + (" 2.5D 입체·마스코트 까딱은 CapCut 초안에 없습니다." if v.depth != "off" or v.mascot != "off" else "")
+    ]
 
 
 # ---------------------------------------------------------------- 수동 가져오기 키트

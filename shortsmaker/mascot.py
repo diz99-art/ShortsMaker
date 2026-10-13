@@ -15,10 +15,16 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw
 
 from .scenes import _font
+
+if TYPE_CHECKING:
+    from .effects import BeatMap
+    from .models import LyricLine
+    from .timeline import Scene
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 MASCOT_DIR = ASSETS_DIR / "mascot"        # 야구한장 '한장이' (정보한장은 assets/mascot_info, 템플릿 mascot_dir)
@@ -205,7 +211,7 @@ class MascotPlan:
         return any(a <= t < b for a, b in self.rank_spans)
 
 
-def rests(lines, duration: float, min_gap: float = REST_MIN) -> list[tuple[float, float]]:
+def rests(lines: list[LyricLine], duration: float, min_gap: float = REST_MIN) -> list[tuple[float, float]]:
     """노래가 쉬는 구간 (단어 타이밍 기준, 없으면 줄 기준)."""
     spans = []
     for l in lines:
@@ -224,7 +230,7 @@ def rests(lines, duration: float, min_gap: float = REST_MIN) -> list[tuple[float
     return out
 
 
-def adlib_times(lines) -> list[float]:
+def adlib_times(lines: list[LyricLine]) -> list[float]:
     """가사 추임새 '(와아!)' 를 부르는 시각 (괄호로 시작하는 단어)."""
     out = []
     for l in lines:
@@ -236,7 +242,8 @@ def adlib_times(lines) -> list[float]:
     return out
 
 
-def make_plan(scenes, lines, *, mood: str, bubbles: dict[str, str], hook_len: float, duration: float) -> MascotPlan:
+def make_plan(scenes: list[Scene], lines: list[LyricLine], *, mood: str, bubbles: dict[str, str], hook_len: float,
+              duration: float) -> MascotPlan:
     plan = MascotPlan()
     rank_cycle = MOOD_RANK.get(mood or "record", MOOD_RANK["record"])
     k = 0
@@ -257,7 +264,8 @@ def make_plan(scenes, lines, *, mood: str, bubbles: dict[str, str], hook_len: fl
         elif sc.kind == "bonus":
             plan.exprs.append((sc.start, sc.end, "shock"))
     wave_from = max(0.0, duration - WAVE_LEN)
-    plan.exprs = [(a, min(b, wave_from), e) for a, b, e in plan.exprs if a < wave_from] + [(wave_from, duration, "wave")]
+    kept = [(a, min(b, wave_from), e) for a, b, e in plan.exprs if a < wave_from]
+    plan.exprs = kept + [(wave_from, duration, "wave")]
     for t in adlib_times(lines):
         plan.reactions.append((t, t + REACT_LEN, "laugh" if mood == "humiliation" else "cheer"))
 
@@ -290,7 +298,7 @@ def make_plan(scenes, lines, *, mood: str, bubbles: dict[str, str], hook_len: fl
     return plan
 
 
-def bob_angle(beats, t: float) -> float:
+def bob_angle(beats: BeatMap | None, t: float) -> float:
     """박자마다 좌우로 까딱 (박자 짝·홀수로 방향 바꿈). 비트가 없으면 0.5초 간격."""
     if beats is not None and beats.beats:
         lb = beats.last_beat(t)

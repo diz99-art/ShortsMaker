@@ -7,15 +7,30 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-def create(destination: Path):
+def create(destination: Path) -> Path:
     destination.mkdir(parents=True, exist_ok=False)
     font = ImageFont.truetype(str(Path(__file__).parents[1] / "assets/fonts/Pretendard-Bold.otf"), 60)
     image = Image.new("RGB", (720, 1280), (20, 80, 140))
     draw = ImageDraw.Draw(image)
     draw.text((360, 400), "ShortsMaker\n한글 이미지 검증", font=font, anchor="mm", align="center", fill="white")
     image.save(destination / "검증 이미지.png")
-    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-n", "-f", "lavfi", "-i",
-                    "sine=frequency=440:duration=3", "-c:a", "libmp3lame", str(destination / "검증 음악.mp3")], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-n",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=3",
+            "-c:a",
+            "libmp3lame",
+            str(destination / "검증 음악.mp3"),
+        ],
+        check=True,
+    )
     scenes = [{"kind": "intro", "title": "인트로", "duration": .4}]
     scenes.extend({"kind": "rank", "title": f"{rank}위", "rank": rank, "duration": .4} for rank in range(5, 0, -1))
     scenes.append({"kind": "outro", "title": "아웃트로", "duration": .6})

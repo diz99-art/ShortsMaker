@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from shortsmaker.models import Project, load_template, list_channels
+from shortsmaker.models import Project, list_channels, load_template
 from shortsmaker.timeline import build_timeline
 
 
@@ -82,7 +82,8 @@ def test_scene_starts_follow_song():
     fps = 30
     p = make_project(duration=54, items=song_items(), outro_start=48.14)
     scenes = build_timeline(p, fps=fps)
-    assert [s.start for s in scenes] == [0.0] + [round(t * fps) / fps for t in (8.82, 12.10, 16.02, 32.26, 36.30, 48.14)]
+    expected = [round(t * fps) / fps for t in (8.82, 12.10, 16.02, 32.26, 36.30, 48.14)]
+    assert [s.start for s in scenes] == [0.0] + expected
     assert scenes[-1].end == 54
     for a, b in zip(scenes, scenes[1:]):
         assert a.end == b.start

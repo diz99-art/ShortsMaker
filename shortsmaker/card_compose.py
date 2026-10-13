@@ -9,6 +9,7 @@ import math
 import random
 import re
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
@@ -100,11 +101,11 @@ def _paste_center(canvas: Image.Image, img: Image.Image, cx: float, cy: float) -
     canvas.alpha_composite(img, (round(cx - img.width / 2), round(cy - img.height / 2)))
 
 
-def _fit_text(text: str, size: int, max_w: int, **kw) -> Image.Image:
+def _fit_text(text: str, size: int, max_w: int, **kw: Any) -> Image.Image:
     return _fit_sized(text, size, max_w, **kw)[0]
 
 
-def _fit_sized(text: str, size: int, max_w: int, **kw) -> tuple[Image.Image, int]:
+def _fit_sized(text: str, size: int, max_w: int, **kw: Any) -> tuple[Image.Image, int]:
     img = styled_text(text, size, **kw)
     while img.width > max_w and size > 24:
         size = int(size * 0.92)

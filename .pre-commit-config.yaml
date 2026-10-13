@@ -1,0 +1,15 @@
+# make hooks 로 설치. 커밋할 때 올라가면 안 되는 파일 검사 + ruff 를 돌린다.
+repos:
+  - repo: local
+    hooks:
+      - id: check-repo-files
+        name: 올리면 안 되는 파일·단어 검사
+        entry: .venv/bin/python scripts/check_repo_files.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff
+        entry: .venv/bin/ruff check --force-exclude
+        language: system
+        types: [python]

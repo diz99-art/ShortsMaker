@@ -9,6 +9,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -16,8 +17,18 @@ import streamlit as st
 from shortsmaker import manual_prompt as mp
 from shortsmaker import production_log as plog
 from shortsmaker.lyrics_check import check_lyrics_text, history_lyrics
-from shortsmaker.lyrics_gen import (DEFAULT_STYLE, Draft, LyricsGenError, auto_subtitles, build_prompt, claude_available,
-                                    generate_with_claude, pair_problems, parse_response, save_brief)
+from shortsmaker.lyrics_gen import (
+    DEFAULT_STYLE,
+    Draft,
+    LyricsGenError,
+    auto_subtitles,
+    build_prompt,
+    claude_available,
+    generate_with_claude,
+    pair_problems,
+    parse_response,
+    save_brief,
+)
 from shortsmaker.models import PROJECTS_DIR
 from shortsmaker.rank_extract import RankRow, label, rows_complete
 
@@ -73,7 +84,7 @@ NAME = ss.brief
 b = load(NAME)
 
 
-def log(event: str, **data) -> None:
+def log(event: str, **data: Any) -> None:
     b["log"].append({"at": plog.now(), "event": event, **data})
     save(NAME, b)
 
@@ -104,9 +115,21 @@ title = st.text_area("영상 제목 (2줄)", b["title"] or "", height=70, key="b
 s1, s2 = st.columns(2)
 src_name = s1.text_input("데이터 출처 이름", b["source_name"], key="b_src")
 src_url = s2.text_input("데이터 출처 URL", b["source_url"], key="b_url")
-df = pd.DataFrame([{"순위": r["rank"], "선수": r.get("player", ""), "팀": r.get("team", ""), "기록": r.get("record", ""),
-                    "연도": r.get("year", ""), "메모": r.get("notes", ""), "기록 줄(빨간)": r.get("stat_line", "")}
-                   for r in b["rows"]] or [{c: "" for c in COLS} | {"순위": r} for r in (5, 4, 3, 2, 1)])
+df = pd.DataFrame(
+    [
+        {
+            "순위": r["rank"],
+            "선수": r.get("player", ""),
+            "팀": r.get("team", ""),
+            "기록": r.get("record", ""),
+            "연도": r.get("year", ""),
+            "메모": r.get("notes", ""),
+            "기록 줄(빨간)": r.get("stat_line", ""),
+        }
+        for r in b["rows"]
+    ]
+    or [{c: "" for c in COLS} | {"순위": r} for r in (5, 4, 3, 2, 1)]
+)
 edited = st.data_editor(df, hide_index=True, num_rows="dynamic", key="b_rows",
                         column_config={"순위": st.column_config.NumberColumn(min_value=1, max_value=5, step=1)})
 if st.button("데이터 확정", key="b_confirm", type="primary"):
@@ -147,7 +170,9 @@ if g1.button("Claude 로 3가지 만들기 (claude -p)", key="gen_claude", type=
             st.rerun()
         except LyricsGenError as e:
             st.error(f"{e} → 아래 수동 모드를 쓰세요")
-with st.expander("수동 모드: 프롬프트 복사 → claude.ai·ChatGPT 에 붙여 넣기 → 답 붙여 넣기", expanded=not claude_available()):
+with st.expander(
+    "수동 모드: 프롬프트 복사 → claude.ai·ChatGPT 에 붙여 넣기 → 답 붙여 넣기", expanded=not claude_available()
+):
     st.code(prompt, language=None)
     if st.button("프롬프트 복사", key="cp_prompt"):
         mp.copy_to_clipboard(prompt)

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from .rank_extract import RankRow, column_problems, find_team, rows_complete
 
@@ -47,7 +48,7 @@ class QuickData:
     rows: list[RankRow] = field(default_factory=list)
     memos: list[str] = field(default_factory=list)
     hook: str = ""
-    bonus: dict | None = None
+    bonus: dict[str, Any] | None = None
     gauge_base: str = ""
     bubbles: dict[str, str] = field(default_factory=dict)
     value_label: str = ""                              # 하늘 배지형: 배지 값 라벨 ('값 이름:' 줄)
@@ -103,7 +104,8 @@ def parse_quick(text: str) -> QuickData:
         if not line or line.startswith("```") or re.fullmatch(r"\|?[\s:\-|]+\|?", line):
             continue  # 빈 줄, 코드 블록 표시, 마크다운 표 구분선
         if any(u in line for u in UNSURE):
-            q.errors.append(f"{no}번째 줄: '확인 필요' 칸이 있습니다 — 직접 확인해 채운 뒤 다시 붙여 넣으세요: {line[:50]}")
+            q.errors.append(f"{no}번째 줄: '확인 필요' 칸이 있습니다 — "
+                            f"직접 확인해 채운 뒤 다시 붙여 넣으세요: {line[:50]}")
             continue
         m = re.match(r"^(제목|출처|메모|후킹|보너스|기준|말풍선)\s*[:：]\s*(.*)$", line)
         if m:
@@ -134,7 +136,8 @@ def parse_quick(text: str) -> QuickData:
                         from .models import Bonus
                         Bonus.model_validate(q.bonus)
                 except (FlowError, ValueError) as e:
-                    q.errors.append(f"{no}번째 줄: 보너스 — {str(e).splitlines()[-1] if isinstance(e, ValueError) else e}")
+                    why = str(e).splitlines()[-1] if isinstance(e, ValueError) else e
+                    q.errors.append(f"{no}번째 줄: 보너스 — {why}")
             elif key == "말풍선":
                 from .mascot import SLOTS, bubble_problem
                 parts = [x.strip() for x in val.split("/")]
@@ -162,7 +165,8 @@ def parse_quick(text: str) -> QuickData:
                     q.warnings.append(f"{no}번째 줄: 머리줄이 '{' | '.join(COLUMNS)}' 와 다릅니다 (순서대로 읽습니다)")
                 continue
             if len(cells) != len(COLUMNS):
-                q.errors.append(f"{no}번째 줄: 칸이 {len(cells)}개입니다 ({len(COLUMNS)}개 필요: {' | '.join(COLUMNS)})")
+                q.errors.append(f"{no}번째 줄: 칸이 {len(cells)}개입니다 "
+                                f"({len(COLUMNS)}개 필요: {' | '.join(COLUMNS)})")
                 continue
             rank, player, team, record, year, scene = cells
             if not re.fullmatch(r"(공동\s*)?[1-5](위)?", rank):
@@ -173,7 +177,9 @@ def parse_quick(text: str) -> QuickData:
                 continue
             if team and not find_team(team):
                 q.warnings.append(f"{no}번째 줄: 팀 '{team}' 이 구단 사전에 없습니다 (맞으면 그대로 진행)")
-            q.rows.append(RankRow(rank=int(re.search(r"[1-5]", rank).group(0)), player=player, team=team,
+            digit = re.search(r"[1-5]", rank)
+            assert digit is not None  # 위에서 순위 칸 형식을 확인함
+            q.rows.append(RankRow(rank=int(digit.group(0)), player=player, team=team,
                                   record=record, year=year, scene=scene))
             continue
         q.errors.append(f"{no}번째 줄: 양식에 없는 줄입니다 (제목:/출처:/표/메모: 중 하나): {line[:50]}")

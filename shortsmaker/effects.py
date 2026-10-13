@@ -8,13 +8,17 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .card_compose import H as CARD_H, W as CARD_W, brush_band, styled_text
+from .card_compose import H as CARD_H
+from .card_compose import W as CARD_W
+from .card_compose import brush_band, styled_text
+from .models import Item, LyricLine
 from .rank_extract import team_colors
 from .scenes import _font, _hex
 
@@ -37,7 +41,7 @@ class BeatMap:
     beats: list[float] = field(default_factory=list)          # 곡 기준 초
     strong: list[tuple[float, float]] = field(default_factory=list)  # 강한 구간 [시작, 끝]
 
-    def shifted(self, offset: float) -> "BeatMap":
+    def shifted(self, offset: float) -> BeatMap:
         """영상 기준 시각으로 (music_start 만큼 당김)."""
         return BeatMap(self.tempo, [b - offset for b in self.beats if b >= offset],
                        [(a - offset, b - offset) for a, b in self.strong if b > offset])
@@ -320,7 +324,7 @@ class ChartBar:
     top: bool = False
 
 
-def chart_bars(items) -> list[ChartBar]:
+def chart_bars(items: list[Item]) -> list[ChartBar]:
     """영상 순서(5위→1위)대로. items: Project.ordered_items."""
     bars = []
     for it in items:
@@ -329,7 +333,8 @@ def chart_bars(items) -> list[ChartBar]:
             continue
         year = next(iter(re.findall(r"(?<!\d)(\d{4})(?!\d)", it.description or "")), "")
         team = re.sub(r"\s*\d{4}\s*$", "", it.description or "").strip()
-        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.shown_rank == 1))  # 공동 1위 모두
+        # top: 공동 1위 모두
+        bars.append(ChartBar(f"{it.shown_rank}위", it.name, v, it.value, team, year, top=it.shown_rank == 1))
     return bars
 
 
@@ -409,15 +414,29 @@ BURST_GAP = 5.0          # 터뜨림 사이 최소 간격
 BURST_MAX = 3
 
 
-KEYWORDS = ("역대 최고", "역대 최다", "역대 최초", "신기록", "최초", "최고", "최다", "최악", "레전드", "전설", "반전", "충격")
+KEYWORDS = (
+    "역대 최고",
+    "역대 최다",
+    "역대 최초",
+    "신기록",
+    "최초",
+    "최고",
+    "최다",
+    "최악",
+    "레전드",
+    "전설",
+    "반전",
+    "충격",
+)
 
 
 def _norm(t: str) -> str:
     return re.sub(r"[\s?!.,…~]+", "", t)
 
 
-def pick_bursts(lines, times_of, names: list[str], strong: list[tuple[float, float]],
-                blocked: list[tuple[float, float]], on_cards: list[str] | None = None) -> list[tuple[float, str]]:
+def pick_bursts(lines: list[LyricLine], times_of: Callable[[int], list[float]], names: list[str],
+                strong: list[tuple[float, float]], blocked: list[tuple[float, float]],
+                on_cards: list[str] | None = None) -> list[tuple[float, str]]:
     """강한 구간(후렴)에서 숫자·순위·핵심 단어('역대 최고' 등)를 부르는 순간. 간격 BURST_GAP 이상, 최대 BURST_MAX 번.
 
     on_cards: 카드에 이미 크게 나오는 글자(기록·이름·순위·팀·연도) — 같은 말이면 터뜨리지 않는다."""

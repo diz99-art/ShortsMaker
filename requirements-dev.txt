@@ -1,0 +1,7 @@
+# 개발 도구 (린트·타입 검사·커버리지·커밋 전 검사). 설치: .venv/bin/pip install -r requirements-dev.txt
+-r requirements.txt
+ruff==0.17.0
+mypy==2.4.0
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
+pre-commit==4.7.0

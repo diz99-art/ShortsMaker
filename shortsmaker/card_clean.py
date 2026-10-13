@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
@@ -19,6 +20,9 @@ from .card_compose import FONT_BLACK
 from .models import FONTS_DIR
 from .rank_extract import team_colors
 from .scenes import _font, _hex
+
+Color = str | tuple[int, ...]
+ImageSource = str | Path | Image.Image  # 파일 경로 또는 이미 연 그림
 
 W, H = 941, 1162
 BLUE = "#0043C8"
@@ -40,7 +44,7 @@ def muted(color: str, amount: float = 0.72) -> tuple[int, int, int]:
     return _mix(color, "#EEF1F5", amount)
 
 
-def soft_text(text: str, size: int, color, font: Path = FONT_BLACK, shadow: int = 10, alpha: float = 0.22
+def soft_text(text: str, size: int, color: Color, font: Path = FONT_BLACK, shadow: int = 10, alpha: float = 0.22
               ) -> Image.Image:
     """단색 글자 + 은은한 그림자 (테두리 없음)."""
     f = _font(str(font), size)
@@ -60,7 +64,7 @@ def soft_text(text: str, size: int, color, font: Path = FONT_BLACK, shadow: int 
     return img.crop(img.getbbox())
 
 
-def _fit(text: str, size: int, max_w: int, color, font: Path = FONT_BLACK, **kw) -> tuple[Image.Image, int]:
+def _fit(text: str, size: int, max_w: int, color: Color, font: Path = FONT_BLACK, **kw: Any) -> tuple[Image.Image, int]:
     im = soft_text(text, size, color, font, **kw)
     while im.width > max_w and size > 24:
         size = int(size * 0.92)
@@ -87,7 +91,7 @@ def _drop_shadow(card: Image.Image, mask: Image.Image, blur: int = 22, alpha: fl
     card.alpha_composite(sh, (0, 0))
 
 
-def _art(caricature, box: tuple[int, int]) -> Image.Image | None:
+def _art(caricature: ImageSource | None, box: tuple[int, int]) -> Image.Image | None:
     if caricature is None:
         return None
     if isinstance(caricature, Image.Image):
@@ -99,7 +103,7 @@ def _art(caricature, box: tuple[int, int]) -> Image.Image | None:
     return ImageOps.contain(art, box, Image.LANCZOS)
 
 
-def _load(img) -> Image.Image | None:
+def _load(img: ImageSource | None) -> Image.Image | None:
     if img is None:
         return None
     if isinstance(img, Image.Image):
@@ -108,7 +112,7 @@ def _load(img) -> Image.Image | None:
         return ImageOps.exif_transpose(im).copy()
 
 
-def _opaque(img) -> bool:
+def _opaque(img: ImageSource | None) -> bool:
     im = _load(img)
     if im is None:
         return False
@@ -117,7 +121,7 @@ def _opaque(img) -> bool:
     return im.convert("RGBA").getchannel("A").getextrema()[0] >= 250
 
 
-def _cover(img, size: tuple[int, int]) -> Image.Image:
+def _cover(img: ImageSource, size: tuple[int, int]) -> Image.Image:
     return ImageOps.fit(_load(img).convert("RGBA"), size, Image.LANCZOS)
 
 

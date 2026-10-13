@@ -11,7 +11,8 @@ from shortsmaker import auto_pipeline as ap
 from shortsmaker import effects as fx
 from shortsmaker import sfx
 from shortsmaker import variation as var
-from shortsmaker.card_mode import card_timeline, hook_length, make_renderer, render_video, sfx_cues
+from shortsmaker.card_mode import make_renderer, render_video
+from shortsmaker.card_timing import card_timeline, hook_length, sfx_cues
 from shortsmaker.models import Bonus, load_template
 from shortsmaker.quick_parse import EXAMPLE, parse_quick
 from tests.test_card_mode import SONG, make_project
@@ -169,11 +170,20 @@ def test_countup_and_gauge_frames(tmp_path, t):
         compose_card(src, **kw, omit_record=True, meta=meta).save(tmp_path / f"card{r_}_base.png")
         meta["base"] = f"card{r_}_base.png"
         (tmp_path / f"card{r_}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    items = [{"rank": r_, "name": f"팀{r_}", "value": f"{10 + r_}연패", "image": f"card{r_}.png"} for r_ in (5, 4, 3, 2, 1)]
+    items = [{"rank": r_, "name": f"팀{r_}", "value": f"{10 + r_}연패", "image": f"card{r_}.png"}
+             for r_ in (5, 4, 3, 2, 1)]
     from shortsmaker.models import Project
-    p = Project.model_validate(dict(channel="yagu_v2", title="t\nu", duration=30, items=items,
-                                    lyrics=[l.model_dump() for l in SONG], gauge_base="13연패",
-                                    variation={**FX, "count": "countup_gauge", "sfx": "off"}))   # 예전 값도 받음 → countup
+    p = Project.model_validate(
+        dict(
+            channel="yagu_v2",
+            title="t\nu",
+            duration=30,
+            items=items,
+            lyrics=[l.model_dump() for l in SONG],
+            gauge_base="13연패",
+            variation={**FX, "count": "countup_gauge", "sfx": "off"},
+        )
+    )   # 예전 값도 받음 → countup
     r = make_renderer(p, tmp_path, t, SONG)
     early = r.state(round((6.0 + fx.COUNT_DELAY + 0.1) * 30))
     late = r.state(round(9.0 * 30))

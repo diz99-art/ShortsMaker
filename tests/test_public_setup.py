@@ -54,4 +54,5 @@ def test_repo_file_check(tmp_path, monkeypatch):
                           "big.bin", ".env", ".env.example", "notes.md"], ["채널 이름"])
     joined = "\n".join(found)
     assert "assets/fonts/a.ttf" in joined and "big.bin" in joined and ".env:" in joined and "notes.md" in joined
-    assert "examples/demo/a.png" not in joined and "assets/placeholders/l.png:" not in joined and ".env.example:" not in joined
+    for allowed in ("examples/demo/a.png", "assets/placeholders/l.png:", ".env.example:"):
+        assert allowed not in joined

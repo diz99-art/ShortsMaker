@@ -1,11 +1,13 @@
-"""하늘 배지형 템플릿: 참고 영상에서 잰 자리, 배지(값 라벨·칩·아이콘), 1위 크기, 임시 캐릭터 차단, 엔딩 카드, 제목 아이콘."""
+"""하늘 배지형 템플릿: 참고 영상에서 잰 자리, 배지(값 라벨·칩·아이콘), 1위 크기,
+임시 캐릭터 차단, 엔딩 카드, 제목 아이콘."""
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from shortsmaker import quick_parse_info as qi
-from shortsmaker.card_mode import card_timeline, render_chrome
+from shortsmaker.card_layers import render_chrome
+from shortsmaker.card_timing import card_timeline
 from shortsmaker.card_zip import CHAR_BOX, PANEL, SIZE, compose_zip
 from shortsmaker.info_cards import is_placeholder, prepare_cards
 from shortsmaker.models import Project, load_template

@@ -78,7 +78,7 @@ def check_lyrics(lines: list[LyricLine], duration: float) -> list[str]:
 
 def render_lyric_pngs(lines: list[LyricLine], t: Template, work_dir: Path) -> tuple[list[TimedOverlay], list[str]]:
     """가사 줄마다 박스 크기 RGBA PNG (반투명 배경 + 글자). (overlay 목록, 경고 목록)"""
-    box = t.lyrics
+    box = t.lyrics_box
     work_dir.mkdir(parents=True, exist_ok=True)
     overlays: list[TimedOverlay] = []
     warnings: list[str] = []
@@ -128,7 +128,7 @@ def _ass_time(t: float) -> str:
 
 
 def build_ass(lines: list[LyricLine], t: Template) -> str:
-    box: LyricsBox = t.lyrics
+    box: LyricsBox = t.lyrics_box
     family, style = _font(str(t.font_path(box.font)), box.size).getname()
     bold = -1 if any(k in (style or "").lower() for k in ("bold", "black", "heavy")) else 0
     align = {"left": 1, "center": 2, "right": 3}[box.align]

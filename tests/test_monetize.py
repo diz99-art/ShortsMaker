@@ -4,14 +4,17 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from PIL import Image
 
 from shortsmaker import auto_pipeline as ap
 from shortsmaker import production_log as plog
 from shortsmaker import variation as var
 from shortsmaker.lyrics_check import check_lyrics_text
-from shortsmaker.lyrics_gen import (Draft, LyricsGenError, brief_markdown, generate_with_claude, parse_response,
-                                    save_brief)
+from shortsmaker.lyrics_gen import (
+    LyricsGenError,
+    generate_with_claude,
+    parse_response,
+    save_brief,
+)
 from tests.test_auto_pipeline import FA_TIE, _white_bg_png, fake_aligner, make_song
 
 FA_ROWS = [dict(rank=5, player="오지환", team="LG 트윈스", record="124억", notes="6년 계약"),
@@ -42,7 +45,8 @@ GOOD = """[Intro]
 
 def test_variation_avoids_recent_five(tmp_path):
     for i in range(5):
-        var.record(f"p{i}", var.Variation(transition="punch", accent="red_gold", subtitle="typing", intro="shrink"), tmp_path)
+        v = var.Variation(transition="punch", accent="red_gold", subtitle="typing", intro="shrink")
+        var.record(f"p{i}", v, tmp_path)
     same = var.Variation()
     assert var.conflicts(same, tmp_path)
     s = var.suggest(tmp_path, seed=1)
@@ -63,7 +67,8 @@ def test_variation_history_only_last_five(tmp_path):
 def test_good_lyrics_pass_and_list_lyrics_fail():
     good = check_lyrics_text(GOOD, FA_ROWS)
     assert good.passed, good.errors
-    listy = check_lyrics_text("5위 오지환 124억\n4위 박민우 140억\n2위 나성범 150억\n2위 이대호 150억\n1위 양의지 152억", FA_ROWS)
+    listy = check_lyrics_text("5위 오지환 124억\n4위 박민우 140억\n2위 나성범 150억\n"
+                              "2위 이대호 150억\n1위 양의지 152억", FA_ROWS)
     assert any("나열형" in e for e in listy.errors) and any("반전" in e for e in listy.errors)
 
 
@@ -72,7 +77,8 @@ def test_data_mismatch_errors():
     assert any("데이터에 없는 숫자 145" in e for e in r.errors)
     r = check_lyrics_text(GOOD.replace("5위 오지환", "5위 양의지"), FA_ROWS)
     assert any("5위와 선수 이름" in e for e in r.errors)
-    assert check_lyrics_text(GOOD.replace("하지만 1위 양의지", "하지만 1위 양의지, 오지환보다"), FA_ROWS).passed  # 비교 줄은 허용
+    # 비교 줄은 허용
+    assert check_lyrics_text(GOOD.replace("하지만 1위 양의지", "하지만 1위 양의지, 오지환보다"), FA_ROWS).passed
     r = check_lyrics_text(GOOD + "\n한화 이글스도 부러워할 돈", FA_ROWS)
     assert any("한화 이글스" in e for e in r.errors)
     assert check_lyrics_text(GOOD, FA_ROWS).passed                 # 차이(16억, 2억)는 데이터에서 계산되어 허용
@@ -89,11 +95,13 @@ def test_overlap_warning_ignores_data_phrases():
 # ---------------------------------------------------------------- 가사 생성
 
 def _envelope(payload: dict, *, error=False) -> str:
-    return json.dumps({"type": "result", "is_error": error, "result": "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"})
+    body = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+    return json.dumps({"type": "result", "is_error": error, "result": body})
 
 
 def test_generate_with_claude_fake_runner():
-    payload = {"title": "백오십이억의 주인", "style": "K-hiphop", "versions": [{"name": "반전", "angle": "a", "lyrics": GOOD}] * 3}
+    payload = {"title": "백오십이억의 주인", "style": "K-hiphop",
+               "versions": [{"name": "반전", "angle": "a", "lyrics": GOOD}] * 3}
     calls = []
 
     def runner(cmd, **kw):
@@ -104,9 +112,14 @@ def test_generate_with_claude_fake_runner():
     assert calls[0][0][:2] == ["claude", "-p"] and "--tools" in calls[0][0] and calls[0][1] == "프롬프트"
 
 
-@pytest.mark.parametrize("proc", [subprocess.CompletedProcess([], 1, stdout="", stderr="not logged in"),
-                                  subprocess.CompletedProcess([], 0, stdout=_envelope({}, error=True), stderr=""),
-                                  subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "몰라요"}), stderr="")])
+@pytest.mark.parametrize(
+    "proc",
+    [
+        subprocess.CompletedProcess([], 1, stdout="", stderr="not logged in"),
+        subprocess.CompletedProcess([], 0, stdout=_envelope({}, error=True), stderr=""),
+        subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "몰라요"}), stderr=""),
+    ],
+)
 def test_generate_failures_raise_for_manual_fallback(proc):
     with pytest.raises(LyricsGenError):
         generate_with_claude("p", runner=lambda cmd, **kw: proc)
@@ -128,9 +141,26 @@ def test_save_brief_requires_passing_check(tmp_path):
 # ---------------------------------------------------------------- 흐름: 기록·체크리스트·렌더·업로드
 
 def make_suno_song(path: Path, lyrics: str) -> Path:
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=35",
-                    "-metadata", f"lyrics={lyrics}", "-metadata", "comment=made with suno; created=2026-10-10T01:15:08Z; id=abc-123",
-                    "-c:a", "aac", str(path)], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=f=440:d=35",
+            "-metadata",
+            f"lyrics={lyrics}",
+            "-metadata",
+            "comment=made with suno; created=2026-10-10T01:15:08Z; id=abc-123",
+            "-c:a",
+            "aac",
+            str(path),
+        ],
+        check=True,
+    )
     return path
 
 
@@ -158,7 +188,8 @@ def test_suno_tag_and_logs(manual_project):
     assert {"field": "team", "from": "", "to": "롯데 자이언츠"} in [{k: c[k] for k in ("field", "from", "to")}
                                                                  for c in confirmed["changes"] if "field" in c]
     manual = next(e for e in plog.read_log(d) if e["event"] == "caricature_approved")
-    assert manual["mode"] == "manual" and "프롬프트" not in (manual.get("prompt") or "")  # 사진 없이 진행 → 프롬프트 파일 없음
+    # 사진 없이 진행 → 프롬프트 파일 없음
+    assert manual["mode"] == "manual" and "프롬프트" not in (manual.get("prompt") or "")
 
 
 def test_checklist_blocks_monetize_until_all_ok(manual_project, tmp_path):
@@ -181,7 +212,8 @@ def test_checklist_blocks_monetize_until_all_ok(manual_project, tmp_path):
 
 def test_draft_and_monetize_render_and_upload(manual_project, tmp_path):
     state, d = manual_project
-    ap.choose_variation(state, d, var.Variation(transition="pop", accent="green_gold", subtitle="word", intro="title_card"))
+    chosen = var.Variation(transition="pop", accent="green_gold", subtitle="word", intro="title_card")
+    ap.choose_variation(state, d, chosen)
     ap.compose_cards(state, d)
     draft = ap.render_all(state, d, kind="draft", capcut_root=tmp_path, output_dir=tmp_path)
     assert Path(draft["output"]).name == "fa_DRAFT.mp4"
@@ -246,7 +278,8 @@ def test_variation_frames(tmp_path):
     w = r_(subtitle="word")
     assert w.state(round(6.6 * 30))[3] == len("5위, 기아 ")           # 단어 단위 (두 번째 단어 시작 6.5초)
     ln = r_(subtitle="line")
-    assert ln.state(round(6.0 * 30))[3] == len(SONG[1].text) and ln.state(round(6.0 * 30))[7] == 0  # 줄 전체, 떠오르는 중
+    # 줄 전체, 떠오르는 중
+    assert ln.state(round(6.0 * 30))[3] == len(SONG[1].text) and ln.state(round(6.0 * 30))[7] == 0
 
 
 def test_lyrics_page_manual_flow(tmp_path, monkeypatch):
@@ -269,10 +302,18 @@ def test_lyrics_page_manual_flow(tmp_path, monkeypatch):
     at.button(key="b_confirm").click().run()
     assert not at.exception and json.loads(bj.read_text(encoding="utf-8"))["data_confirmed"]
     bad = GOOD.replace("하지만 ", "").replace("알고 보면 ", "")
-    answer = json.dumps({"title": "백오십이억의 주인", "style": "K-hiphop",
-                         "versions": [{"name": "좋은 버전", "angle": "반전", "lyrics": GOOD},
-                                      {"name": "나열 버전", "angle": "-", "lyrics": "5위 오지환 124억\n1위 양의지 152억"},
-                                      {"name": "반전 없음", "angle": "-", "lyrics": bad}]}, ensure_ascii=False)
+    answer = json.dumps(
+        {
+            "title": "백오십이억의 주인",
+            "style": "K-hiphop",
+            "versions": [
+                {"name": "좋은 버전", "angle": "반전", "lyrics": GOOD},
+                {"name": "나열 버전", "angle": "-", "lyrics": "5위 오지환 124억\n1위 양의지 152억"},
+                {"name": "반전 없음", "angle": "-", "lyrics": bad},
+            ],
+        },
+        ensure_ascii=False,
+    )
     at.text_area(key="pasted").set_value(answer)
     at.button(key="parse").click().run()
     assert not at.exception and json.loads(bj.read_text(encoding="utf-8"))["draft"]

@@ -88,14 +88,21 @@ def test_rule_mood():
     assert rule_mood("KBO 최장 연패", extra="").mood == "humiliation"
 
 
-def test_detect_mood_claude_then_rules():
-    ok = lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=json.dumps(
-        {"result": '{"mood": "retro", "reason": "2003년 추억"}'}), stderr="")
+def test_detect_mood_claude_then_rules(caplog):
+    def ok(cmd, **kw):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(
+            {"result": '{"mood": "retro", "reason": "2003년 추억"}'}), stderr="")
+
     r = detect_mood("50홈런도 6위라고?!", runner=ok)
     assert (r.mood, r.via) == ("retro", "claude") and r.designs[0] == "newspaper"
-    bad = lambda cmd, **kw: SimpleNamespace(returncode=1, stdout="", stderr="x")
-    r = detect_mood("KBO 역대 최장 연패", runner=bad)
+
+    def bad(cmd, **kw):
+        return SimpleNamespace(returncode=1, stdout="", stderr="x")
+
+    with caplog.at_level("WARNING", logger="shortsmaker.mood"):
+        r = detect_mood("KBO 역대 최장 연패", runner=bad)
     assert (r.mood, r.via) == ("humiliation", "rules")
+    assert "키워드 규칙" in caplog.text   # 실패 이유가 조용히 사라지지 않고 기록됨
 
 
 def test_suggest_design_avoids_recent(tmp_path):

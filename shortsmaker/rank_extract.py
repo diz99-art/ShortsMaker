@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -91,7 +92,7 @@ def _is_year(word: str, value: int | None) -> bool:
     return value is not None and 1900 <= value <= 2099 and ("천" in word or len(word) == 4)
 
 
-def _protected(text: str, protect) -> tuple[str, list[str]]:
+def _protected(text: str, protect: Iterable[str]) -> tuple[str, list[str]]:
     """이름(선수·팀)을 자리표시로 바꿔 숫자 변환에서 빼낸다. 긴 이름부터."""
     names = sorted({n for n in protect if n and len(n) >= 2}, key=len, reverse=True)
     kept: list[str] = []
@@ -106,7 +107,7 @@ def _restore(text: str, kept: list[str]) -> str:
     return re.sub("\ue000(\\d+)\ue001", lambda m: kept[int(m.group(1))], text)
 
 
-def normalize_numbers(text: str, protect=(), numbers=()) -> str:
+def normalize_numbers(text: str, protect: Iterable[str] = (), numbers: Iterable[str | int] = ()) -> str:
     """가사 속 한글 숫자를 아라비아 숫자로 ('십육 연패'→'16연패', '오십육 홈런'→'56홈런', '이천십 년'→'2010년').
 
     - 단위(홈런·개·년·위·승·경기·번·회 …) 바로 앞의 숫자만 바꾼다 (일반 낱말 속 '이', '사' 등은 그대로)
@@ -134,10 +135,10 @@ def normalize_numbers(text: str, protect=(), numbers=()) -> str:
     def word_like(ch: str) -> bool:
         return bool(ch and re.match(r"[가-힣]", ch) and ch not in PARTICLES)
 
-    def hangul_before(src: str, m: re.Match) -> bool:
+    def hangul_before(src: str, m: re.Match[str]) -> bool:
         return bool(re.match(r"[가-힣]", src[max(0, m.start() - 1):m.start()]))
 
-    def sino(m: re.Match) -> str:
+    def sino(m: re.Match[str]) -> str:
         word = m.group(0)
         if hangul_before(work, m) or any(work.startswith(c, m.start()) for c in COMMON_WORDS):
             return word
@@ -164,7 +165,7 @@ def normalize_numbers(text: str, protect=(), numbers=()) -> str:
 
     work = _KNUM.sub(sino, work)
 
-    def native(m: re.Match) -> str:
+    def native(m: re.Match[str]) -> str:
         if hangul_before(work, m):
             return m.group(0)
         unit, after, spaced = unit_after(work[m.end():])
@@ -176,7 +177,7 @@ def normalize_numbers(text: str, protect=(), numbers=()) -> str:
     # '16 연패' → '16연패' (숫자와 단위 사이 공백 제거). 연도는 '년'만 붙인다 ('2026 홈런 전쟁')
     units = "|".join(re.escape(u) for u in DISPLAY_UNITS)
 
-    def glue(g: re.Match) -> str:
+    def glue(g: re.Match[str]) -> str:
         if re.fullmatch(r"(19|20)\d\d", g.group(1)) and g.group(2) != "년":
             return g.group(0)
         return g.group(1) + g.group(2)
@@ -185,7 +186,7 @@ def normalize_numbers(text: str, protect=(), numbers=()) -> str:
     return _restore(out, kept)
 
 
-def display_text(text: str, protect=(), numbers=()) -> str:
+def display_text(text: str, protect: Iterable[str] = (), numbers: Iterable[str | int] = ()) -> str:
     """자막 표시용: 숫자 정리 + 부르는 말 → 표기 ('케이비오'→'KBO', '탑파이브'→'TOP 5'). 이름은 바꾸지 않는다."""
     t = normalize_numbers(text, protect, numbers)
     for a, b in [("케이비오", "KBO"), ("탑파이브", "TOP 5"), ("탑 파이브", "TOP 5"), ("탑텐", "TOP 10")]:
@@ -273,7 +274,9 @@ def extract_ranks(lines: list[LyricLine] | list[str]) -> list[RankRow]:
     for rank, i in entries:
         nxt = next((s for s in starts if s > i), len(norm))
         block = norm[i:nxt]
-        head = block[0][_RANK.search(block[0]).end():]  # 'N위' 뒤 (팀·선수 이름이 있는 곳)
+        rank_m = _RANK.search(block[0])
+        assert rank_m is not None  # entries 는 순위 낱말이 있는 줄만 모은 것
+        head = block[0][rank_m.end():]  # 'N위' 뒤 (팀·선수 이름이 있는 곳)
         team = find_team(" ".join(block))
         record = _record(head) or next((r for r in (_record(b) for b in block[1:3]) if r), "")
         year = next((m.group(1) for b in block for m in [_YEAR.search(b)] if m), "")
@@ -346,7 +349,8 @@ def rows_complete(rows: list[RankRow], *, need_team: bool = True) -> list[str]:
     if len(filled) != 5:
         problems.append(f"항목은 5개여야 합니다 (현재 {len(filled)}개). 공동 순위면 같은 순위를 두 행에 적으세요")
     elif not competition_ranks_ok(ranks):
-        problems.append(f"순위가 공동 순위 규칙에 맞지 않습니다 (현재 {ranks}). 예: 공동 2위 2명이면 1, 2, 2, 4, 5 (3위 없음)")
+        problems.append(f"순위가 공동 순위 규칙에 맞지 않습니다 (현재 {ranks}). "
+                        "예: 공동 2위 2명이면 1, 2, 2, 4, 5 (3위 없음)")
     for r in filled:
         for field, name in [("team", "팀"), ("player", "선수"), ("record", "기록")]:
             if not getattr(r, field).strip() and (need_team or field != "team"):  # 하늘 배지형: 구분(team)은 비어도 됨

@@ -9,9 +9,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .card_clean import FONT_DISPLAY
+from .card_clean import FONT_DISPLAY, ImageSource
 from .card_compose import FONTS_DIR
 
 SIZE = (1080, 680)
@@ -28,18 +28,17 @@ ICON_BOX = (78, 282, 288, 448)       # 아이콘 자리
 CHAR_BOX = (640, 20, 1030, 612)      # 캐릭터 (아래·가운데 맞춤)
 
 
-def _font(path: Path, size: int):
-    from PIL import ImageFont
+def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(path), size)
 
 
-def _fit_font(text: str, path: Path, size: int, max_w: int, min_size: int = 20):
+def _fit_font(text: str, path: Path, size: int, max_w: int, min_size: int = 20) -> ImageFont.FreeTypeFont:
     while size > min_size and _font(path, size).getlength(text) > max_w:
         size -= 2
     return _font(path, size)
 
 
-def _load(src) -> Image.Image | None:
+def _load(src: ImageSource | None) -> Image.Image | None:
     if src is None:
         return None
     if isinstance(src, Image.Image):
@@ -48,7 +47,8 @@ def _load(src) -> Image.Image | None:
         return im.convert("RGBA")
 
 
-def _shadow(mask: Image.Image, color=(40, 110, 200), opacity=0.22, blur=14, dy=8) -> Image.Image:
+def _shadow(mask: Image.Image, color: tuple[int, int, int] = (40, 110, 200), opacity: float = 0.22, blur: float = 14,
+            dy: int = 8) -> Image.Image:
     sh = Image.new("RGBA", mask.size, color + (0,))
     sh.putalpha(mask.point(lambda v: round(v * opacity)).filter(ImageFilter.GaussianBlur(blur)))
     out = Image.new("RGBA", mask.size, (0, 0, 0, 0))
@@ -109,8 +109,8 @@ def _rank_badge(label: str) -> Image.Image:
         f = _fit_font(label, FONT_DISPLAY, 60, int(r * 1.8))
         d.text((cx, cy), label, font=f, anchor="mm", fill=(255, 255, 255), stroke_width=6, stroke_fill=(18, 59, 140))
     _crown(d, cx - r * 0.25, cy - r * 0.86, r * 0.8)
-    for k, (a, b) in enumerate([((cx + r * 0.95, cy - r * 1.05), (cx + r * 1.12, cy - r * 1.35)),
-                                ((cx + r * 1.2, cy - r * 0.8), (cx + r * 1.5, cy - r * 0.98))]):
+    for a, b in [((cx + r * 0.95, cy - r * 1.05), (cx + r * 1.12, cy - r * 1.35)),
+                 ((cx + r * 1.2, cy - r * 0.8), (cx + r * 1.5, cy - r * 0.98))]:
         d.line([a, b], fill=(255, 196, 26), width=9)
     return im
 
@@ -148,7 +148,7 @@ def _chip(text: str, max_w: int) -> Image.Image:
 
 
 def badge(*, rank_label: str, name: str, value: str, value_label: str = "", category: str = "", year: str = "",
-          icon=None) -> Image.Image:
+          icon: ImageSource | None = None) -> Image.Image:
     """배지 그림 (장면 그림과 같은 좌표계, 투명 바깥)."""
     out = Image.new("RGBA", SIZE, (0, 0, 0, 0))
     x0, y0, x1, y1 = PANEL
@@ -198,7 +198,7 @@ def badge(*, rank_label: str, name: str, value: str, value_label: str = "", cate
     return out
 
 
-def character_image(src) -> Image.Image | None:
+def character_image(src: ImageSource | None) -> Image.Image | None:
     im = _load(src)
     if im is None:
         return None
@@ -206,8 +206,10 @@ def character_image(src) -> Image.Image | None:
     return im.crop(bb) if bb else im
 
 
-def compose_zip(character, *, rank_label: str, name: str, value: str, value_label: str = "", category: str = "",
-                year: str = "", icon=None, top: bool = False, layers: dict | None = None) -> Image.Image:
+def compose_zip(character: ImageSource | None, *, rank_label: str, name: str, value: str, value_label: str = "",
+                category: str = "",
+                year: str = "", icon: ImageSource | None = None, top: bool = False,
+                layers: dict[str, Image.Image] | None = None) -> Image.Image:
     """순위 장면 그림 (1080×680, 투명 바깥). 1위는 배지·캐릭터를 TOP_SCALE 배."""
     k = TOP_SCALE if top else 1.0
     out = Image.new("RGBA", SIZE, (0, 0, 0, 0))

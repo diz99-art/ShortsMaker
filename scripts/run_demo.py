@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from shortsmaker.models import OUTPUT_DIR, PROJECTS_DIR  # noqa: E402
 from shortsmaker.pipeline import render  # noqa: E402
-from shortsmaker.quick_parse_info import parse_quick_info  # noqa: E402
+from shortsmaker.quick_parse_info import InfoProject, parse_quick_info  # noqa: E402
 from shortsmaker.validate import post_render  # noqa: E402
 
 DEMO = ROOT / "examples" / "demo"
@@ -23,7 +23,7 @@ DURATION = 30.0
 STARTS = [4.0, 9.0, 14.0, 19.0, 24.0]  # 5위 → 1위 장면 시작 (lyrics.lrc 와 맞춤)
 
 
-def build(work: Path):
+def build(work: Path) -> InfoProject:
     project = parse_quick_info((DEMO / "form.txt").read_text(encoding="utf-8"))
     items = [it.model_copy(update={"image": f"item{i}.png", "start": STARTS[i - 1]})
              for i, it in enumerate(project.items, 1)]

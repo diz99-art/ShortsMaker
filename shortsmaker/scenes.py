@@ -17,7 +17,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from .models import Box, ImageBox, Project, Template, TextBox
 from .timeline import Scene
 
-
 # ---------------------------------------------------------------- 텍스트 맞춤
 
 @dataclass

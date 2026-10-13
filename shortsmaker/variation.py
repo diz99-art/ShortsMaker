@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 from pydantic import BaseModel, field_validator
 
@@ -18,7 +19,13 @@ from .models import PROJECTS_DIR, Motion
 
 TRANSITIONS = {"punch": "확대+모션 블러 '쾅'", "slide": "옆에서 미끄러져 들어오기", "flash": "흰 섬광 후 바로 바뀜",
                "pop": "작게 시작해 튀어 오르기"}
-ACCENTS = {  # 빨간 기록 줄 / 카드 순위 글자 그라데이션 (제목 파랑은 고정)
+class Accent(TypedDict):
+    label: str
+    stat: str                   # 빨간 기록 줄 색
+    rank: tuple[str, str, str]  # 순위 글자 그라데이션 (위 → 아래)
+
+
+ACCENTS: dict[str, Accent] = {  # 빨간 기록 줄 / 카드 순위 글자 그라데이션 (제목 파랑은 고정)
     "red_gold": {"label": "빨강 + 금색", "stat": "#EB1B1B", "rank": ("#FFF27A", "#F7B500", "#C86A00")},
     "orange_silver": {"label": "주황 + 은색", "stat": "#F26A00", "rank": ("#FFFFFF", "#D9E1EA", "#8A97A6")},
     "green_gold": {"label": "진녹 + 금색", "stat": "#0A8F3C", "rank": ("#FFF6B0", "#E9C34A", "#9C7A12")},
@@ -44,11 +51,27 @@ DATAGFX = {"bars": "1위 뒤 기록 막대그래프", "bars_years": "막대그�
 DEPTHS = {"pan": "2.5D 옆으로 흐르기", "dolly": "2.5D 다가가기", "off": "입체 없음"}
 BURSTS = {"zoom": "키워드 크게 터뜨리기", "stamp": "키워드 도장 쾅", "off": "키워드 없음"}
 # 카드 디자인 (분위기별 3종, shortsmaker/card_design.py). '' 은 예전 붓 터치 카드
-CARD_DESIGNS = {"": "기본 붓 터치", "stadium": "스타디움 조명", "gold_rays": "금색 광선", "medal": "메달·리본",
-                "fall": "추락 그래프", "rain": "어두운 비", "glass": "금 간 유리", "bills": "지폐 비", "coins": "금화 더미",
-                "receipt": "계약서 영수증", "vs_split": "VS 분할", "lightning": "번개", "flames": "불꽃 대결",
-                "newspaper": "신문 지면", "film": "옛날 필름", "polaroid": "빛바랜 사진", "scoreboard": "전광판",
-                "neon": "네온", "breaking": "속보 LIVE"}
+CARD_DESIGNS = {
+    "": "기본 붓 터치",
+    "stadium": "스타디움 조명",
+    "gold_rays": "금색 광선",
+    "medal": "메달·리본",
+    "fall": "추락 그래프",
+    "rain": "어두운 비",
+    "glass": "금 간 유리",
+    "bills": "지폐 비",
+    "coins": "금화 더미",
+    "receipt": "계약서 영수증",
+    "vs_split": "VS 분할",
+    "lightning": "번개",
+    "flames": "불꽃 대결",
+    "newspaper": "신문 지면",
+    "film": "옛날 필름",
+    "polaroid": "빛바랜 사진",
+    "scoreboard": "전광판",
+    "neon": "네온",
+    "breaking": "속보 LIVE",
+}
 AXES = {"transition": TRANSITIONS, "accent": ACCENTS, "subtitle": SUBTITLES, "intro": INTROS, "motion": MOTIONS,
         "hook": HOOKS, "beat": BEATS, "count": COUNTS, "sfx": SFX, "progress": PROGRESS, "ending": ENDINGS,
         "design": CARD_DESIGNS, "mascot": MASCOTS, "datagfx": DATAGFX, "depth": DEPTHS, "burst": BURSTS,
@@ -152,7 +175,7 @@ def suggest(root: Path = PROJECTS_DIR, exclude: str | None = None, seed: int | N
 
 def record(slug: str, v: Variation, root: Path = PROJECTS_DIR, kind: str = "render") -> None:
     h = load_history(root)
-    h.append({"slug": slug, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind,
+    h.append({"slug": slug, "at": datetime.now(UTC).isoformat(timespec="seconds"), "kind": kind,
               "variation": v.model_dump()})
     root.mkdir(parents=True, exist_ok=True)
     history_path(root).write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")

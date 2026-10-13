@@ -22,7 +22,7 @@ BASE_RANK = 8.0
 BASE_RANK_ONE = 10.0
 BASE_OUTRO = 5.0
 
-SceneKind = Literal["intro", "rank", "outro", "bonus"]
+SceneKind = Literal["intro", "rank", "outro", "bonus", "chart"]
 
 
 @dataclass(frozen=True)
