@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from .card_design import MOODS, designs_for
 
 TIMEOUT = 120
+log = logging.getLogger(__name__)
 
 # 키워드 규칙 (위에서부터 먼저 맞는 것, 정규식)
 RULES: list[tuple[str, tuple[str, ...]]] = [
@@ -108,8 +110,8 @@ def detect_mood(title: str, topic: str = "", memos: list[str] | None = None, row
             import shutil
             if runner is not subprocess.run or shutil.which("claude"):
                 return claude_mood(mood_prompt(title, topic, memos, rows), runner=runner)
-        except Exception:  # noqa: BLE001 — 키워드 규칙으로
-            pass
+        except Exception as e:  # noqa: BLE001 — 어떤 실패든 키워드 규칙으로 넘어간다
+            log.warning("claude 분위기 판단 실패, 키워드 규칙을 씁니다: %s: %s", type(e).__name__, e)
     years = [int(y) for r in rows for y in [str(r.get("year", ""))] if re.fullmatch(r"\d{4}", y)]
     extra = " ".join([*memos] + [str(r.get("record", "")) for r in rows])
     return rule_mood(f"{title} {topic}", years, extra=extra)
