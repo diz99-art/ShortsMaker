@@ -192,6 +192,7 @@ def test_countup_and_gauge_frames(tmp_path, t):
     assert r.frame_at(6.0 + fx.COUNT_DELAY + 0.1).tobytes() != r.frame_at(9.0).tobytes()
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_render_mixes_sfx(tmp_path, t):
     p = fx_project(tmp_path, variation={**FX, "progress": "none"}, hook="", bonus=None, duration=30)
     r = make_renderer(p, tmp_path, t, SONG)

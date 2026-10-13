@@ -125,6 +125,7 @@ def test_compare_lyrics_finds_mismatch():
     assert any("'1위'" in i for i in compare_lyrics(HR_SONG.replace("1위 이승엽 오십육 홈런", "그리고 마지막"), q.rows))
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_run_quick_end_to_end(hr, tmp_path):
     song, root = hr
     q = parse_quick(EXAMPLE)
@@ -147,6 +148,7 @@ def test_run_quick_end_to_end(hr, tmp_path):
     assert "quick_input" in events and "quick_mismatch_accepted" in events and events[-1] == "render"
 
 
+@pytest.mark.slow  # 실제 MP4 인코딩 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_quick_always_new_folder_and_hook_image(hr, tmp_path):
     """같은 이름의 예전 프로젝트가 있어도 새 폴더를 만든다 (예전 영상을 다시 렌더하던 버그)."""
     song, root = hr
