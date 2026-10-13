@@ -9,20 +9,25 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .models import Box, CardLayout, Motion, Project, StatLine, Template, TypingSubtitle
 from .scenes import _font, _hex, _wrap
 
+BICUBIC, LANCZOS = Image.Resampling.BICUBIC, Image.Resampling.LANCZOS  # 리샘플링 필터 (줄 길이를 줄이려고 짧은 이름)
+
+Color = str | tuple[int, ...]  # Pillow 가 받는 색 ('#RRGGBB' 또는 RGB(A) 튜플)
+
 # ---------------------------------------------------------------- 정적 레이어
 
-def _rounded(d: ImageDraw.ImageDraw, box: Box, fill, outline=None, width=0, radius=None) -> None:
+def _rounded(d: ImageDraw.ImageDraw, box: Box, fill: Color, outline: Color | None = None, width: int = 0,
+             radius: float | None = None) -> None:
     r = box.h / 2 if radius is None else radius
     d.rounded_rectangle([box.x, box.y, box.x + box.w - 1, box.y + box.h - 1], radius=r,
                         fill=fill, outline=outline, width=width)
 
 
-def _seam_icon(d: ImageDraw.ImageDraw, x: float, cy: float, h: float, color) -> float:
+def _seam_icon(d: ImageDraw.ImageDraw, x: float, cy: float, h: float, color: Color) -> float:
     """야구공 실밥 ')(' 모양 아이콘 — 서로 등을 맞댄 두 곡선. 그린 너비를 돌려준다."""
     lw = max(3, round(h * 0.16))
     rx, ry = h * 0.75, h * 0.62
@@ -32,7 +37,7 @@ def _seam_icon(d: ImageDraw.ImageDraw, x: float, cy: float, h: float, color) -> 
     return h * 0.85
 
 
-def _bell(d: ImageDraw.ImageDraw, cx: float, cy: float, h: float, color) -> None:
+def _bell(d: ImageDraw.ImageDraw, cx: float, cy: float, h: float, color: Color) -> None:
     """종 모양 아이콘."""
     w = h * 0.86
     top = cy - h / 2
@@ -43,7 +48,7 @@ def _bell(d: ImageDraw.ImageDraw, cx: float, cy: float, h: float, color) -> None
     d.ellipse([cx - h * 0.14, top + h * 0.8, cx + h * 0.14, top + h], fill=color)
 
 
-def _title_lines(text: str, c: CardLayout, font_path: Path) -> tuple[list[str], object]:
+def _title_lines(text: str, c: CardLayout, font_path: Path) -> tuple[list[str], ImageFont.FreeTypeFont]:
     box = c.title
     size = box.size
     while True:
@@ -57,12 +62,12 @@ def _title_lines(text: str, c: CardLayout, font_path: Path) -> tuple[list[str], 
 def render_chrome(t: Template, project: Project, project_dir: Path | None = None) -> tuple[Image.Image, Image.Image]:
     """(바닥 레이어 RGB: 배경+아래 버튼, 머리 레이어 RGBA: 알약 로고+제목+구분선 — 구분선 아래는 투명).
     하늘 배지형: 배경 그림, 그림 로고(brand_logo), 제목 둘째 줄 끝 아이콘(project.title_icon)."""
-    c = t.card
+    c = t.card_layout
     W, H = t.width, t.height
     bg_p = t.asset_path(c.background_image) if c.background_image else None
     if bg_p is not None:
         with Image.open(bg_p) as im:
-            base = im.convert("RGB").resize((W, H), Image.LANCZOS)
+            base = im.convert("RGB").resize((W, H), LANCZOS)
     else:
         base = Image.new("RGB", (W, H), _hex(c.background_color))
     d = ImageDraw.Draw(base)
@@ -98,7 +103,7 @@ def render_chrome(t: Template, project: Project, project_dir: Path | None = None
         with Image.open(logo_p) as im:
             logo = im.convert("RGBA")
         sc_ = min(lb.w / logo.width, lb.h / logo.height)
-        logo = logo.resize((max(1, round(logo.width * sc_)), max(1, round(logo.height * sc_))), Image.LANCZOS)
+        logo = logo.resize((max(1, round(logo.width * sc_)), max(1, round(logo.height * sc_))), LANCZOS)
         head.alpha_composite(logo, (lb.x, lb.y + (lb.h - logo.height) // 2))
     else:
         _rounded(hd, p, fill=_hex(p.fill), outline=_hex(p.border_color), width=p.border_width)
@@ -127,7 +132,7 @@ def render_chrome(t: Template, project: Project, project_dir: Path | None = None
     for k, line in enumerate(lines):
         if icon is not None and k == len(lines) - 1:  # 마지막 줄 끝 아이콘: 글자+아이콘을 함께 가운데 정렬
             ih = round(tfont.size * 1.0)
-            ic = icon.resize((max(1, round(icon.width * ih / icon.height)), ih), Image.LANCZOS)
+            ic = icon.resize((max(1, round(icon.width * ih / icon.height)), ih), LANCZOS)
             gap = round(tfont.size * 0.25)
             tw = tfont.getlength(line)
             x0 = box.x + (box.w - (tw + gap + ic.width)) / 2
@@ -175,7 +180,7 @@ class MovingLayer:
         max_s = max(s for _, s in motion.curve)
         # 가장 큰 배율에서도 선명하도록 원본 해상도에서 바로 줄인다
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
-            (round(self.w * max_s), round(self.h * max_s)), Image.LANCZOS)
+            (round(self.w * max_s), round(self.h * max_s)), LANCZOS)
 
     def variant(self, img: Image.Image) -> MovingLayer:
         """같은 자리·움직임에 그림만 바꾼 레이어 (카운트업 숫자)."""
@@ -183,9 +188,9 @@ class MovingLayer:
 
     def _place(self, s: float, dx: float = 0.0, dy: float = 0.0, angle: float = 0.0) -> tuple[Image.Image, int, int]:
         w, h = max(1, round(self.w * s)), max(1, round(self.h * s))
-        img = self._big.resize((w, h), Image.BICUBIC if s > 1.01 else Image.LANCZOS)
+        img = self._big.resize((w, h), BICUBIC if s > 1.01 else LANCZOS)
         if abs(angle) > 0.05:
-            img = img.rotate(angle, resample=Image.BICUBIC, expand=True)
+            img = img.rotate(angle, resample=BICUBIC, expand=True)
         return img, round(self.cx - img.width / 2 + dx), round(self.cy - img.height / 2 + dy)
 
     def _dx(self, t: float | None) -> float:
@@ -219,7 +224,7 @@ class MovingLayer:
             # 셔터가 열린 동안의 배율·위치 변화를 평균 → 확대/이동 방향 모션 블러
             back = m.shutter / self.fps
             prev_s, prev_dx = m.scale_ext(ta - back), self._dx(ta - back)
-            acc = None
+            acc: np.ndarray | None = None
             for k in range(m.blur_samples):
                 f = (k + 1) / m.blur_samples
                 img, x, y = self._place(prev_s + (s - prev_s) * f, prev_dx + (dx - prev_dx) * f)
@@ -228,6 +233,7 @@ class MovingLayer:
                 a = np.asarray(tmp, dtype=np.float32)
                 a[..., :3] *= a[..., 3:4] / 255.0  # premultiplied 로 평균해야 가장자리가 검게 번지지 않음
                 acc = a if acc is None else acc + a
+            assert acc is not None  # blur_samples > 1 이라 반복이 한 번 이상 돈다
             acc /= m.blur_samples
             alpha = acc[..., 3:4]
             rgb = np.where(alpha > 0, acc[..., :3] * 255.0 / np.maximum(alpha, 1e-6), 0)
@@ -245,7 +251,7 @@ class MovingLayer:
 
 @dataclass
 class SubtitleLayout:
-    font: object
+    font: ImageFont.FreeTypeFont
     lines: list[tuple[str, int, float, float]]  # (줄 글자, 줄 첫 글자의 원문 위치, x 왼쪽, y 위)
     overflow: bool = False
 
@@ -360,7 +366,7 @@ def stat_visible(text: str, sl: StatLine, since: float) -> int:
 
 def render_title_card(t: Template, project: Project) -> Image.Image:
     """인트로 '제목 카드' 연출: 구분선 아래에 영상 제목을 크게 (제목 파랑 고정)."""
-    c = t.card
+    c = t.card_layout
     layer = Image.new("RGBA", (t.width, t.height), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     lines = project.title.split("\n")

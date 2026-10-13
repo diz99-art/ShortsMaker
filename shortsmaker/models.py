@@ -430,6 +430,19 @@ class Template(BaseModel):
 
     _template_dir: Path | None = PrivateAttr(default=None)
 
+    # 모드별 블록은 위 검증에서 반드시 채워진다. 아래 두 속성은 그 사실을 타입 검사기에도 알려 준다.
+    @property
+    def card_layout(self) -> CardLayout:
+        if self.card is None:
+            raise ValueError(f"템플릿 '{self.name}' 은 card 모드가 아닙니다")
+        return self.card
+
+    @property
+    def lyrics_box(self) -> LyricsBox:
+        if self.lyrics is None:
+            raise ValueError(f"템플릿 '{self.name}' 에 lyrics 블록이 없습니다 (classic 모드 전용)")
+        return self.lyrics
+
     @property
     def template_dir(self) -> Path | None:
         return self._template_dir

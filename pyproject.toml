@@ -22,6 +22,25 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
+# 핵심 모듈은 엄격하게: 자료 양식 읽기, 순위·숫자 변환, 가사, 카드 모드(타이밍·레이어·렌더러)
+# (warn_return_any 는 끔 — re.Match.group() 이 str | Any 를 돌려줘서 정규식 코드마다 경고가 남)
+[[tool.mypy.overrides]]
+module = [
+    "shortsmaker.card_layers",
+    "shortsmaker.card_mode",
+    "shortsmaker.card_timing",
+    "shortsmaker.lyrics",
+    "shortsmaker.quick_parse",
+    "shortsmaker.quick_parse_info",
+    "shortsmaker.rank_extract",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_any_generics = true
+check_untyped_defs = true
+strict_equality = true
+warn_return_any = false
+
 # 아직 오류가 남아 있는 모듈 — 고칠 때마다 이 목록에서 빼서 검사 대상으로 옮긴다 (docs/decisions.md)
 [[tool.mypy.overrides]]
 module = [
@@ -31,23 +50,16 @@ module = [
     "shortsmaker.card_clean",
     "shortsmaker.card_compose",
     "shortsmaker.card_design",
-    "shortsmaker.card_layers",
-    "shortsmaker.card_mode",
-    "shortsmaker.card_timing",
     "shortsmaker.card_zip",
     "shortsmaker.editing_package",
     "shortsmaker.effects",
     "shortsmaker.info_cards",
-    "shortsmaker.lyrics",
     "shortsmaker.lyrics_align",
     "shortsmaker.lyrics_check",
     "shortsmaker.mascot",
     "shortsmaker.models",
     "shortsmaker.player_assets",
     "shortsmaker.quick",
-    "shortsmaker.quick_parse",
-    "shortsmaker.quick_parse_info",
-    "shortsmaker.rank_extract",
     "shortsmaker.scenes",
     "shortsmaker.timeline",
     "shortsmaker.validate",

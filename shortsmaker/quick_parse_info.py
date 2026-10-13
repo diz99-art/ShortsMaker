@@ -8,6 +8,7 @@ InfoItem의 year/scene, InfoProject의 memos는 model_dump()에도 보존된다.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from pydantic import Field
 
@@ -69,7 +70,7 @@ class InfoItem(Item):
 
 
 class InfoProject(Project):
-    items: list[InfoItem]
+    items: list[InfoItem]  # type: ignore[assignment]  # pydantic: 하위 모델로 좁힘 (읽기 전용으로 씀)
     memos: list[str] = Field(default_factory=list)
 
 
@@ -94,13 +95,13 @@ def _bonus(value: str) -> Bonus | None:
                  value=cells[2], year=cells[3])
 
 
-def parse_quick_info(text: str) -> Project:
+def parse_quick_info(text: str) -> InfoProject:
     """6칸 정보 양식을 읽는다. 공동 순위는 표시 순위로, 자리는 5→1로 저장한다.
 
     출처는 기존 양식처럼 '이름 | http(s) URL'. 빈 연도·그림 설명은 허용한다.
     메모와 그림 설명은 확장 필드에 보존하며 권리 확인은 기본 False다.
     """
-    data = dict(channel=CHANNEL, title="", source_note="", hook="", value_label="",
+    data: dict[str, Any] = dict(channel=CHANNEL, title="", source_note="", hook="", value_label="",
                 bonus=None, bubbles={}, memos=[])
     errors: list[str] = []
     rows: list[tuple[int, InfoItem]] = []
@@ -178,7 +179,9 @@ def parse_quick_info(text: str) -> Project:
                     elif year and not re.fullmatch(r"[0-9]{4}", year):
                         problem = f"기준 연도 '{year}' 는 4자리 숫자여야 합니다"
                     else:
-                        rows.append((no, InfoItem(rank=int(re.search(r"[1-5]", rank)[0]),
+                        digit = re.search(r"[1-5]", rank)
+                        assert digit is not None  # 위 fullmatch 로 확인함
+                        rows.append((no, InfoItem(rank=int(digit[0]),
                                                  name=name, description=description, value=value,
                                                  year=year, scene=scene)))
             else:

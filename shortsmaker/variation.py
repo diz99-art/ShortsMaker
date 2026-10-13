@@ -11,6 +11,7 @@ import json
 import random
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 from pydantic import BaseModel, field_validator
 
@@ -18,7 +19,13 @@ from .models import PROJECTS_DIR, Motion
 
 TRANSITIONS = {"punch": "확대+모션 블러 '쾅'", "slide": "옆에서 미끄러져 들어오기", "flash": "흰 섬광 후 바로 바뀜",
                "pop": "작게 시작해 튀어 오르기"}
-ACCENTS = {  # 빨간 기록 줄 / 카드 순위 글자 그라데이션 (제목 파랑은 고정)
+class Accent(TypedDict):
+    label: str
+    stat: str                   # 빨간 기록 줄 색
+    rank: tuple[str, str, str]  # 순위 글자 그라데이션 (위 → 아래)
+
+
+ACCENTS: dict[str, Accent] = {  # 빨간 기록 줄 / 카드 순위 글자 그라데이션 (제목 파랑은 고정)
     "red_gold": {"label": "빨강 + 금색", "stat": "#EB1B1B", "rank": ("#FFF27A", "#F7B500", "#C86A00")},
     "orange_silver": {"label": "주황 + 은색", "stat": "#F26A00", "rank": ("#FFFFFF", "#D9E1EA", "#8A97A6")},
     "green_gold": {"label": "진녹 + 금색", "stat": "#0A8F3C", "rank": ("#FFF6B0", "#E9C34A", "#9C7A12")},

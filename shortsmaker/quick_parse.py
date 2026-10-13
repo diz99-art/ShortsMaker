@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from .rank_extract import RankRow, column_problems, find_team, rows_complete
 
@@ -47,7 +48,7 @@ class QuickData:
     rows: list[RankRow] = field(default_factory=list)
     memos: list[str] = field(default_factory=list)
     hook: str = ""
-    bonus: dict | None = None
+    bonus: dict[str, Any] | None = None
     gauge_base: str = ""
     bubbles: dict[str, str] = field(default_factory=dict)
     value_label: str = ""                              # 하늘 배지형: 배지 값 라벨 ('값 이름:' 줄)
@@ -176,7 +177,9 @@ def parse_quick(text: str) -> QuickData:
                 continue
             if team and not find_team(team):
                 q.warnings.append(f"{no}번째 줄: 팀 '{team}' 이 구단 사전에 없습니다 (맞으면 그대로 진행)")
-            q.rows.append(RankRow(rank=int(re.search(r"[1-5]", rank).group(0)), player=player, team=team,
+            digit = re.search(r"[1-5]", rank)
+            assert digit is not None  # 위에서 순위 칸 형식을 확인함
+            q.rows.append(RankRow(rank=int(digit.group(0)), player=player, team=team,
                                   record=record, year=year, scene=scene))
             continue
         q.errors.append(f"{no}번째 줄: 양식에 없는 줄입니다 (제목:/출처:/표/메모: 중 하나): {line[:50]}")

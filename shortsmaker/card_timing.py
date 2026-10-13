@@ -8,9 +8,9 @@ import re
 from difflib import SequenceMatcher
 
 from .effects import BONUS_LEN, BONUS_MIN_TOP, CHART_LEN, HOOK_IMPACT
-from .models import MIN_SCENE, LyricLine, Project, Template
+from .models import MIN_SCENE, Item, LyricLine, Project, Template
 from .sfx import Cue
-from .timeline import Scene, snap
+from .timeline import Scene, SceneKind, snap
 from .variation import (
     Variation,
 )
@@ -160,10 +160,11 @@ def rank_times(lines: list[LyricLine], ranks: list[int], word_format: str = "{ra
 def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list[Scene]:
     """인트로 + 5위~1위 (+ 엔딩 보너스). 1위 카드가 끝까지 남고, 보너스가 있으면 마지막 몇 초를 보너스 장면으로."""
     items = project.ordered_items
-    if project.has_scene_starts:
-        starts = {it.rank: it.start for it in items}
+    starts: dict[int, float]
+    if project.has_scene_starts:  # 검증에서 5개 모두 있거나 모두 없음이 보장됨
+        starts = {it.rank: it.start for it in items if it.start is not None}
     else:  # 가사에서 보이는 순위("공동 2위"면 2위를 두 번)를 부르는 순간
-        times = rank_times(lines, [it.shown_rank for it in items], t.card.rank_word)
+        times = rank_times(lines, [it.shown_rank for it in items], t.card_layout.rank_word)
         starts = {it.rank: tm for it, tm in zip(items, times)}
     fps = t.fps
     bounds = [0.0] + [snap(starts[it.rank], fps) for it in items] + [snap(project.duration, fps)]
@@ -171,8 +172,9 @@ def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list
     for label, a, b in zip(labels, bounds, bounds[1:]):
         if b - a < MIN_SCENE:
             raise CardModeError(f"{label} 장면이 {b - a:.2f}초로 너무 짧습니다 (장면 시작 시각을 확인하세요)")
-    kinds = ["intro"] + ["rank"] * len(items)
-    scene_items: list = [None] + list(items)
+    kinds: list[SceneKind] = ["intro"]
+    kinds.extend("rank" for _ in items)
+    scene_items: list[Item | None] = [None, *items]
     top_start = bounds[-2]
     b_start = bonus_start(project, top_start, fps)
     c_start = chart_start(project, top_start, b_start, fps)
@@ -198,11 +200,11 @@ def card_timeline(project: Project, t: Template, lines: list[LyricLine]) -> list
 def outro_start(project: Project, t: Template, top_start: float, b_start: float | None, c_start: float | None,
                 fps: int) -> float | None:
     """엔딩 카드 시작: 영상 끝 outro_len 초. 보너스·그래프가 있거나 1위를 3초 못 보여 주면 넣지 않음."""
-    if not t.card.outro_image or b_start is not None or c_start is not None:
+    if not t.card_layout.outro_image or b_start is not None or c_start is not None:
         return None
-    if t.brand_asset(t.card.outro_image) is None:
+    if t.brand_asset(t.card_layout.outro_image) is None:
         return None
-    start = snap(project.duration - t.card.outro_len, fps)
+    start = snap(project.duration - t.card_layout.outro_len, fps)
     return start if start - top_start >= 3.0 else None
 
 
@@ -247,6 +249,6 @@ def sfx_cues(project: Project, t: Template, scenes: list[Scene]) -> list[Cue]:
         if sc.kind == "chart":
             continue
         cues.append(Cue(sc.start + land, "thud"))
-        if sc.kind == "rank" and sc.item.shown_rank == 1 and sc.item.rank == 1:
+        if sc.kind == "rank" and sc.item and sc.item.shown_rank == 1 and sc.item.rank == 1:
             cues.append(Cue(sc.start + 0.25, "cheer"))
     return sorted(cues, key=lambda c: c.at)
