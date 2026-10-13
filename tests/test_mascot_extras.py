@@ -74,6 +74,8 @@ def test_mascot_files_replace_placeholder(tmp_path):
     assert msc.missing_files(tmp_path) == [e for e in msc.EXPRESSIONS if e != "clap"]
 
 
+@pytest.mark.skipif(not (msc.MASCOT_DIR / "default.png").is_file(),
+                    reason="마스코트 원본 그림은 git 에 없음 (내 컴퓨터에서만 확인)")
 def test_real_mascot_files_present():
     assert not msc.missing_files(), "assets/mascot 에 표정 그림 10개가 있어야 합니다"
     assert (msc.MASCOT_DIR / "default.png").is_file()

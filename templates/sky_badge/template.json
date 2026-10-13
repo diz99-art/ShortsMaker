@@ -261,7 +261,8 @@
     "background_image": "background.png",
     "brand_logo": [
       "brand/sky_badge_logo.png",
-      "brand/temp/sky_badge_logo.png"
+      "brand/temp/sky_badge_logo.png",
+      "placeholders/sky_badge_logo.png"
     ],
     "brand_logo_box": {
       "x": 30,
@@ -271,7 +272,8 @@
     },
     "outro_image": [
       "brand/sky_badge_outro.png",
-      "brand/temp/sky_badge_outro.png"
+      "brand/temp/sky_badge_outro.png",
+      "placeholders/sky_badge_outro.png"
     ],
     "outro_box": {
       "x": 45,
@@ -282,7 +284,8 @@
     "outro_len": 3.0,
     "default_character": [
       "brand/sky_badge_character.png",
-      "brand/temp/sky_badge_character.png"
+      "brand/temp/sky_badge_character.png",
+      "placeholders/sky_badge_character.png"
     ],
     "scene_style": "zip",
     "keep_subtitle_style": true

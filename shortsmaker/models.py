@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = ROOT / "templates"
 FONTS_DIR = ROOT / "assets" / "fonts"
 ASSETS_DIR = ROOT / "assets"
+PLACEHOLDER_DIR = ASSETS_DIR / "placeholders"  # git 에 들어 있는 단색 도형 임시 그림 (원본 그림이 없을 때)
 OUTPUT_DIR = ROOT / "output"
 PROJECTS_DIR = ROOT / "projects"
 
@@ -437,10 +438,13 @@ class Template(BaseModel):
         return None
 
     def asset_path(self, name: str) -> Path | None:
-        """템플릿 폴더 안의 파일 (없으면 None)."""
+        """템플릿 폴더 안의 파일 → 없으면 assets/placeholders 의 같은 이름 임시 그림 → 그것도 없으면 None."""
         if self._template_dir:
             p = self._template_dir / name
-            return p if p.exists() else None
+            if p.exists():
+                return p
+            fallback = PLACEHOLDER_DIR / name
+            return fallback if fallback.is_file() else None
         return None
 
     @staticmethod
@@ -459,11 +463,24 @@ def list_channels() -> list[str]:
     return sorted(p.name for p in TEMPLATES_DIR.iterdir() if (p / "template.json").exists())
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    out = dict(base)
+    for k, v in override.items():
+        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 def load_template(channel: str) -> Template:
+    """templates/<channel>/template.json 을 읽는다.
+    같은 폴더에 template.local.json 이 있으면 그 값으로 덮어쓴다 (git 에 넣지 않는 채널 이름·핸들 등)."""
     tdir = TEMPLATES_DIR / channel
     path = tdir / "template.json"
     if not path.exists():
         raise FileNotFoundError(f"템플릿이 없습니다: {path}")
-    t = Template.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    local = tdir / "template.local.json"
+    if local.is_file():
+        data = _deep_merge(data, json.loads(local.read_text(encoding="utf-8")))
+    t = Template.model_validate(data)
     t._template_dir = tdir
     return t
