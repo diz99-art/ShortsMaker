@@ -129,15 +129,19 @@ def parse_quick(text: str) -> QuickData:
                     q.errors.append(f"{no}번째 줄: 후킹 문구가 너무 깁니다 ({len(val)}자, 30자 이내)")
                 q.hook = val
             elif key == "보너스":
+                from pydantic import ValidationError
+
                 from .auto_pipeline import FlowError, parse_bonus
                 try:
                     q.bonus = parse_bonus(val)
                     if q.bonus:
                         from .models import Bonus
                         Bonus.model_validate(q.bonus)
-                except (FlowError, ValueError) as e:
-                    why = str(e).splitlines()[-1] if isinstance(e, ValueError) else e
+                except ValidationError as e:  # 이유는 오류 목록의 msg 에 있다 (str(e) 의 마지막 줄은 문서 URL)
+                    why = "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors())
                     q.errors.append(f"{no}번째 줄: 보너스 — {why}")
+                except FlowError as e:
+                    q.errors.append(f"{no}번째 줄: 보너스 — {e}")
             elif key == "말풍선":
                 from .mascot import SLOTS, bubble_problem
                 parts = [x.strip() for x in val.split("/")]
