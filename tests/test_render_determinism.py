@@ -30,7 +30,6 @@ def _layer(img):
 
 def _renderer():
     r = object.__new__(CardRenderer)   # _draw_inout 에 필요한 값만 채운다
-    r._rest = {}
     r.t = SimpleNamespace(fps=30, card_layout=SimpleNamespace(content_top=0))
     r.v = SimpleNamespace(inout="fade_up")
     r.canvas = CANVAS
@@ -49,14 +48,20 @@ def test_inout_cache_not_fooled_by_reused_id():
     r = _renderer()
     red_img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
     blue_img = Image.new("RGBA", (100, 100), (0, 0, 255, 255))
-    reds = [_layer(red_img) for _ in range(200)]
-    firsts = {_center(r, red) for red in reds}
-    assert firsts == {(255, 0, 0)}
-    old = {id(red) for red in reds}
-    del reds
-    gc.collect()
-    blues = [_layer(blue_img) for _ in range(200)]
-    reused = [b for b in blues if id(b) in old]
+    reused: list[MovingLayer] = []
+    keep = []
+    for _ in range(20):   # 다른 테스트와 같은 프로세스면 주소가 바로 재사용되지 않을 때가 있어 몇 번 더 시도
+        reds = [_layer(red_img) for _ in range(200)]
+        firsts = {_center(r, red) for red in reds}
+        assert firsts == {(255, 0, 0)}
+        old = {id(red) for red in reds}
+        del reds
+        gc.collect()
+        blues = [_layer(blue_img) for _ in range(200)]
+        reused = [b for b in blues if id(b) in old]
+        if reused:
+            break
+        keep.append(blues)
     assert reused, "지운 레이어의 주소를 물려받은 새 레이어가 없음 (재현 조건 실패)"
     assert {_center(r, b) for b in reused} == {(0, 0, 255)}   # 예전 빨간 그림이 아니라 지금 레이어의 파란 그림
 
@@ -71,8 +76,13 @@ from shortsmaker.models import load_project, load_template
 from tests.test_card_mode import SONG
 p, d = load_project(Path(sys.argv[1]) / "project.json")
 r = make_renderer(p, d, load_template(p.channel), SONG)
-n = round(p.duration * r.t.fps)
-print(json.dumps([hashlib.md5(r.frame(i).tobytes()).hexdigest() for i in range(n)]))
+out, last = [], None
+for i in range(round(p.duration * r.t.fps)):   # render_video 와 같이: 상태가 바뀐 프레임만 다시 그린다
+    key = r.state(i)
+    if key != last:
+        h, last = hashlib.md5(r.frame(i).tobytes()).hexdigest(), key
+    out.append(h)
+print(json.dumps(out))
 """
 
 
@@ -99,15 +109,18 @@ def _effects_project(d):
     save_project(p, d)
 
 
-def _frame_hashes(d):
-    out = subprocess.run([sys.executable, "-c", HASH_FRAMES, str(d)], cwd=ROOT, capture_output=True, text=True,
-                         check=True)
-    return json.loads(out.stdout.strip().splitlines()[-1])
+def _frame_hashes_twice(d):
+    """두 프로세스에서 동시에 (프로세스가 다르면 메모리 주소도 다르다)."""
+    procs = [subprocess.Popen([sys.executable, "-c", HASH_FRAMES, str(d)], cwd=ROOT, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True) for _ in range(2)]
+    outs = [p.communicate() for p in procs]
+    assert all(p.returncode == 0 for p in procs), [e[-2000:] for _, e in outs]
+    return [json.loads(o.strip().splitlines()[-1]) for o, _ in outs]
 
 
 def test_same_input_same_frames_in_two_processes(tmp_path):
     _effects_project(tmp_path)
-    a, b = _frame_hashes(tmp_path), _frame_hashes(tmp_path)   # 프로세스가 다르면 메모리 주소도 다르다
+    a, b = _frame_hashes_twice(tmp_path)
     assert len(a) == 900
     diff = [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
     assert not diff, f"{len(diff)}프레임이 다름 (처음 {diff[:5]})"
