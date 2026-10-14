@@ -15,7 +15,7 @@ from .card_clean import compose_clean, soft_text
 from .models import Project, Template
 from .variation import ACCENTS, Variation
 
-PLACEHOLDER_KEY = "shortsmaker-placeholder"  # PNG 글 정보: 임시 그림 (수익화용 렌더에서 막음)
+PLACEHOLDER_KEY = "shortsmaker-placeholder"  # PNG 글 정보: 임시 그림 (최종 렌더에서 막음)
 
 
 def is_placeholder(path: Path) -> bool:
@@ -44,7 +44,7 @@ def placeholder_art(name: str) -> Image.Image:
 
 
 def placeholder_problems(project: Project, project_dir: Path) -> list[str]:
-    """그림이 없거나 임시 글자 카드인 항목 (수익화용 렌더 차단 사유)."""
+    """그림이 없거나 임시 글자 카드인 항목 (최종 렌더 차단 사유)."""
     out = []
     for it in project.ordered_items:
         p = project_dir / it.image if it.image else None
@@ -59,7 +59,7 @@ ZIP_CALM = {"count": "static", "datagfx": "off", "burst": "off", "progress": "no
 
 
 def _prepare_zip(project: Project, project_dir: Path, t: Template, vd: dict) -> Project:
-    """하늘 배지형: 배지 + 캐릭터 장면 그림. 캐릭터가 없으면 기준 캐릭터(임시, 수익화용 렌더에서 막힘)."""
+    """하늘 배지형: 배지 + 캐릭터 장면 그림. 캐릭터가 없으면 기준 캐릭터(임시, 최종 렌더에서 막힘)."""
     from .card_zip import compose_zip
     out = project_dir / "cards_auto"
     out.mkdir(exist_ok=True)

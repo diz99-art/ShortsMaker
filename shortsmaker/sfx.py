@@ -22,7 +22,7 @@ SFX_DIR = Path(__file__).resolve().parent.parent / "assets" / "sfx"
 CREDITS_FILE = SFX_DIR / "credits.json"
 RATE = 44100
 SETS = ("a", "b")
-OK_LICENSES = ("자체 제작", "Public domain", "CC0 1.0")  # 수익화용 렌더에 쓸 수 있는 라이선스
+OK_LICENSES = ("자체 제작", "Public domain", "CC0 1.0")  # 최종 렌더에 쓸 수 있는 라이선스
 # 음악 대비 크기 (효과음 파일은 최고 -1 dBFS 로 맞춰 두고 이 배율로 섞는다)
 MIX_GAIN = {"whoosh": 0.22, "thud": 0.35, "slam": 0.4, "cheer": 0.3}
 CHEER_LEN = 3.2  # 1위 함성 길이(초)

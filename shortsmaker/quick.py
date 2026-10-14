@@ -7,7 +7,7 @@
 문제가 있을 때만 멈추고(QuickResult.status == "stopped") 이유를 돌려준다.
 항상 새 프로젝트 폴더를 만든다 (같은 이름이 있으면 _2, _3 …). 멈춘 프로젝트를 '이어서' 할 때만 resume=True 로
 같은 폴더를 다시 쓴다 — 예전 프로젝트를 새 자료로 착각해 다시 렌더하는 일이 없게.
-수익화용 렌더(권리 체크리스트)와 업로드 초안은 '노래로 자동 제작' 화면에서 이어서 한다 (같은 프로젝트).
+최종 렌더(품질·정확성 체크리스트)와 업로드 초안은 '노래로 자동 제작' 화면에서 이어서 한다 (같은 프로젝트).
 """
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ def run_quick(data: QuickData, song: Path | None, images: list[bytes], *, slug: 
             return QuickResult("stopped", "표 확정", str(e), slug=slug)
 
     slots = [r.slot for r in state.rows]  # 표 순서 = 자리 5→1 (공동은 표 순서)
-    if info:  # 하늘 배지형: 캐릭터는 투명 배경으로, 없는 자리는 기준 캐릭터(임시 — 수익화용 렌더에서 막힘)
+    if info:  # 하늘 배지형: 캐릭터는 투명 배경으로, 없는 자리는 기준 캐릭터(임시 — 최종 렌더에서 막힘)
         report(0.5, "그림 넣기")
         for i, slot in enumerate(slots):
             if state.players[slot].source is None:

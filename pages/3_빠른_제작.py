@@ -1,6 +1,6 @@
 """빠른 제작 — ChatGPT 답변 붙여넣기 + 곡 + 그림 5장 → 버튼 하나로 시험 렌더.
 
-문제가 있을 때만 멈추고 물어본다. 수익화용 렌더(체크리스트)·업로드 초안은 '노래로 자동 제작'에서 같은 프로젝트로 이어서.
+문제가 있을 때만 멈추고 물어본다. 최종 렌더(체크리스트)·업로드 초안은 '노래로 자동 제작'에서 같은 프로젝트로 이어서.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from shortsmaker.rank_extract import label
 st.set_page_config(page_title="빠른 제작", layout="wide")
 st.title("빠른 제작")
 st.caption("① ChatGPT 답변 ② 곡 ③ 그림 5장 → '시험 렌더까지 만들기'. 문제가 있을 때만 멈춥니다. "
-           "수익화용 렌더·업로드는 '노래로 자동 제작'에서 같은 프로젝트를 불러와 이어서 하세요.")
+           "최종 렌더·업로드는 '노래로 자동 제작'에서 같은 프로젝트를 불러와 이어서 하세요.")
 ROOT = Path(os.environ.get("SHORTSMAKER_PROJECTS_DIR", PROJECTS_DIR))
 ss = st.session_state
 
@@ -179,7 +179,7 @@ if not ready:
                "과 그림(" + (str(len(data.rows)) if data and data.rows else "5") + "장)") + "이 있으면 열립니다")
 elif INFO and n_files < len(data.rows):
     st.warning(f"캐릭터 {n_files}장 — 나머지 {len(data.rows) - n_files}자리는 기준 캐릭터로 만듭니다 "
-               "(수익화용 렌더는 막힘)")
+               "(최종 렌더는 막힘)")
 
 
 def _go(accept: bool, resume_slug: str | None = None) -> None:
@@ -225,6 +225,6 @@ if res:
             st.caption(f"만든 시각: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(out.stat().st_mtime))}")
             st.video(str(out))
         st.success(f"'노래로 자동 제작'에서 프로젝트 '{res.slug}'를 불러와 "
-                   "로고 확인·Suno 확인·수익화용 렌더를 이어서 하세요")
+                   "로고 확인·Suno 확인·최종 렌더를 이어서 하세요")
         for w in res.issues:
             st.caption(w)

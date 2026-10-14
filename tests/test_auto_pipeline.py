@@ -28,7 +28,7 @@ LOSING = """케이비오 역대 최악의 연패는?
 십팔 연패
 1위, 삼미 슈퍼스타즈
 십팔 연패
-당신의 팀 최악의 기억은 언제였나요?"""
+여러분 팀의 가장 긴 연패는 언제였나요?"""
 
 FA = """백억은 기본, 몸값이 뛴다
 [Verse]
@@ -74,7 +74,7 @@ FILL = {
 @pytest.fixture
 def aligned(tmp_path):
     song = make_song(tmp_path / "song.m4a", LOSING)
-    state, d = ap.start_from_song(song, "t", title="한 번만 이겼어도…\nKBO 역대 최장 연패 TOP 5", mode="mock",
+    state, d = ap.start_from_song(song, "t", title="끝나지 않던 연패…\nKBO 역대 최장 연패 TOP 5", mode="mock",
                                   root=tmp_path / "projects")
     ap.align(state, d, aligner=fake_aligner)
     return state, d

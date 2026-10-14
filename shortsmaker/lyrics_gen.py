@@ -188,7 +188,7 @@ def brief_markdown(title: str, style: str, lyrics: str, *, topic: str = "", sour
             "---",
             f"주제: {topic}" if topic else "",
             f"데이터 출처: {source}" if source else "",
-            "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 수익화 불가).",
+            "Suno 유료 플랜으로 생성하세요 (무료 플랜 곡은 상업적 이용 불가).",
             "",
         ]
     )

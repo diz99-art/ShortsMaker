@@ -81,8 +81,8 @@ def test_meta_and_countup_text(art):
 
 def test_rule_mood():
     assert rule_mood("KBO 단일 시즌 홈런 TOP 5", [2014, 2015, 2003, 1999, 2003]).mood == "record"
-    assert rule_mood("한 번만 이겼어도… KBO 역대 최장 연패 TOP 5").mood == "humiliation"
-    assert rule_mood("150억이 2위라고? FA 계약").mood == "money"
+    assert rule_mood("끝나지 않던 연패… KBO 역대 최장 연패 TOP 5").mood == "humiliation"
+    assert rule_mood("100억이 넘는 FA 계약").mood == "money"
     assert rule_mood("추억의 기록", [1982, 1985, 1990]).mood == "retro"   # '추억'의 '억'은 돈이 아님
     assert rule_mood("KBO 단일 시즌 홈런 TOP 5", extra="같은 시즌의 홈런 경쟁이었다").mood == "record"  # 메모의 '경쟁'
     assert rule_mood("KBO 최장 연패", extra="").mood == "humiliation"

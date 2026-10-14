@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .timeline import Scene
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
-MASCOT_DIR = ASSETS_DIR / "mascot"        # 야구한장 '한장이' (정보한장은 assets/mascot_info, 템플릿 mascot_dir)
+MASCOT_DIR = ASSETS_DIR / "mascot"        # 야구한장 '한장이' (정보 채널은 assets/mascot_info, 템플릿 mascot_dir)
 EXPRESSIONS = ("question", "surprise", "shock", "laugh", "clap", "thumbsup", "wave", "think", "sad", "cheer")
 DEFAULT = "default"        # 기본 표정 (어떤 표정 그림이 없을 때 대신)
 SIZE = 220                 # 화면 속 크기(px)

@@ -94,7 +94,7 @@ def pre_render(project: Project, project_dir: Path, *, require_rights: bool = Tr
         from .info_cards import placeholder_problems
         probs = placeholder_problems(project, project_dir)
         (r.errors if require_rights else r.warnings).extend(
-            probs if not require_rights else [p + " (수익화용 렌더 불가)" for p in probs])
+            probs if not require_rights else [p + " (최종 렌더 불가)" for p in probs])
     for it in project.ordered_items:
         if not it.image:
             if t.mode == "card" and t.card and t.card.auto_cards:

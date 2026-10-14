@@ -27,7 +27,7 @@ def _project(tmp_path: Path, **kw) -> Project:
 def test_template_matches_reference_measurements():
     c = T.card
     assert c.title.color == "#EB1B1B" and c.divider.y == 506 and c.divider.color == "#0350B7"
-    assert c.footer.handle_text == "@sky_badge" and c.scene_style == "zip" and c.keep_subtitle_style
+    assert c.footer.handle_text == "@demo" and c.scene_style == "zip" and c.keep_subtitle_style
     assert c.subtitle.font == "jua" and T.font_path("jua").is_file() and c.subtitle.stroke_width > 0
     assert c.card_box.w == 1080 and (c.card_box.w, c.card_box.h) == SIZE
     assert T.brand_asset(c.brand_logo) and T.brand_asset(c.default_character) and T.brand_asset(c.outro_image)
