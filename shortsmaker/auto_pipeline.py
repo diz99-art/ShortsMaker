@@ -196,6 +196,11 @@ def is_info(state: AutoState) -> bool:
     return state.template in INFO_TEMPLATES
 
 
+def template_label(template: str) -> str:
+    """화면에 보일 템플릿 이름. 야구(TEMPLATES)·정보(INFO_TEMPLATES) 어디에도 없으면 폴더 이름 그대로."""
+    return TEMPLATES.get(template) or INFO_TEMPLATES.get(template) or template
+
+
 def _project(state: AutoState, d: Path) -> Project:
     return load_project(d / "project.json")[0]
 

@@ -96,7 +96,7 @@ if not ss.get("auto_slug"):
 D = ROOT / ss.auto_slug
 state = ap.load_state(D)
 sticker = ap._style_name(state) == "sticker"
-st.info(f"프로젝트 **{state.slug}** · {ap.TEMPLATES[state.template]} · {ap.GEN_MODES[state.gen_mode]} · "
+st.info(f"프로젝트 **{state.slug}** · {ap.template_label(state.template)} · {ap.GEN_MODES[state.gen_mode]} · "
         f"영상 {state.duration:g}초")
 
 def _image_swapper(prefix: str) -> None:
