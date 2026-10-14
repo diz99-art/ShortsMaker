@@ -1,5 +1,5 @@
 {
-  "name": "정보한장 v2 (클린 카드)",
+  "name": "정보 채널 v2 (클린 카드)",
   "mode": "card",
   "width": 1080,
   "height": 1920,
@@ -19,7 +19,7 @@
       "y": 30,
       "w": 209,
       "h": 61,
-      "text": "정보한장",
+      "text": "정보 채널",
       "font": "black",
       "size": 36,
       "text_color": "#111111",
@@ -57,7 +57,7 @@
         "min_size": 30,
         "color": "#1E1E1E"
       },
-      "handle_text": "@정보한장",
+      "handle_text": "@demo",
       "separator": {
         "x": 222,
         "y": 1807,

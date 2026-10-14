@@ -1,4 +1,4 @@
-"""빠른 제작 정보한장: 양식 → 표, 그림 0장(임시 글자 카드), 카드의 구분·기준 연도, 채널 색, 마스코트 없음."""
+"""빠른 제작 정보 채널: 양식 → 표, 그림 0장(임시 글자 카드), 카드의 구분·기준 연도, 채널 색, 마스코트 없음."""
 from pathlib import Path
 
 import numpy as np
@@ -60,7 +60,7 @@ def test_run_quick_info_without_images(tmp_path):
     assert res.status == "done", (res.stage, res.message, res.issues)
     d = root / res.slug
     state = ap.load_state(d)
-    assert state.template == "info_v2" and not state.mood                 # 정보한장은 분위기 판단 없음
+    assert state.template == "info_v2" and not state.mood                 # 정보 채널은 분위기 판단 없음
     sources = [state.players[r.slot].source for r in state.rows]
     assert sources == ["upload", "placeholder", "placeholder", "placeholder", "placeholder"]
     assert is_placeholder(d / state.players[state.rows[1].slot].approved)

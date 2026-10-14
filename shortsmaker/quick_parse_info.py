@@ -17,7 +17,7 @@ from .quick_parse import UNSURE, QuickData, _clean
 from .rank_extract import RankRow
 
 COLUMNS = ["순위", "이름", "구분", "값", "기준 연도", "그림 설명"]
-CHANNEL = "sky_badge"  # 하늘 배지형 (@sky_badge). 예전 클린 카드는 info_v2
+CHANNEL = "sky_badge"  # 하늘 배지형. 예전 클린 카드는 info_v2
 
 EXAMPLE = """제목: 지구에서 사람 제일 많은 나라 / 세계 인구 TOP 5
 후킹: 인구 1위는 중국일까?
