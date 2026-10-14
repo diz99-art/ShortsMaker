@@ -176,7 +176,6 @@ class CardRenderer:
         self.beats = self.beatmap if self.v.beat != "off" else None   # 카드 펄스용
         self._label_font = t.font_path("black")
         self._masks: dict[int, Image.Image | None] = {}
-        self._rest: dict[int, Image.Image] = {}   # 클린 카드 제자리 그림 (레이어별)
         self._bubble_xy: dict[tuple[int, int], tuple[int, int]] = {}
         self.cues = sfx_cues(self.project, t, self.scenes)
         if self.v.depth != "off" and not self._depth:
@@ -543,11 +542,7 @@ class CardRenderer:
 
     def _draw_inout(self, img: Image.Image, layer: MovingLayer, anim: tuple[str, int] | None) -> None:
         """클린 카드: 제자리(배율 1)에 두고, 나타날 때·사라질 때만 0.3초 페이드 + 살짝 미끄러지기."""
-        key = id(layer)
-        rest = self._rest.get(key)
-        if rest is None:
-            rest = layer._place(1.0)[0]
-            self._rest[key] = rest
+        rest = layer.rest_image()
         n = max(1, round(INOUT_LEN * self.t.fps))
         p, dx, dy, s_ = 1.0, 0.0, 0.0, 1.0
         if anim is not None:
