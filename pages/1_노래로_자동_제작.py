@@ -606,7 +606,7 @@ else:
         ap.set_suno(state, D, paid=paid, plan=plan)
         st.rerun()
 
-    st.subheader("수익화용 렌더 체크리스트")
+    st.subheader("최종 렌더 체크리스트")
     items = ap.checklist(state, D)
     for c in items:
         (st.success if c["ok"] else st.error)(f"{'✅' if c['ok'] else '❌'} {c['label']} — {c['detail']}")
@@ -616,7 +616,7 @@ else:
     r1, r2 = st.columns(2)
     bar = st.progress(0.0)
     for col, kind, lab, ok in ((r1, "draft", "시험 렌더 (_DRAFT, 언제나 가능)", True),
-                               (r2, "monetize", "수익화용 렌더", all_ok and rights)):
+                               (r2, "monetize", "최종 렌더", all_ok and rights)):
         kind_type = "primary" if kind == "monetize" else "secondary"
         if col.button(lab, key=f"render_{kind}", type=kind_type, disabled=not ok):
             try:
@@ -628,10 +628,10 @@ else:
             except Exception as e:  # noqa: BLE001
                 _err(e)
     if not all_ok:
-        st.caption("❌ 항목이 있으면 수익화용 렌더는 막힙니다 (시험 렌더는 가능)")
+        st.caption("❌ 항목이 있으면 최종 렌더는 막힙니다 (시험 렌더는 가능)")
     if state.output and Path(state.output).exists():
         st.video(state.output)
-        st.write(f"MP4 ({'수익화용' if state.render_kind == 'monetize' else '시험'}): `{state.output}`")
+        st.write(f"MP4 ({'최종' if state.render_kind == 'monetize' else '시험'}): `{state.output}`")
         if state.capcut:
             st.write(f"CapCut 초안: `{state.capcut}`")
 

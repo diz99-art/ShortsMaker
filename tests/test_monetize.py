@@ -1,4 +1,4 @@
-"""수익화 대비: 연출 바꾸기·사람의 기여 기록·가사 검사/생성·권리 체크리스트·업로드 초안."""
+"""품질·정확성: 연출 바꾸기·사람의 기여 기록·가사 검사/생성·렌더 전 체크리스트·업로드 초안."""
 import json
 import subprocess
 from pathlib import Path
@@ -198,7 +198,7 @@ def test_checklist_blocks_monetize_until_all_ok(manual_project, tmp_path):
     ap.compose_cards(state, d)
     failing = {c["key"] for c in ap.checklist(state, d) if not c["ok"]}
     assert failing == {"suno", "no_logo", "data_source", "lyrics"}  # 표 확정·사진 출처·연출은 통과
-    with pytest.raises(ap.FlowError, match="수익화용"):
+    with pytest.raises(ap.FlowError, match="최종 렌더"):
         ap.render_all(state, d, rights_confirmed=True, kind="monetize", capcut_root=tmp_path, output_dir=tmp_path)
     ap.set_suno(state, d, paid=True, plan="Pro")
     for s in (5, 4, 3, 2, 1):

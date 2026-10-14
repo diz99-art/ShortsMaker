@@ -25,7 +25,7 @@ def test_asset_path_falls_back_to_placeholder(tmp_path, monkeypatch):
 
 def test_committed_placeholders_are_marked():
     files = sorted(models.PLACEHOLDER_DIR.glob("*.png"))
-    assert files and all(is_placeholder(p) for p in files)      # 임시 표시 (기본 캐릭터 카드는 수익화용 렌더 차단)
+    assert files and all(is_placeholder(p) for p in files)      # 임시 표시 (기본 캐릭터 카드는 최종 렌더 차단)
 
 
 def test_local_template_override(tmp_path, monkeypatch):

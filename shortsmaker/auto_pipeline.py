@@ -132,7 +132,7 @@ class AutoState(BaseModel):
     output: str | None = None
     capcut: str | None = None
     credits: str | None = None
-    # 수익화 대비 (진정성·권리)
+    # 품질·정확성 (연출·가사·출처·권리)
     brief: str | None = None               # 연결한 가사 브리프 (projects/_briefs/<이름>)
     data_source_name: str = ""
     data_source_url: str = ""
@@ -858,7 +858,7 @@ def set_hook_image(state: AutoState, d: Path, data: bytes) -> Path:
 
 def use_info_image(state: AutoState, d: Path, slot: int, data: bytes | None) -> Path:
     """하늘 배지형: 항목 그림을 배경 그대로 둔다 (카드는 렌더할 때 info_cards 가 합성).
-    그림이 없으면 임시 글자 카드 — 표시를 달아 두어 수익화용 렌더에서 막힌다."""
+    그림이 없으면 임시 글자 카드 — 표시를 달아 두어 최종 렌더에서 막힌다."""
     from .info_cards import mark_placeholder, placeholder_art
     if not is_info(state):
         raise FlowError("하늘 배지형 프로젝트에서만 씁니다")
@@ -1182,13 +1182,13 @@ def set_suno(state: AutoState, d: Path, *, paid: bool, plan: str) -> None:
 
 
 def checklist(state: AutoState, d: Path) -> list[dict]:
-    """수익화용 렌더 전 체크리스트. 하나라도 ok=False 면 수익화용 렌더를 막는다."""
+    """최종 렌더 전 체크리스트. 하나라도 ok=False 면 최종 렌더를 막는다."""
     items = []
 
     def add(key: str, label: str, ok: bool, detail: str = "") -> None:
         items.append({"key": key, "label": label, "ok": bool(ok), "detail": detail})
 
-    mock_note = "Mock 프로젝트는 수익화용으로 렌더할 수 없습니다" if state.mock else ""
+    mock_note = "Mock 프로젝트는 최종 렌더를 할 수 없습니다" if state.mock else ""
     add("not_mock", "Mock 이 아닌 실제 제작", not state.mock, mock_note)
     add("table", "순위 표 확정", state.table_confirmed, "" if state.table_confirmed else "2단계 표를 먼저 확정하세요")
     if not state.table_confirmed:
@@ -1256,9 +1256,9 @@ def render_all(state: AutoState, d: Path, *, rights_confirmed: bool = False, kin
         failed = [c for c in checklist(state, d) if not c["ok"]]
         if failed:
             reasons = "; ".join(f"{c['label']}: {c['detail']}" for c in failed)
-            raise FlowError("수익화용 렌더를 할 수 없습니다 — " + reasons)
+            raise FlowError("최종 렌더를 할 수 없습니다 — " + reasons)
         if not rights_confirmed:
-            raise FlowError("자료 정확성과 이미지·음악 사용 권리를 확인해야 수익화용으로 렌더합니다")
+            raise FlowError("자료 정확성과 이미지·음악 사용 권리를 확인해야 최종 렌더를 합니다")
     state.rights_confirmed = rights_confirmed and kind == "monetize"
     project = build_project(state, d)
     suffix = "_MOCK" if state.mock else ("" if kind == "monetize" else "_DRAFT")

@@ -142,7 +142,7 @@ def test_info_v2_auto_cards(tmp_path):
     )
     t2 = load_template("info_v2")
     r = make_renderer(p, tmp_path, t2, SONG)
-    assert r.v.look == "clean_a" and t2.card.pill.text == "정보한장"
+    assert r.v.look == "clean_a" and t2.card.pill.text == "정보 채널"
     assert all(s.item.image.startswith("cards_auto/") for s in r.scenes[1:])
     first = sorted((tmp_path / "cards_auto").glob("card*.png"))
     make_renderer(p, tmp_path, t2, SONG)                               # 입력이 같으면 다시 만들지 않음
@@ -211,9 +211,9 @@ def test_info_v2_hook_from_title_mascot_folder_and_placeholder_block(tmp_path):
     t2 = load_template("info_v2")
     r = make_renderer(p, tmp_path, t2, SONG)
     assert r.hook_len == pytest.approx(r.scenes[0].duration) and r.project.hook == "세계 인구 TOP 5"   # 로고 없이 후킹
-    assert r.mascot is None and any("mascot_info" in w for w in r.warnings)  # 정보한장 마스코트 폴더가 비어 있음
+    assert r.mascot is None and any("mascot_info" in w for w in r.warnings)  # 정보 채널 마스코트 폴더가 비어 있음
     rep = pre_render(p, tmp_path, require_rights=True)
-    assert any("임시 그림" in e for e in rep.errors)                       # 수익화용은 막힘
+    assert any("임시 그림" in e for e in rep.errors)                       # 최종 렌더는 막힘
     assert not any("임시" in e for e in pre_render(p, tmp_path, require_rights=False).errors)  # 시험 렌더는 됨
     del data["items"][0]["image"]
     assert any("그림이 없습니다" in e for e in pre_render(Project.model_validate(data), tmp_path).errors)

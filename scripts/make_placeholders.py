@@ -1,7 +1,7 @@
 """assets/placeholders/ 의 단색 도형 임시 그림을 만든다 (git 에 들어가는 유일한 템플릿 그림).
 
 채널 로고·배경·캐릭터 원본은 git 에 넣지 않는다. 원본이 없으면 코드가 이 임시 그림을 쓰고,
-임시 그림에는 PNG 글 정보(shortsmaker-placeholder=1)를 단다 (기본 캐릭터로 만든 카드는 수익화용 렌더에서 막힘).
+임시 그림에는 PNG 글 정보(shortsmaker-placeholder=1)를 단다 (기본 캐릭터로 만든 카드는 최종 렌더에서 막힘).
 실행: .venv/bin/python scripts/make_placeholders.py
 """
 from __future__ import annotations
