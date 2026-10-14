@@ -19,7 +19,7 @@ README 와 docs 에 넣을 그림을 두는 곳. 이 폴더의 그림·GIF 만 g
    ffmpeg -i output/demo.mp4 -vf "select='eq(n\,60)+eq(n\,150)+eq(n\,750)+eq(n\,870)',scale=270:-1,tile=4x1" \
      -frames:v 1 -fps_mode vfr docs/images/frames.png
    ```
-5. `checklist.png` — 노래로 자동 제작의 '수익화용 렌더 체크리스트' (✅/❌ 항목이 보이게)
+5. `checklist.png` — 노래로 자동 제작의 렌더 전 품질·정확성 체크리스트 (✅/❌ 항목이 보이게)
 6. `capcut-draft.png` — CapCut 에서 연 초안의 타임라인 (트랙이 나뉜 모습)
 7. `ci.png` — GitHub Actions 의 PR 실행 화면 (약 3분)
 

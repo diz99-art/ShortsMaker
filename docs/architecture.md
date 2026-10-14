@@ -91,7 +91,7 @@ flowchart TD
 - 입력: `quick_parse*`(줄 단위 오류), `rank_extract.column_problems`(열 밀림), `rank_extract.rows_complete`(빈칸·순위 규칙)
 - 모델: pydantic 검증기 (`models.py`)
 - 렌더 전: `validate.pre_render` (파일 존재, 글꼴, 가사 겹침, 글자 넘침, 권리 확인)
-- 수익화용 렌더 전: `auto_pipeline` 의 권리 체크리스트 (Mock 아님, 표 확정, 사진·데이터 출처, 가사 검사, 연출 중복)
+- 최종 렌더 전: `auto_pipeline` 의 품질·정확성 체크리스트 (Mock 아님, 표 확정, 사진·데이터 출처, 가사 검사, 연출 중복)
 - 렌더 후: `validate.post_render` (ffprobe 로 해상도·길이·오디오)
 
 ## 테스트

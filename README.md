@@ -6,7 +6,10 @@
 
 **순위표 하나와 노래 한 곡을 넣으면, 가사에 맞춰 카드가 넘어가는 TOP 5 유튜브 쇼츠(1080×1920 MP4)와 CapCut 편집 초안을 만드는 프로그램.**
 
+실제 운영 중인 유튜브 채널 **야구한장**(@야구한장)과 **정보한장**(@정보한장)의 쇼츠 제작에 쓰는 도구다.
+
 > **English summary** — ShortsMaker turns a ranked table (TOP 5) and a song into a vertical YouTube Shorts video.
+> It is the production tool behind two live YouTube channels (야구한장, 정보한장).
 > It parses and validates the table, aligns the sung lyrics with a local speech model, draws every frame with
 > Pillow, encodes with FFmpeg, and also exports a CapCut draft and upload text. Built with Python, Pydantic and
 > Streamlit. 304 tests, 89.8% coverage, and PR CI in under 3 minutes.
@@ -67,8 +70,10 @@ make demo      # examples/demo 의 가짜 자료로 30초 영상 → output/demo
 - **가사 타이밍 자동 맞추기**: demucs 로 보컬을 분리하고 stable-ts(faster-whisper)로 강제 정렬. 로컬에서만 돌고 유료 API 를 쓰지 않음
 - **자막 숫자 변환**: 노래는 한글 숫자로 부르고 자막은 아라비아 숫자로 표시 ('오십육 홈런' → '56홈런'). 사람·팀 이름은 바꾸지 않음
 - **템플릿**: 좌표·색·글꼴을 `templates/<채널>/template.json` 에 둔다. 채널을 추가할 때 코드를 고치지 않음
-- **연출 바꾸기**: 18가지 연출 요소(전환·강조색·자막 등장·효과음 등)를 조합하고, 최근 5편과 3요소 이상 다른 조합만 고른다 (반복형 영상 방지)
-- **권리·기록**: 렌더 전 권리 체크리스트, 사람이 고친 내용을 `production_log.json` 에 기록
+- **영상마다 다른 구성**: 18가지 연출 요소(전환·강조색·자막 등장·효과음 등)를 조합해 최근 5편과 3요소 이상 다르게 고른다.
+  가사도 순위만 늘어놓으면 검사를 통과하지 못하고 해설·비교가 들어가야 한다. 영상마다 구성·해설을 다르게 만들어 품질을 지키는 기능
+- **품질·정확성 체크리스트**: 최종 렌더 전에 데이터·사진 출처, 음악·그림 사용 권리, 가사 검사 결과를 확인한다.
+  사람이 고친 내용은 `production_log.json` 에 기록
 - **CapCut 초안**: 같은 배치를 편집 가능한 트랙으로 (비공식 라이브러리라 실패해도 MP4 에는 영향 없음)
 
 ## 기술 스택
@@ -148,8 +153,9 @@ AI 코딩 도구 두 개를 썼다. 무엇을 만들지와 무엇을 받아들�
 
 - **나**: 설계서(`CLAUDE.md`)와 단계별 요구사항 작성, 범위·디자인 결정, 결과 영상 직접 확인, PR merge 결정
 - **Claude Code**: `main` 브랜치에서 대부분의 기능 구현과 리팩터링, 테스트 작성
-- **Codex**: 별도 작업 폴더(git worktree, `codex/work` 브랜치)에서 맡은 파일만 작업. CapCut 초안 호환성 시험·편집
-  패키지, 정보 채널 양식 파서(`quick_parse_info.py`), YouTube 업로드 모듈(아직 main 에 합치지 않음)
+- **Codex**: 별도 작업 폴더(git worktree, `codex/work` 브랜치)에서 맡은 파일만 작업.
+  main 에 들어간 것은 정보 채널 양식 파서(`quick_parse_info.py`)와 그 테스트다 (화면 연결·확장은 Claude Code).
+  YouTube 업로드 모듈은 별도 브랜치에서 실험 중이고 main 에는 없다
 - 두 도구가 같은 규칙을 읽도록 `CLAUDE.md` 와 `AGENTS.md` 에 같은 협업 규칙을 둔다
   (Codex 는 main 에 직접 커밋하지 않음, 맡은 파일 밖은 묻고 고침, hook 검사 우회 금지)
 
@@ -168,7 +174,7 @@ AI 가 만든 코드를 그대로 믿지 않으려고 아래 방법으로 검증
 
 ## 앞으로 할 일
 
-- Codex 브랜치의 YouTube 업로드 모듈(OAuth, dry run)을 정리해서 합치기
+- 별도 브랜치에서 실험 중인 YouTube 업로드 모듈(OAuth, dry run)을 검토해서 합칠지 정하기
 - mypy 엄격 검사 범위 넓히기 (지금은 핵심 모듈만, [이유](docs/decisions.md))
 - 큰 모듈 나누기: `auto_pipeline.py` (1,306줄)
 - CapCut 수동 가져오기 키트와 편집 패키지를 하나로 합치기
