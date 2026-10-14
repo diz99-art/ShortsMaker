@@ -52,7 +52,7 @@ SONG = [
 
 def make_project(tmp_path, **kw):
     make_cards(tmp_path)
-    data = dict(channel="yagu_v2", title="한 번만 이겼어도…\nKBO 역대 최장 연패 TOP 5", duration=30,
+    data = dict(channel="yagu_v2", title="끝나지 않던 연패…\nKBO 역대 최장 연패 TOP 5", duration=30,
                 items=[{"rank": r, "name": f"팀{r}", "image": f"card{r}.png"} for r in (5, 4, 3, 2, 1)],
                 lyrics=[l.model_dump() for l in SONG], rights_confirmed=True)
     data.update(kw)
