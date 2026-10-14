@@ -181,10 +181,18 @@ class MovingLayer:
         # 가장 큰 배율에서도 선명하도록 원본 해상도에서 바로 줄인다
         self._big = self.src if self.src.width >= self.w * max_s else self.src.resize(
             (round(self.w * max_s), round(self.h * max_s)), LANCZOS)
+        self._rest: Image.Image | None = None
 
     def variant(self, img: Image.Image) -> MovingLayer:
         """같은 자리·움직임에 그림만 바꾼 레이어 (카운트업 숫자)."""
         return MovingLayer(img, self.box, self.motion, self.fps, self.top, self.canvas, dx=self.dx)
+
+    def rest_image(self) -> Image.Image:
+        """제자리(배율 1) 그림. 레이어에 붙여 두어 레이어가 사라지면 같이 사라진다 (id() 키 캐시는 주소가 재사용되면
+        다른 레이어의 그림을 돌려줬다)."""
+        if self._rest is None:
+            self._rest = self._place(1.0)[0]
+        return self._rest
 
     def _place(self, s: float, dx: float = 0.0, dy: float = 0.0, angle: float = 0.0) -> tuple[Image.Image, int, int]:
         w, h = max(1, round(self.w * s)), max(1, round(self.h * s))
