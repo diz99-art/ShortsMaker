@@ -3,14 +3,15 @@
 카드 캐시가 id(layer) 를 키로 쓰면, 지워진 레이어의 메모리 주소를 새 레이어가 물려받을 때
 예전 그림(카운트업 중간 숫자)이 섞여 나오고, 실행할 때마다 결과가 달라진다.
 """
-import gc
 import json
 import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
+from shortsmaker import card_mode
 from shortsmaker.card_layers import MovingLayer
 from shortsmaker.card_mode import CardRenderer
 from shortsmaker.models import ROOT, Box, Motion, Project, save_project
@@ -42,28 +43,16 @@ def _center(r, layer):
     return img.getpixel((100, 100))[:3]
 
 
-def test_inout_cache_not_fooled_by_reused_id():
-    """빨간 레이어 여러 개를 그린 뒤 지우고 파란 레이어를 새로 만든다. 지운 레이어의 주소를 물려받은
-    파란 레이어도 파랗게 그려져야 한다 (카운트업 숫자 레이어를 비운 뒤 새 숫자를 만드는 상황)."""
+def test_inout_cache_not_fooled_by_reused_id(monkeypatch):
+    """지운 레이어의 주소를 새 레이어가 물려받는 상황을 그대로 만든다: card_mode 의 id() 가 모든 객체에 같은 값을
+    돌려주게 한다. 실제 주소 재사용은 그때까지의 메모리 할당 상태에 따라 일어나기도 하고 안 일어나기도 해서
+    (CPython 은 방금 비운 주소를 다시 쓴다고 보장하지 않음) 재현 조건으로 쓸 수 없다."""
+    monkeypatch.setattr(card_mode, "id", lambda obj: 1, raising=False)
     r = _renderer()
-    red_img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
-    blue_img = Image.new("RGBA", (100, 100), (0, 0, 255, 255))
-    reused: list[MovingLayer] = []
-    keep = []
-    for _ in range(20):   # 다른 테스트와 같은 프로세스면 주소가 바로 재사용되지 않을 때가 있어 몇 번 더 시도
-        reds = [_layer(red_img) for _ in range(200)]
-        firsts = {_center(r, red) for red in reds}
-        assert firsts == {(255, 0, 0)}
-        old = {id(red) for red in reds}
-        del reds
-        gc.collect()
-        blues = [_layer(blue_img) for _ in range(200)]
-        reused = [b for b in blues if id(b) in old]
-        if reused:
-            break
-        keep.append(blues)
-    assert reused, "지운 레이어의 주소를 물려받은 새 레이어가 없음 (재현 조건 실패)"
-    assert {_center(r, b) for b in reused} == {(0, 0, 255)}   # 예전 빨간 그림이 아니라 지금 레이어의 파란 그림
+    red = _layer(Image.new("RGBA", (100, 100), (255, 0, 0, 255)))
+    blue = _layer(Image.new("RGBA", (100, 100), (0, 0, 255, 255)))
+    assert _center(r, red) == (255, 0, 0)
+    assert _center(r, blue) == (0, 0, 255)      # 예전 빨간 그림이 아니라 지금 레이어의 파란 그림
 
 
 # ---------------------------------------------------------------- 두 번 렌더 비교
@@ -118,6 +107,7 @@ def _frame_hashes_twice(d):
     return [json.loads(o.strip().splitlines()[-1]) for o, _ in outs]
 
 
+@pytest.mark.slow  # 약 30초 — PR CI 에서는 건너뛰고 main·수동 실행에서만
 def test_same_input_same_frames_in_two_processes(tmp_path):
     _effects_project(tmp_path)
     a, b = _frame_hashes_twice(tmp_path)
