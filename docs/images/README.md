@@ -7,10 +7,11 @@ README 와 docs 에 넣을 그림을 두는 곳. 이 폴더의 그림·GIF 만 g
 
 아래 이름으로 저장하면 README 에서 바로 쓸 수 있다. 다 찍을 필요는 없고, 1~3번이 가장 중요하다.
 
-1. `demo.gif` — `make demo` 결과 영상의 앞부분 6초 정도 (README 맨 위에 들어감)
+1. `demo.gif` — (완료) 새 폴더에서 만든 `make demo` 결과의 1.5~11초 (후킹 → 5위 → 공동 3위), 360×640, 약 230KB
    ```sh
-   ffmpeg -ss 2 -t 6 -i output/demo.mp4 \
-     -vf "fps=12,scale=360:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" docs/images/demo.gif
+   ffmpeg -ss 1.5 -t 9.5 -i output/demo.mp4 -filter_complex \
+     "fps=12,scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+     docs/images/demo.gif
    ```
 2. `quick-make.png` — 빠른 제작 화면: 양식 답변을 붙여넣고 틀린 줄에 오류가 뜬 상태 (줄 번호 오류 메시지가 보이게)
 3. `rank-table.png` — 순위 표 확인 화면: 열 밀림 경고 또는 '공동 2위'가 보이는 표

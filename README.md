@@ -1,15 +1,15 @@
 # ShortsMaker
 
 [![CI](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml)
-![coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-89.8%25-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 
 **순위표 하나와 노래 한 곡을 넣으면, 가사에 맞춰 카드가 넘어가는 TOP 5 유튜브 쇼츠(1080×1920 MP4)와 CapCut 편집 초안을 만드는 프로그램.**
 
-실제 운영 중인 유튜브 채널 **야구한장**(@야구한장)과 **정보한장**(@정보한장)의 쇼츠 제작에 쓰는 도구다.
+실제 운영 중인 유튜브 채널 **야구한장**과 정보 채널 한 곳의 쇼츠 제작에 쓰는 도구다.
 
 > **English summary** — ShortsMaker turns a ranked table (TOP 5) and a song into a vertical YouTube Shorts video.
-> It is the production tool behind two live YouTube channels (야구한장, 정보한장).
+> It is the production tool behind two live YouTube channels (야구한장 and an info channel).
 > It parses and validates the table, aligns the sung lyrics with a local speech model, draws every frame with
 > Pillow, encodes with FFmpeg, and also exports a CapCut draft and upload text. Built with Python, Pydantic and
 > Streamlit. 304 tests, 89.8% coverage, and PR CI in under 3 minutes.
@@ -24,8 +24,10 @@ ShortsMaker 는 이 반복 작업을 자동으로 처리한다. 사람은 자료
 
 ## 결과
 
-<!-- 캡처를 넣으면 아래 주석을 풀기: ![데모](docs/images/demo.gif) -->
-- 데모 영상 GIF: (작성 예정 — `make demo` 결과로 만들 캡처 목록은 [docs/images](docs/images/README.md))
+![데모: 후킹 문구 → 5위 → 공동 3위](docs/images/demo.gif)
+
+`make demo` 결과(가짜 자료로 만든 30초 영상)의 1.5~11초. 가사에 맞춰 자막이 한 글자씩 나오고, 순위를 부르는 순간 카드가 바뀐다.
+
 - 실제 업로드 영상 링크: (작성 예정)
 
 | 항목 | 값 | 기준 |
@@ -34,8 +36,10 @@ ShortsMaker 는 이 반복 작업을 자동으로 처리한다. 사람은 자료
 | 커버리지 | **89.8%** | main 전체 실행. 89% 아래로 떨어지면 CI 실패 |
 | PR CI 시간 | **16분 5초 → 2분 41초~2분 57초** | 렌더 테스트 분리·패키지 캐시 ([기록](docs/decisions.md)) |
 | 코드 규모 | 본체 37개 모듈 11,124줄 · 화면 1,706줄 · 테스트 27개 파일 3,607줄 | `wc -l` (빈 줄·주석 포함) |
-| 렌더 시간 | 60초 영상 약 36초 · 54초 영상 약 9초 · 30초 데모 약 5초 | Apple M2 Pro, 렌더 단계만 (가사 맞추기 제외) |
-| 손 작업 vs 자동 | (작성 예정) | 같은 영상 한 편 기준 |
+| 렌더 시간 | 60초 영상 약 36초 · 54초 영상 약 10초 · 30초 데모 약 6초 | Apple M2 Pro, 렌더 단계만 (가사 맞추기 제외), 2026-10-14 다시 측정 |
+| 손 작업 vs 자동 | CapCut 수작업 약 2시간 → 자동 제작 약 10분 | 내 체감 기준 (측정값 아님), 같은 영상 한 편 |
+
+렌더 시간 차이: 60초 영상(야구한장)은 마스코트 그림의 흰 배경 지우기와 프레임마다 다시 그리는 후킹 문구가 렌더 시간의 약 2/3를 차지하고, 54초 영상(정보 채널, `sky_badge` 템플릿)에는 둘 다 없다 (cProfile 측정).
 
 ## 동작 흐름
 
@@ -70,8 +74,8 @@ make demo      # examples/demo 의 가짜 자료로 30초 영상 → output/demo
 - **가사 타이밍 자동 맞추기**: demucs 로 보컬을 분리하고 stable-ts(faster-whisper)로 강제 정렬. 로컬에서만 돌고 유료 API 를 쓰지 않음
 - **자막 숫자 변환**: 노래는 한글 숫자로 부르고 자막은 아라비아 숫자로 표시 ('오십육 홈런' → '56홈런'). 사람·팀 이름은 바꾸지 않음
 - **템플릿**: 좌표·색·글꼴을 `templates/<채널>/template.json` 에 둔다. 채널을 추가할 때 코드를 고치지 않음
-- **영상마다 다른 구성**: 18가지 연출 요소(전환·강조색·자막 등장·효과음 등)를 조합해 최근 5편과 3요소 이상 다르게 고른다.
-  가사도 순위만 늘어놓으면 검사를 통과하지 못하고 해설·비교가 들어가야 한다. 영상마다 구성·해설을 다르게 만들어 품질을 지키는 기능
+- **영상마다 다른 구성**: 영상마다 구성과 해설을 다르게 만들어 품질을 지킨다. 연출 18요소(전환·강조색·자막 등장·효과음 등)는
+  최근 5편과 3요소 이상 다른 조합으로 고르고, 가사는 순위만 늘어놓으면 검사에서 걸려 해설·비교를 넣어야 한다
 - **품질·정확성 체크리스트**: 최종 렌더 전에 데이터·사진 출처, 음악·그림 사용 권리, 가사 검사 결과를 확인한다.
   사람이 고친 내용은 `production_log.json` 에 기록
 - **CapCut 초안**: 같은 배치를 편집 가능한 트랙으로 (비공식 라이브러리라 실패해도 MP4 에는 영향 없음)
