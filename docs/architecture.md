@@ -96,7 +96,7 @@ flowchart TD
 
 ## 테스트
 
-- `tests/` 27개 파일, 304개. 렌더가 들어가는 11개는 `@pytest.mark.slow`
+- `tests/` 29개 파일, 311개. 렌더가 들어가는 11개는 `@pytest.mark.slow`
 - 핵심 로직(양식·순위·숫자·가사)은 단위 테스트, 렌더는 짧은 실제 MP4 를 만들어 ffprobe 로 확인
 - 흐름 테스트는 가짜 정렬기(`aligner` 인자)를 쓰고, demucs 가 없는 환경에서는 `tests/conftest.py` 가 보컬 분리를 원곡 복사로 대신한다
 - CI: PR 은 slow 제외, main·수동 실행은 전체 + 커버리지 하한 89% ([decisions.md](decisions.md))

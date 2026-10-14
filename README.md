@@ -12,7 +12,7 @@
 > It is the production tool behind two live YouTube channels (야구한장 and an info channel).
 > It parses and validates the table, aligns the sung lyrics with a local speech model, draws every frame with
 > Pillow, encodes with FFmpeg, and also exports a CapCut draft and upload text. Built with Python, Pydantic and
-> Streamlit. 304 tests, 89.8% coverage, and PR CI in under 3 minutes.
+> Streamlit. 311 tests, 89.8% coverage, and PR CI in under 3 minutes.
 
 ## 무엇을 해결하나
 
@@ -32,10 +32,10 @@ ShortsMaker 는 이 반복 작업을 자동으로 처리한다. 사람은 자료
 
 | 항목 | 값 | 기준 |
 |---|---|---|
-| 테스트 | **304개** | `pytest` 로컬 전체 실행. GitHub CI main 전체 실행은 301개 통과, 3개 건너뜀 (가사 모델이 없는 환경) |
+| 테스트 | **311개** | `pytest` 로컬 전체 실행. 가사 모델이 없는 환경(GitHub CI)에서는 3개 건너뜀 |
 | 커버리지 | **89.8%** | main 전체 실행. 89% 아래로 떨어지면 CI 실패 |
 | PR CI 시간 | **16분 5초 → 2분 41초~2분 57초** | 렌더 테스트 분리·패키지 캐시 ([기록](docs/decisions.md)) |
-| 코드 규모 | 본체 37개 모듈 11,124줄 · 화면 1,706줄 · 테스트 27개 파일 3,607줄 | `wc -l` (빈 줄·주석 포함) |
+| 코드 규모 | 본체 37개 모듈 11,132줄 · 화면 1,564줄 · 테스트 29개 파일 3,767줄 | `wc -l` (빈 줄·주석 포함) |
 | 렌더 시간 | 60초 영상 약 36초 · 54초 영상 약 10초 · 30초 데모 약 6초 | Apple M2 Pro, 렌더 단계만 (가사 맞추기 제외), 2026-10-14 다시 측정 |
 | 손 작업 vs 자동 | CapCut 수작업 약 2시간 → 자동 제작 약 10분 | 내 체감 기준 (측정값 아님), 같은 영상 한 편 |
 
@@ -109,7 +109,7 @@ docs/                   architecture · decisions · usage · images
 
 ## 문제 해결 기록
 
-버그마다 재현 테스트를 남겨 두었다. 아래 네 건은 **증상 → 원인 → 해결 → 추가한 테스트** 순서로 정리했다.
+버그마다 재현 테스트를 남겨 두었다. 아래 다섯 건은 **증상 → 원인 → 해결 → 추가한 테스트** 순서로 정리했다.
 
 ### 1. 자막에서 '이승엽'이 '2승엽'으로 바뀜
 
@@ -151,6 +151,23 @@ docs/                   architecture · decisions · usage · images
 - **추가한 테스트**: `test_bonus_error_message_says_why` (먼저 xfail 로 남겨 둔 것을 정식 테스트로),
   `test_bonus_format_error_message` (형식 오류 메시지는 그대로인지)
 
+### 5. 같은 프로젝트를 다시 렌더하면 카운트업 숫자가 달라짐 ([PR #7](https://github.com/diz99-art/ShortsMaker/pull/7))
+
+- **증상**: 효과를 켠 야구 영상은 같은 입력으로 두 번 렌더해도 프레임 해시가 달랐다. 프레임을 비교해 보니 기록 숫자가
+  0에서 올라가는 0.7초 동안 '42'여야 할 자리에 '27'이나 '46'처럼 다른 순간의 숫자가 몇 프레임씩 나왔다
+  (한 영상에서 8~17프레임, 마지막 숫자는 정상).
+- **원인**: 클린 카드의 '제자리 그림' 캐시가 레이어 객체의 메모리 주소 `id(layer)` 를 키로 썼다. 카운트업 숫자 레이어는
+  40개가 넘으면 비우는데, 지워진 레이어의 주소를 새 숫자 레이어가 물려받으면 캐시가 예전 숫자 그림을 돌려줬다.
+  주소는 실행할 때마다 달라서 결과도 매번 달랐다. 무작위 값·시드·시간·병렬 처리는 원인이 아니었다
+  (시드는 모두 고정, `PYTHONHASHSEED=0` 으로도 재현).
+- **해결**: 제자리 그림을 레이어 객체에 붙여 둔다 (`MovingLayer.rest_image`). 레이어가 사라지면 그림도 같이 사라져서
+  주소가 재사용돼도 섞이지 않는다. 저장소에서 `id()` 를 키로 쓰던 곳은 이곳 하나였다.
+  렌더 시간은 그대로다 (60초 영상 약 34초, 88초 영상 약 31초 — 수정 전후 같음).
+- **추가한 테스트**: `tests/test_render_determinism.py` 의 `test_inout_cache_not_fooled_by_reused_id`
+  (지운 레이어의 주소를 물려받은 새 레이어가 예전 그림으로 그려지는지), `test_same_input_same_frames_in_two_processes`
+  (효과를 켠 야구 영상 — 클린·카운트업·비트·움직임·2.5D·마스코트 — 을 두 프로세스에서 그려 900프레임 해시가 같은지).
+  둘 다 고치기 전에 실패하는 것을 먼저 커밋했다
+
 ## 개발 방식
 
 AI 코딩 도구 두 개를 썼다. 무엇을 만들지와 무엇을 받아들일지는 내가 정했다.
@@ -167,7 +184,8 @@ AI 가 만든 코드를 그대로 믿지 않으려고 아래 방법으로 검증
 
 - **테스트 먼저**: 버그는 실패하는 재현 테스트를 먼저 커밋(`test:`)하고 고쳤다(`fix:`)
 - **렌더 프레임 비교**: 리팩터링 전후에 같은 프로젝트 3개를 렌더해 프레임 4,320장의 해시(framemd5)와 오디오 해시가
-  완전히 같은지 비교했다 (모듈 분리, 타입 정리, 버그 수정 때마다)
+  완전히 같은지 비교했다 (모듈 분리, 타입 정리, 버그 수정 때마다). 같은 입력이면 프레임이 같다는 것도 테스트로 지킨다
+  (문제 해결 기록 5번)
 - **PR + CI**: 모든 변경은 PR 로 올리고 ruff → mypy → pytest 가 통과해야 merge
 - **push 보호**: `pre-push` hook 이 정리 전 옛 기록, 개인 이메일, 허용하지 않은 브랜치의 push 를 막는다.
   커밋 전에는 폰트·노래·그림·비밀 파일을 막는 검사가 돈다
