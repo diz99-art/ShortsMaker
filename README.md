@@ -163,10 +163,14 @@ docs/                   architecture · decisions · usage · images
 - **해결**: 제자리 그림을 레이어 객체에 붙여 둔다 (`MovingLayer.rest_image`). 레이어가 사라지면 그림도 같이 사라져서
   주소가 재사용돼도 섞이지 않는다. 저장소에서 `id()` 를 키로 쓰던 곳은 이곳 하나였다.
   렌더 시간은 그대로다 (60초 영상 약 34초, 88초 영상 약 31초 — 수정 전후 같음).
-- **추가한 테스트**: `tests/test_render_determinism.py` 의 `test_inout_cache_not_fooled_by_reused_id`
-  (지운 레이어의 주소를 물려받은 새 레이어가 예전 그림으로 그려지는지), `test_same_input_same_frames_in_two_processes`
-  (효과를 켠 야구 영상 — 클린·카운트업·비트·움직임·2.5D·마스코트 — 을 두 프로세스에서 그려 900프레임 해시가 같은지).
-  둘 다 고치기 전에 실패하는 것을 먼저 커밋했다
+- **추가한 테스트**: `tests/test_render_determinism.py`
+  - `test_inout_cache_not_fooled_by_reused_id`: 두 레이어가 같은 주소를 받은 상황(`id()` 가 같은 값)에서 새 레이어가
+    예전 그림으로 그려지는지. 처음에는 실제로 객체를 지웠다 다시 만들어 주소 재사용을 기다렸는데, 전체 테스트에서
+    가끔 재사용이 일어나지 않아 실패했다 (CPython 은 방금 비운 주소를 다시 쓴다고 보장하지 않는다). 그래서 같은 주소를
+    직접 만들어 매번 같은 결과가 나오게 했다
+  - `test_same_input_same_frames_in_two_processes` (`@slow`): 효과를 켠 야구 영상 — 클린·카운트업·비트·움직임·2.5D·
+    마스코트 — 을 두 프로세스에서 그려 900프레임 해시가 같은지. 약 30초라 main·수동 실행에서만 돈다
+  - 둘 다 고치기 전에 실패하는 것을 먼저 커밋했다
 
 ## 개발 방식
 

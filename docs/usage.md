@@ -323,7 +323,7 @@ CapCut 초안에는 0.3초 간격 키프레임으로 근사.
 - FFmpeg 실패 시 실행한 명령과 stderr 끝부분을 보여준다
 
 ```sh
-make test-all                              # 전체 (실제 MP4 렌더 11개 포함, 수 분)
+make test-all                              # 전체 (실제 MP4 렌더 11개·결정성 테스트 포함, 수 분)
 make test                                  # 빠른 테스트만 (렌더 제외, PR CI 와 같음)
 ```
 
