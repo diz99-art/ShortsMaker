@@ -1,402 +1,194 @@
 # ShortsMaker
 
 [![CI](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/diz99-art/ShortsMaker/actions/workflows/ci.yml)
-![coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-89.8%25-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 
-'야구한장', '정보 TOP 5' 채널용 **TOP 5 유튜브 쇼츠 자동 제작** 프로그램 (1차).
-제목·5개 항목·이미지·음악·가사 타이밍을 입력하면 1080×1920 / 30fps MP4(기본 50초)를 만든다.
+**순위표 하나와 노래 한 곡을 넣으면, 가사에 맞춰 카드가 넘어가는 TOP 5 유튜브 쇼츠(1080×1920 MP4)와 CapCut 편집 초안을 만드는 프로그램.**
 
-## 설치 (macOS)
+실제 운영 중인 유튜브 채널 **야구한장**과 정보 채널 한 곳의 쇼츠 제작에 쓰는 도구다.
 
-```sh
-brew install ffmpeg      # ffmpeg·ffprobe
-make setup               # .venv + 패키지 + 폰트·효과음·샘플 내려받기/만들기 (이미 있으면 건너뜀)
-make demo                # examples/demo 가짜 자료로 30초 시험 영상 → output/demo.mp4
-make hooks               # (선택) 폰트·노래·그림이 커밋되지 않게 막는 git hook
-```
+> **English summary** — ShortsMaker turns a ranked table (TOP 5) and a song into a vertical YouTube Shorts video.
+> It is the production tool behind two live YouTube channels (야구한장 and an info channel).
+> It parses and validates the table, aligns the sung lyrics with a local speech model, draws every frame with
+> Pillow, encodes with FFmpeg, and also exports a CapCut draft and upload text. Built with Python, Pydantic and
+> Streamlit. 304 tests, 89.8% coverage, and PR CI in under 3 minutes.
 
-- 폰트·노래·그림은 git 에 넣지 않는다. 폰트는 `make setup` 이 공식 배포처에서 받는다 (`assets/fonts/README.md`).
-- 채널 로고·배경·캐릭터 원본이 없으면 `assets/placeholders/` 의 단색 도형 임시 그림으로 대신한다 (임시 기본 캐릭터가 들어간 카드는 수익화용 렌더에서 막힘).
-- 내 컴퓨터에서만 쓰는 채널 이름·핸들은 `templates/<채널>/template.local.json` 에 적으면 template.json 을 덮어쓴다 (git 제외).
+## 무엇을 해결하나
 
-## 실행
+TOP 5 쇼츠 한 편을 만들 때마다 CapCut 에서 순위 카드 5장을 놓고, 노래를 들으며 가사 자막을 한 줄씩 손으로 맞췄다.
+ShortsMaker 는 이 반복 작업을 자동으로 처리한다. 사람은 자료가 맞는지, 결과물이 괜찮은지만 확인한다.
 
-### 화면 (Streamlit)
+- 입력: 순위 표(정해진 양식으로 붙여넣기) + 곡 파일 + 그림 5장
+- 출력: MP4 + CapCut 초안 + 업로드용 제목·설명·태그
 
-```sh
-.venv/bin/streamlit run app.py
-```
+## 결과
 
-1. 사이드바 **불러오기**로 `samples/…`나 `projects/…`를 열거나 새로 입력
-2. 채널·제목·부제 → 5위~1위 카드(이름·값·설명·이미지) → 음악·시작 위치·길이(30~60초)
-3. 가사: 표에 직접 입력(시작/끝/가사) 또는 LRC 업로드, 또는 **🎙️ 가사 자동 맞추기**(아래 2차 기능)
-4. 출처 입력 + **권리 확인 체크** → 체크해야 제작 버튼이 켜진다
-5. **장면 미리보기** → **MP4로 완성**(진행률·재생·다운로드) / **CapCut 초안으로 보내기**
+![데모: 후킹 문구 → 5위 → 공동 3위](docs/images/demo.gif)
 
-입력은 `projects/<저장 폴더 이름>/project.json`과 이미지·음악 파일로 저장된다. 완성 영상은 `output/<폴더>.mp4`.
+`make demo` 결과(가짜 자료로 만든 30초 영상)의 1.5~11초. 가사에 맞춰 자막이 한 글자씩 나오고, 순위를 부르는 순간 카드가 바뀐다.
 
-### 명령줄
+- 실제 업로드 영상 링크: (작성 예정)
 
-```sh
-.venv/bin/python -m shortsmaker.cli check    samples/yagu_demo/project.json  # 렌더 전 검증
-.venv/bin/python -m shortsmaker.cli timeline samples/yagu_demo/project.json  # 장면 시간표
-.venv/bin/python -m shortsmaker.cli scenes   samples/yagu_demo/project.json  # 장면 PNG + 미리보기 시트
-.venv/bin/python -m shortsmaker.cli render   samples/yagu_demo/project.json  # MP4 → output/yagu_demo.mp4
-.venv/bin/python -m shortsmaker.cli capcut   samples/yagu_demo/project.json  # CapCut 초안 (비공식)
-.venv/bin/python -m shortsmaker.cli kit      samples/yagu_demo/project.json  # CapCut 수동 가져오기 재료
-.venv/bin/python -m shortsmaker.cli align    projects/x/project.json         # 가사 타이밍 자동 맞추기 (2차)
-```
-
-## 영상 구성
-
-| 구간 | 50초 기준 | 내용 |
+| 항목 | 값 | 기준 |
 |---|---|---|
-| 인트로 | 3초 | TOP 5 배지(팝) · 제목 · 부제 |
-| 5위~2위 | 각 8초 | 순위 숫자(팝) · 캐리커처(천천히 줌인) · 이름 · 값 · 설명 |
-| 1위 | 10초 | 1위 색 강조 |
-| 아웃트로 | 5초 | 구독 문구 · 출처 |
+| 테스트 | **304개** | `pytest` 로컬 전체 실행. GitHub CI main 전체 실행은 301개 통과, 3개 건너뜀 (가사 모델이 없는 환경) |
+| 커버리지 | **89.8%** | main 전체 실행. 89% 아래로 떨어지면 CI 실패 |
+| PR CI 시간 | **16분 5초 → 2분 41초~2분 57초** | 렌더 테스트 분리·패키지 캐시 ([기록](docs/decisions.md)) |
+| 코드 규모 | 본체 37개 모듈 11,124줄 · 화면 1,706줄 · 테스트 27개 파일 3,607줄 | `wc -l` (빈 줄·주석 포함) |
+| 렌더 시간 | 60초 영상 약 36초 · 54초 영상 약 10초 · 30초 데모 약 6초 | Apple M2 Pro, 렌더 단계만 (가사 맞추기 제외), 2026-10-14 다시 측정 |
+| 손 작업 vs 자동 | CapCut 수작업 약 2시간 → 자동 제작 약 10분 | 내 체감 기준 (측정값 아님), 같은 영상 한 편 |
 
-- 길이를 바꾸면 모든 구간이 비례해서 늘거나 줄고, 프레임 단위로 맞춘다. 장면 사이 fade 전환은 0.4초.
-- 음악은 `music_start`부터 잘라 길이에 맞추고 끝 1.5초 페이드아웃. 음악이 없으면 무음 트랙.
-- 가사는 화면 하단 고정 영역에 시간 구간에만 표시. FFmpeg에 libass가 있으면 ASS 자막,
-  없으면 Pillow PNG overlay를 쓴다 (현재 Homebrew FFmpeg 9.0.2는 libass 없음 → PNG 방식).
-- 출력: H.264 High / yuv420p, AAC 192k, `+faststart`.
+렌더 시간 차이: 60초 영상(야구한장)은 마스코트 그림의 흰 배경 지우기와 프레임마다 다시 그리는 후킹 문구가 렌더 시간의 약 2/3를 차지하고, 54초 영상(정보 채널, `sky_badge` 템플릿)에는 둘 다 없다 (cProfile 측정).
 
-## project.json
+## 동작 흐름
 
-```json
-{
-  "channel": "yagu",                 // templates/ 폴더 이름
-  "title": "KBO 역대 FA 계약 TOP 5",
-  "subtitle": "총액 기준",
-  "duration": 50,                    // 30~60초
-  "source_note": "출처: KBO 공식 기록 (2026.10 기준)",
-  "items": [ {"rank": 5, "name": "선수명", "value": "80억", "description": "한 줄 설명", "image": "img5.png"} ],
-  "music": "music.mp3",
-  "music_start": 0.0,
-  "lyrics": [ {"start": 3.0, "end": 6.5, "text": "가사 한 줄"} ],
-  "lyrics_lrc": null,                // lyrics 와 둘 중 하나만
-  "rights_confirmed": false
-}
+```mermaid
+flowchart LR
+    A["입력<br/>순위 표 · 곡 · 그림 5장"] --> B["검증<br/>양식 · 열 밀림 · 공동 순위"]
+    B --> C["가사 맞추기<br/>보컬 분리 + 강제 정렬"]
+    C --> D["카드 · 자막 렌더<br/>Pillow 프레임"]
+    D --> E["FFmpeg 인코딩<br/>H.264 + AAC"]
+    E --> F["MP4"]
+    D --> G["CapCut 초안"]
+    B --> H["업로드 문구<br/>제목 · 설명 · 태그"]
 ```
 
-items는 정확히 5개(rank 1~5 각 한 번). 파일 경로는 project.json이 있는 폴더 기준.
+자세한 모듈 구조는 [docs/architecture.md](docs/architecture.md).
 
-## 템플릿 (채널 추가)
-
-`templates/<채널>/template.json` 하나로 채널이 추가된다. 코드에는 좌표가 없다.
-
-- `gradient` / `background`: 배경 이미지(템플릿 폴더 기준). 파일이 없으면 그라데이션으로 대체
-- `fonts`: 키 → `assets/fonts` 파일명
-- `intro` / `rank` / `outro` / `lyrics`: 각 요소의 박스(`x, y, w, h`)와 글자 크기(`size` → `min_size`까지 자동 축소),
-  색, 정렬, 최대 줄 수, 외곽선. `rank.rank_format`(예: `{rank}위`, `TOP {rank}`), `rank_one_color`
-- `effects`: `transition`(전환 초), `zoom_to`(줌 최종 배율), `rank_pop`(팝 시간), `music_fade_out`
-- `max_duration`: 영상 최대 길이 (기본 60초, 스키마 상한 90초)
-
-### 카드 모드 템플릿 `yagu_v2`
-
-참고 영상(`reference/한_번만_이겼어도__KBO_역대_최장_연패_TOP_5.mov`)에서 잰 배치·움직임을 그대로 옮긴 템플릿.
-측정값과 근거는 `templates/yagu_v2/MEASUREMENTS.md`.
-
-- 흰 배경, 위쪽 '야구한장 )(' 알약 로고 + 파란 2줄 제목(`title` 의 `\n` 으로 줄 나눔) + 검은 구분선, 아래쪽 `@야구한장 | 🔔구독`
-- 인트로: 채널 로고(`templates/yagu_v2/logo.png`)가 2배 크기로 시작해 약 4초에 걸쳐 제자리로 줄어듦 (처음 0.3초 모션 블러)
-- 순위 이미지는 정보가 다 들어간 완성 카드로 보고 이름·값 글자는 그리지 않는다. 카드만 크게 배치
-- 장면 전환: 빈 프레임 1개 → 카드가 2.2배에서 '쾅' 들어와 0.3초 동안 모션 블러, 약 1.4초에 걸쳐 제자리
-- 전환 시점: `items[].start` 가 없으면 가사 자동 맞추기 결과에서 "5위", "4위"… 를 부르는 순간(단어 타이밍 안 글자 위치)
-- 자막: 구분선 아래, 흰 글씨 + 검은 테두리 + 그림자. 문장을 먼저 배치하고 노래에 맞춰 한 글자씩 나타남(단어 타이밍 안에서
-  글자를 나눔, 문장 부호는 앞 글자와 함께). 최대 2줄(안 들어가면 폭을 넓힘). 다음 가사가 시작되면 교체
-- 영상 길이 최대 90초 (곡 길이에 맞추려면 `duration` 을 곡 길이와 90 중 작은 값으로)
-- 렌더는 장면 클립·xfade 대신 Pillow 로 프레임을 직접 그려 FFmpeg 로 인코딩한다 (`shortsmaker/card_mode.py`). 90초 약 2분
-- CapCut 초안: 같은 배치(배경 / 로고·카드 / 제목 / 자막 트랙). 확대는 키프레임으로 옮기지만 모션 블러는 없고,
-  타자 효과는 CapCut '타자기' 효과로 근사, 글자 그림자는 pyCapCut 미지원으로 빠짐
-- 비교 이미지: `.venv/bin/python scripts/compare_frames.py <참고 영상> <결과 mp4 또는 project.json> <출력.png> [초 또는 참고초:결과초 ...]`
-
-가사 자동 맞추기는 이제 단어 시간(`lyrics[].words`)도 저장하고, 보컬 분리를 쓸 때 단어 시작을 보컬이
-조용하다가 커지는 순간으로 다듬는다 (강제 정렬이 앞쪽 무음까지 단어에 붙이는 문제 보정).
-
-## 노래로 자동 제작 (yagu_v2)
-
-`.venv/bin/streamlit run app.py` → 왼쪽 메뉴 **노래로 자동 제작**. 가사가 들어 있는 곡 파일(Suno m4a 등) 하나로 시작한다.
-단계마다 앞 단계가 끝나야 다음 버튼이 열리고, 진행 상태는 `projects/<이름>/auto.json` 에 저장돼 '이어서 하기'로 계속할 수 있다.
-새로 만들 때 프로젝트마다 고른다:
-
-- **영상 모드**: 카드형(`yagu_v2`, 정보가 다 든 카드) / 스티커형(`yagu_v2_sticker`, 글씨 없는 2등신 치비 스티커 + 빨간 기록 줄)
-- **캐리커처 생성**: 수동(무료, 기본) / OpenAI(유료, API 키 있을 때만, 기본 품질 medium) / Mock(시험)
-
-1. **가사 자동 맞추기**: 곡에 든 가사 → 보컬 분리 + 단어 타이밍.
-   **영상 끝**: 기본은 *노래가 끝나면* — 마지막 가사가 끝나고 2초(그 안에서 음악 페이드아웃), 곡 길이·90초를 넘지 않음.
-   *반주 끝까지*(곡 끝, 최대 90초)는 선택. 예: 연패 곡(94.8초, 노래는 84.0초에 끝남) → 86초
-2. **순위 표 확인·수정**: 가사에서 순위·팀·기록·연도·선수를 규칙으로 뽑은 초안(`shortsmaker/rank_extract.py`, 외부 API 없음).
-   팀은 가사에 구단 이름·등록 별칭(기아, 엘지 등)이 그대로 있을 때만 채우고, 별명('부산의 자존심')만 있으면 비워서
-   '확인 필요'에 표시한다. 빈칸(팀·선수·기록)이 있으면 **표 확정** 불가. 확정할 때 자막 표기도 정리
-   ('십육 연패'→'16연패', '케이비오'→'KBO', 순위 줄 + 기록 줄 합치기 선택).
-   **공동 순위**: 같은 순위를 두 행에 적으면 '공동 2위'로 표시되고 다음 순위(3위) 칸은 비워도 확정된다
-   (규칙 1, 2, 2, 4, 5). 가사의 "공동 N위" 줄은 자동으로 모두 잡는다. 영상 속 자리는 5→1 로 한 번씩 정하고
-   보이는 순위는 `items[].display_rank` 에 저장한다.
-   **장면 설명**(악수, 기자회견 등 — 가사로 초안)과 스티커형의 **빨간 기록 줄**(1~2줄, ' / ' 로 줄바꿈)도 항목마다 고친다
-3. **사진**: 위키미디어 공용 검색(검색어는 화면에서 직접 고침, 자동으로 넓히지 않음). 라이선스·저작자 표시, 상업 이용 후보 우선.
-   '동일인 확인'과 '이용·변형 권한 확인'을 체크해야 사용. 없으면 직접 이미지 올리기. 수동 모드는 '사진 없이 진행'도 가능
-4. **캐리커처**
-   - **수동(무료)**: 선수마다 ChatGPT·Gemini 용 프롬프트(2등신 치비/카드 스타일, 장면, 팀 색, 구단 로고·글자·숫자 금지,
-     투명 또는 흰 배경)를 만들고 `players/player_sN/manual/` 에 프롬프트·스타일 참고 그림·선수 사진을 모은다.
-     **프롬프트 복사**(클립보드), **폴더 열기**(Finder). 웹에서 만든 그림을 내려받으면 **다운로드 폴더 지켜보기**가
-     2초마다 `~/Downloads` 의 새 이미지를 보여주고, 순위를 골라 **이 순위에 사용**을 누르면 배경을 지워 넣는다
-     (`shortsmaker/bg_remove.py`: 투명이면 그대로, 아니면 테두리에 이어진 단색 배경 제거. `rembg` 설치 시 선택 가능).
-     인트로 캐릭터도 같은 방법으로 넣을 수 있다(없으면 채널 로고)
-   - **OpenAI(유료)**: 생성 전에 선수별·합계 **예상 비용**을 보여주고, 승인 체크를 해야 생성 버튼이 열린다.
-     승인 뒤 사진·설정이 바뀌면 다시 승인, 한 번 승인으로 한 번만 실행(선수별 최대 3회, 자동 재시도 없음). 결과를 보고 선수마다 승인
-5. **카드형**: 캐리커처 + 금색 순위 + 기록 + 연도 + 팀 이름 띠 + 선수 이름 (`shortsmaker/card_compose.py`).
-   **구단 로고는 넣지 않고** 팀 색(`shortsmaker/data/kbo_teams.json`, 근사값 — 직접 수정 가능)과 이름만 쓴다.
-   **스티커형**: 글씨 없는 그림 그대로 (순위·기록은 자막과 빨간 기록 줄로)
-6. **렌더 + CapCut 초안**: 권리 확인 체크 후 MP4 + CapCut 초안. `credits.txt` 에 영상 설명용 사진 출처
-
-**Mock 모드**: 비용 0, OpenAI 로 아무것도 보내지 않는다. 사진 대신 팀 색 실루엣을 쓸 수 있고,
-결과에 'MOCK 시험용'이 찍히며 출력 이름에 `_MOCK` 이 붙는다. Mock 결과는 실제 프로젝트에 승인·연결할 수 없다.
-
-### 스티커형 템플릿 `yagu_v2_sticker`
-
-참고 영상 `reference/150억이_2위라고_KBO_역대_FA_계약_TOP_5.mov`(곡 0~57.8초를 그대로 사용)에서 측정.
-위·아래 고정 요소와 자막·전환은 카드형과 같고, 다른 점:
-
-- 빨간 기록 줄: RGB(235,27,27), 글자 높이 54px(크기 70), 줄 간격 62px, 줄 블록 중심 y≈880, 가운데 정렬, 최대 2줄.
-  순위 장면 시작 0.2초 뒤부터 초당 27글자씩 나타남 (참고 영상 4위 장면 16.73초~)
-- 스티커 자리 x270~970, y975~1765 (참고: x311~942, y980~1758). 인트로 캐릭터 자리 x60~760, y870~1730,
-  인트로 자막은 왼쪽 정렬(세로 중심 645)
-- 프로젝트 `intro_image` 가 있으면 인트로에 채널 로고 대신 캐릭터. 항목별 `stat_line` 이 빨간 기록 줄
-
-## 수익화 대비 (YouTube '진정성 없는 콘텐츠' 기준)
-
-템플릿으로 찍어낸 반복형 영상이 되지 않도록 영상마다 연출과 가사를 달리하고, 사람이 기여한 내용과 권리 확인을 기록한다.
-이 기능들은 수익화 승인을 보장하지 않는다 — YouTube 는 사람이 영상 단위로 판단하며, 영상마다 고유한 해설·관점이 가장 중요하다.
-
-- **연출 바꾸기** (`shortsmaker/variation.py`, 5단계): 장면 전환(쾅·미끄러짐·섬광·튀어오름) · 강조색(빨간 기록 줄·카드 순위
-  글자 4세트) · 자막 등장(글자·단어·줄) · 인트로(줄어듦·옆에서·제목 카드). 제목 파랑·채널 로고는 고정.
-  모든 수익화용 렌더의 조합을 `projects/_history.json` 에 남기고, **최근 5편과 2요소 이상 다른 조합만** 고를 수 있다
-- **가사 만들기** (왼쪽 메뉴 '가사 만들기', `pages/2_가사_만들기.py`): 주제·확정 데이터(직접 입력 또는 ShortsData
-  `exports/<이름>/project.json`)·데이터 출처 → 반전·해설·비교가 들어간 가사 3가지. 기본은 `claude -p`(Claude Code 헤드리스,
-  구독 안에서), 실패하면 프롬프트 복사 → 답 붙여넣기. 버전을 골라 고친 뒤 **가사 검사를 통과해야** `suno_brief.md`
-  (제목·Style·Lyrics, 복사 버튼)로 저장. 결과는 `projects/_briefs/<이름>/`, 곡이 나오면 '노래로 자동 제작'에서 연결
-- **가사 검사** (`shortsmaker/lyrics_check.py`): 오류 — 나열형('N위 이름 숫자'뿐인 줄 50% 초과, 해설 줄 4줄 미만),
-  반전·해설·비교 표현 없음, 데이터에 없는 숫자(데이터 숫자끼리의 차이는 허용)·구단, 순위와 선수·팀이 어긋남.
-  경고 — 이전 영상 가사와 같은 표현(어절 3개, 순위·이름만으로 된 표현 제외). 이미 만든 곡은 결과를 사람이 확인
-- **사람의 기여 기록** (`projects/<이름>/production_log.json`): 자동 추출 표 → 사람이 고친 칸, 데이터 출처, 가사 검사·확인,
-  자막 수정, 캐리커처 승인(수동 모드는 프롬프트 포함)·로고 확인, 연출 선택, Suno 확인, 렌더(최종 확인 시각)
-- **렌더 전 권리 체크리스트** (6단계): Mock 아님 · 표 확정 · Suno 유료 플랜(사용자 확인 + 곡 태그의 Suno id·생성일 기록) ·
-  캐리커처 로고·유니폼 글씨 없음(5명 모두 사람 확인) · 사진 출처 기록 · 데이터 출처(이름·URL) · 가사 검사 확인 · 연출 최근 5편과 다름.
-  하나라도 안 되면 **수익화용 렌더**는 막히고 **시험 렌더**(`_DRAFT`)만 가능
-- **업로드 준비** (7단계, `shortsmaker/upload.py`): 제목 후보 3개(100자 이내), 설명(순위 목록·데이터 출처·사진 출처·
-  "음악: Suno로 제작"·캐리커처 제작 방식), 태그(500자 이내) → `upload.txt`/`upload.json`, 복사 버튼. 업로드는 직접
-
-## 빠른 제작 (왼쪽 메뉴 '빠른 제작', `pages/3_빠른_제작.py`)
-
-입력은 3개: ① ChatGPT 답변(아래 양식) ② 곡 파일 ③ 그림 5장(표 순서대로, 미리보기에서 자리 바꾸기).
-'시험 렌더까지 만들기' 한 번이면 곡 등록 → 가사 맞추기 → **가사와 표 대조** → 표 확정 → 그림 넣기(배경 제거) →
-연출 자동 추천 → 합성 → 시험 렌더(`_DRAFT`). 양식 오류·그림 수·가사와 표가 다를 때·실패할 때만 멈추고 묻는다
-(가사·표가 다르면 '표대로 계속'). 수익화용 렌더·업로드는 '노래로 자동 제작'에서 같은 프로젝트를 불러와 이어서 한다.
-
-```
-제목: 1줄 / 2줄
-출처: 이름 | URL
-순위 | 선수 | 팀 | 기록 | 연도 | 장면 설명
-5 | 박병호 | 넥센 히어로즈 | 52홈런 | 2014 | 힘차게 풀스윙하는 타격 자세
-메모: 가사·해설에 쓸 사실
-```
-틀린 줄은 "4번째 줄: 칸이 5개입니다 (6개 필요)"처럼 알려 준다. '확인 필요' 칸이 남아 있으면 읽지 않는다.
-이 양식을 ChatGPT 에 요청하는 프롬프트는 화면의 '복사' 버튼으로. ChatGPT 가 준 기록·출처는 직접 확인할 것.
-
-### 그림 움직임 (연출 5번째 요소)
-순위 장면 내내: 천천히 확대(켄 번즈) / 위아래 둥실둥실 / 등장 후 통통 / 살짝 흔들림. 1위는 1.5배 + 등장 때 번쩍·흔들림.
-CapCut 초안에는 0.3초 간격 키프레임으로 근사.
-
-### 정보한장 (info_v2)
-- 야구한장과 같은 클린 A. 항목(이름·값·이미지)으로 카드 자동 합성 (`shortsmaker/info_cards.py`, `cards_auto/`)
-- 로고 인트로 없음: 후킹 문구(없으면 제목 첫 줄) → 바로 5위
-- 그림이 없으면 임시 글자 카드 (PNG 에 `shortsmaker-placeholder` 표시). 시험 렌더는 되지만 수익화용 렌더는 막힘
-- 마스코트는 `assets/mascot_info/` (비어 있으면 마스코트 없이). 야구한장 한장이는 `assets/mascot/`
-
-### 말풍선 자리
-- 기본은 마스코트 바로 위. 그 장면의 카드 글자(순위·기록·이름)나 그래프 글자와 겹치면 겹치지 않는 곳까지 위로 올린다
-
-### 클린 스타일 (시안 A·B, 연출 요소 `look`)
-- `classic`(지금) / `clean_a`(부드러운 팀 색 판 + 흰 정보판) / `clean_b`(흰 카드·얇은 라인·큰 순위 숫자)
-- 글씨는 Pretendard 하나로 단색 + 은은한 그림자 (금색 그라데이션·두꺼운 테두리 없음), 자막도 같음
-- 장식(왕관·반짝이·도장·별) 없음, 1위만 강조색 포인트 하나
-- 후킹은 굵은 글씨 + 강조색 밑줄 하이라이트, 막대그래프는 테두리 없는 연한 파랑 막대 (1위만 강조색)
-- 효과: 전환은 영상당 1종류 (보너스도 같은 전환), 흔들림은 1위만 (비트는 펄스만, 그림 움직임은 켄 번즈·둥실만)
-- 카드 비율 941×1162 → 화면 너비 75%, 아래 '@야구한장 구독'과 여백
-- 카드 상자: x 135, y 760, 810×1000 (예전 세로 긴 카드는 높이에 맞춰 줄어듦)
-
-### 차별화 (마스코트 한장이 · 데이터 그래픽 · 2.5D · 키워드 터뜨리기)
-- 마스코트 '한장이' (`shortsmaker/mascot.py`, 그림은 `assets/mascot/`)
-  - 그림: question, surprise, shock, laugh, clap, thumbsup, wave, think, sad, cheer, default `.png`
-    - 흰 배경은 불러올 때 지움 (원본 파일은 그대로)
-    - 없는 표정은 default, 그것도 없으면 임시 도형
-  - 자리: 오른쪽 아래 (자막·카드·게이지와 안 겹침)
-  - 흐름: 인트로 question → 순위 장면 분위기 표정 + 박자 까딱 → 1위 surprise→cheer (굴욕은 shock→sad) → 그래프 think → 보너스 shock → 마지막 2초 wave
-  - 가사 추임새 '(와아!)'에 0.8초 반응
-  - 말풍선(3~8글자, 최대 2초)은 노래가 0.9초 이상 쉬는 틈에만: 인트로 / 1위 / 엔딩
-    - 빠른 제작 양식 `말풍선: 인트로 / 1위 / 엔딩`, 없으면 분위기별 자동 문구
-- 데이터 그래픽: 보너스 직전 2초(보너스가 없으면 영상 끝 2초)에 5명 기록 막대그래프
-  - 팀 색 막대가 차오름, 기준선 점선, 1위 강조
-  - 옵션: 연도 타임라인
-- 2.5D 입체: 디자인 카드를 배경·캐리커처·앞 효과·글자 층으로 저장(`cards/cardN_L_*.png`)
-  - 등장 뒤 층마다 다른 속도로 옆으로 흐르기(pan) 또는 다가가기(dolly)
-  - 그림 속에 함께 그려진 반짝이는 캐리커처와 같이 움직임
-- 키워드 터뜨리기: 강한 구간(후렴)에서 숫자·순위·핵심 단어('역대 최고' 등)를 부르는 순간 자막 자리에 크게 0.6초 (카드와 안 겹침)
-  - 카드에 이미 나오는 말(기록·이름·순위·팀·연도, 보너스 포함)은 생략
-  - 5초 간격 이상, 영상당 최대 3번
-- 연출 요소 15개: 마스코트·그래프·입체·키워드 추가. 마스코트 기본 위치는 오른쪽 아래
-- 카드 90% 크기 (가운데 그대로, 게이지와 안 겹침), 카드 아래 선수 이름 2배
-
-### 카드 디자인 (분위기 6가지 × 3종)
-- 분위기와 디자인 (앞이 추천 순서):
-  - 기록·최고: 스타디움 조명 / 금색 광선 / 메달·리본
-  - 굴욕·불운: 추락 그래프 / 어두운 비 / 금 간 유리
-  - 돈: 지폐 / 금화 / 계약서 영수증
-  - 대결: VS 분할 / 번개 / 불꽃
-  - 옛날 기록: 신문 지면 / 옛날 필름 / 빛바랜 사진
-  - 현재·신기록: 전광판 / 네온 / 속보 LIVE
-- 전부 Pillow로 직접 그림 (`shortsmaker/card_design.py`). 색은 선수별 팀 색. 1위는 왕관·광선·도장 등으로 더 화려하게
-  - 금색 광선 테두리 원과 메달은 1~3위만 (메달은 금·은·동, 4~5위는 리본만)
-  - 금 간 유리의 금은 배경·그림에만 (글씨 위로 지나가지 않음)
-  - 영수증에는 지어낸 금액을 넣지 않고, 신문 제호는 '호외' (실제 신문 이름 안 씀)
-- 분위기 판단 (`shortsmaker/mood.py`): 제목·주제·메모·표 → `claude -p`, 실패하면 키워드 규칙. 결과·이유는 화면에 나오고 바꿀 수 있음
-- 연출 요소 `design`: 분위기 3종 중 최근 5편에서 안 쓴 디자인을 추천 순서대로. 비우면 예전 붓 터치 카드
-- 화면 5단계 '②-1 카드 디자인': 분위기 자동 판단, 3종 미리보기(1위 그림), '이 디자인으로'
-- 빠른 제작은 분위기 판단과 디자인 추천까지 자동. 카운트업 숫자도 그 디자인의 글자 효과로 그림
-
-### 시청 유지 효과 (후킹·비트·카운트업·효과음·진행 표시·엔딩 보너스)
-- 후킹: 영상 첫머리 큰 질문 문구 ('50홈런이 6위?!')가 5위 장면 전까지 이어짐 (로고 인트로 없이 바로 5위). 빠른 제작 양식 `후킹:` 줄, 또는 2단계 '후킹 문구'. 등장: 쾅 / 떨어지기 / 단어씩
-- 비트: librosa 로 박자·강한 구간 분석 (`projects/<이름>/beats.json`에 저장). 박자마다 카드 펄스, 강한 구간은 번쩍·흔들림
-- 기록 숫자: 0부터 0.7초 동안 카운트업 (왼쪽 게이지 바는 삭제함. `기준: 50홈런`은 1위 뒤 막대그래프의 기준선)
-- 효과음: 휙(전환)·쿵(순위 공개)·쾅(후킹)은 `shortsmaker/sfx.py`로 직접 합성. 1위 함성은 위키미디어 공용 녹음
-  (A: Clapping hurray, starlite, 퍼블릭 도메인 / B: sandermotions applause, CC0 1.0). 출처는 `assets/sfx/credits.json`
-  - 영상마다 `credits.txt`의 [효과음]에 기록
-  - 출처·라이선스가 확인되지 않은 효과음은 수익화용 렌더에서 막음
-  - 음악보다 작게 섞음 (MIX_GAIN)
-- 진행 표시: 제목 오른쪽 위에 ●●●○○ / 3 / 5 / 진행 막대
-- 엔딩 보너스: 1위를 5초 이상 보여 준 뒤 마지막 4초. 양식은 `보너스: 6위 디아즈 | 삼성 라이온즈 | 50홈런 | 2025` 또는 `보너스: 예고 | 다음 편: …`
-- 연출 요소 11개 (기존 5개 + 후킹·비트·숫자·효과음·진행 표시·보너스 등장)
-  - 최근 5편과 3요소 이상 달라야 함
-  - 예전 프로젝트는 새 요소가 '끄기'라 그대로 렌더됨
-- CapCut 초안: 후킹 문구·진행 표시·보너스 장면·효과음(종류별 트랙)은 옮김. 비트 펄스·카운트업·게이지는 MP4 에만 있음
-
-### 자막 숫자 (노래는 한글, 자막은 아라비아)
-- 가사 만들기: 노래용(한글 숫자, Suno 에 복사)과 자막용(같은 줄, 아라비아 숫자) 두 벌을 줄 단위로 저장한다.
-  자막용이 없거나 줄이 안 맞으면 '숫자 자동 변환'으로 만든다. 브리프를 연결한 곡은 자막용 표기를 그대로 쓴다.
-- 브리프 없는 곡은 자동 규칙을 쓴다 (`rank_extract.normalize_numbers`).
-  - 단위(년·홈런·개·억·만·연패·연승·승·타점·경기·위·회·번 …) 바로 앞 숫자만 바꾼다: '이십오년'→'25년', '서른한 개'→'31개'
-  - 연도로 읽은 숫자는 단위 없이도 바꾼다 ('이천십오'→'2015'). 다른 단위에는 붙이지 않는다 ('2026 홈런 전쟁')
-  - 표의 기록 숫자와 같으면 단위 없이도 바꾼다 ('2위 이승엽 삼성 오십사'→'… 54')
-  - 사람·팀 이름과 일반 낱말(오늘, 구단, 삼진, 이유, 사이, 이번 …)은 바꾸지 않는다
-  - 띄어 쓴 한 글자 숫자('이 경기')와 열 미만 고유어('세 개')는 그대로 둔다
-- 자막 줄에는 부른 원문(`LyricLine.sung`)을 같이 저장한다. 글자 수가 줄어도('이십오년'→'25년') 바뀐 부분은 원래 부른 구간 안에서 고르게 나뉘어 나온다.
-- '자막 표기 고치기'에서 '숫자 자동 변환'을 누르면 바뀔 줄 미리보기가 나온다. 고른 줄만 바꾼다.
-
-### 표·자막 주의 (DRAFT 버그 수정)
-- 표 열 순서는 모든 화면에서 `순위 | 선수 | 팀 | 기록 | 연도 | 장면 설명`. 선수 칸에 기록, 팀 칸에 선수 이름,
-  연도 칸에 문장이 들어가면 '열이 밀린 것 같다'며 확정을 막는다 (MLB 등 사전에 없는 팀은 '허용' 체크)
-- 순위별 그림을 표 옆·5단계에서 보여 주고 '바꾸기'로 두 순위의 그림을 맞바꾼다 (기록에 남음)
-- 한글 숫자 변환은 단위 앞에서만 ('오십육 홈런'→'56홈런'), 사람·팀 이름은 절대 바꾸지 않는다 ('이승엽' 그대로).
-  자막은 표를 확정할 때마다 실제로 부른 가사 원문에서 새로 만든다
-- 카드에는 4자리 연도만 찍는다 (장면 설명은 그림 프롬프트 전용)
-- 제목은 2단계에서 고치면 바로 저장되고, 렌더 직전에 "이 제목으로 렌더합니다"를 보여 준다
-
-### OpenAI API 키 설정 (실제 캐리커처 생성용)
-
-1. https://platform.openai.com 에서 API 키를 만들고, **Billing → Usage limits** 에서 월 사용 한도를 먼저 정한다
-2. 터미널에서 `~/.zshrc` 끝에 한 줄 추가 후 새 터미널을 연다
-   ```sh
-   export OPENAI_API_KEY="sk-..."
-   ```
-3. 그 터미널에서 `.venv/bin/streamlit run app.py`. 화면 왼쪽에 'OPENAI_API_KEY 설정됨'이 보이면 새 프로젝트에서
-   '실제 캐리커처 생성(유료) 모드'를 고를 수 있다
-
-키는 채팅·코드·project.json 에 넣지 않는다. 프로그램은 환경변수에서만 읽고 값을 화면에 표시하지 않는다.
-예상 비용은 `shortsmaker/player_assets.py` 의 가격표(gpt-image-1.5, 2026-10-09 확인)로 계산한 추정치이며 청구 상한이 아니다.
-
-주의: 실존 선수 캐리커처는 사진 라이선스와 별개로 초상권 문제가 있을 수 있다. CC BY-SA 사진으로 만든 캐리커처는 2차 저작물이라
-저작자·라이선스 표시와 동일조건 의무가 따른다 (`credits.txt` 를 영상 설명에 넣을 것).
-
-## 검증
-
-- 렌더 전(`check`·화면·`render` 시작 시): 스키마, 템플릿·폰트·이미지·음악·LRC 파일 존재, 음악 시작 위치,
-  가사 겹침·길이 초과, 글자가 최소 크기에서도 넘치는지(경고), 권리 확인
-- 렌더 후: ffprobe로 1080×1920, 길이 ±0.5초, 오디오 스트림 존재 확인
-- FFmpeg 실패 시 실행한 명령과 stderr 끝부분을 보여준다
+## 빠른 시작 (macOS)
 
 ```sh
-.venv/bin/python -m pytest -q              # 전체 (실제 렌더 포함, 약 30초)
-.venv/bin/python -m pytest -q -m "not slow" # 빠른 테스트만
+brew install ffmpeg
+git clone https://github.com/diz99-art/ShortsMaker.git && cd ShortsMaker
+make setup     # .venv + 패키지 + 공개 폰트(OFL)·효과음·샘플 준비
+make demo      # examples/demo 의 가짜 자료로 30초 영상 → output/demo.mp4
 ```
 
-## CapCut 초안 (비공식, 실험적)
+화면은 `.venv/bin/streamlit run app.py`. 화면별 사용법은 [docs/usage.md](docs/usage.md).
 
-`shortsmaker/capcut_export.py`로 분리되어 있어 실패해도 MP4 기능에는 영향이 없다.
+## 주요 기능
 
-- 초안 폴더: `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/` (화면 사이드바 ⚙️ 설정 또는
-  환경변수 `SHORTSMAKER_CAPCUT_DIR`로 변경). 이름은 `ShortsMaker_<폴더>_<시각>`, 기존 초안은 덮어쓰지 않는다.
-- 트랙: 장면(완성 장면 이미지) / 음악(시작 위치부터, 페이드아웃) / 가사(편집 가능한 텍스트)
-- Mac CapCut 5.9.1 보정: `draft_info.json` 작성, 설치 앱 버전 값 반영, 소재 등록 —
-  [호환성 시험 기록](docs/capcut-compatibility.md)
-- CapCut은 샌드박스 앱이라 `~/Movies` 밖의 파일을 열지 못한다. 그래서 이미지·음악을 **초안 폴더 안 `media/`로 복사**한다.
-- 초안이 열리지 않으면 `kit` 명령(화면에서는 실패 시 자동)으로 `output/<폴더>_capcut_kit/`에
-  장면 PNG(시작 시각이 파일 이름)·자른 음악·가사 SRT를 만들어 CapCut에 직접 가져온다.
+- **빠른 제작**: 양식 답변 + 곡 + 그림 5장 → 버튼 한 번으로 시험 렌더까지. 문제가 있을 때만 멈추고 묻는다
+- **입력 검증**: 줄 번호가 붙은 오류 메시지, 표 열 밀림 감지, 공동 순위 규칙(1, 2, 2, 4, 5), 가사와 표 대조
+- **가사 타이밍 자동 맞추기**: demucs 로 보컬을 분리하고 stable-ts(faster-whisper)로 강제 정렬. 로컬에서만 돌고 유료 API 를 쓰지 않음
+- **자막 숫자 변환**: 노래는 한글 숫자로 부르고 자막은 아라비아 숫자로 표시 ('오십육 홈런' → '56홈런'). 사람·팀 이름은 바꾸지 않음
+- **템플릿**: 좌표·색·글꼴을 `templates/<채널>/template.json` 에 둔다. 채널을 추가할 때 코드를 고치지 않음
+- **영상마다 다른 구성**: 영상마다 구성과 해설을 다르게 만들어 품질을 지킨다. 연출 18요소(전환·강조색·자막 등장·효과음 등)는
+  최근 5편과 3요소 이상 다른 조합으로 고르고, 가사는 순위만 늘어놓으면 검사에서 걸려 해설·비교를 넣어야 한다
+- **품질·정확성 체크리스트**: 최종 렌더 전에 데이터·사진 출처, 음악·그림 사용 권리, 가사 검사 결과를 확인한다.
+  사람이 고친 내용은 `production_log.json` 에 기록
+- **CapCut 초안**: 같은 배치를 편집 가능한 트랙으로 (비공식 라이브러리라 실패해도 MP4 에는 영향 없음)
 
-## 가사 타이밍 자동 맞추기 (2차 기능, 로컬 모델)
+## 기술 스택
 
-음악 + 가사 텍스트(한 줄 = 자막 한 줄)를 주면 줄마다 시작·끝 시간을 찾아 `lyrics`에 넣는다.
-유료 API 없이 내 Mac에서 돈다(모델은 처음 한 번 Hugging Face에서 무료로 내려받음).
+- Python 3.12 · Pydantic v2(스키마·검증) · Pillow(프레임 그리기) · FFmpeg/ffprobe(`subprocess` 로 직접 호출)
+- Streamlit(화면) · librosa(박자) · stable-ts + faster-whisper + demucs(가사 정렬, 선택 설치) · pyCapCut(CapCut 초안)
+- pytest(+ xdist, cov) · ruff · mypy · pre-commit · GitHub Actions
 
-```sh
-.venv/bin/pip install -r requirements-align.txt   # stable-ts, faster-whisper, demucs, torch (기본 설치와 분리)
-```
-
-- 방식: **stable-ts 강제 정렬** — 받아쓰기가 아니라 이미 아는 가사가 '언제' 불렸는지 찾는다.
-  faster-whisper(CPU int8), 기본 모델 `large-v3`(약 3GB, 정확), `medium`·`small`(빠름) 선택 가능.
-- 반주가 크면 **demucs로 보컬만 분리**한 뒤 맞춘다(기본 켜짐, 결과는 `build/<폴더>/vocals_*.wav`에 캐시).
-- 후처리: 순서·겹침 정리, 0.6초 이하 틈은 이어 붙이기, 한 줄 최대 8초, 영상 시간(= 곡 시간 − 음악 시작 위치)으로 변환,
-  영상 밖 줄 제외. 못 찾은 줄은 앞뒤 사이로 보간하고, 신뢰도 낮은 줄과 함께 **확인 필요**로 알려준다.
-- 결과는 `projects/<폴더>/lyrics_auto.lrc`로도 저장된다(끝 시간은 빈 타임태그 → 다시 읽어도 같은 구간).
-- 화면: 4. 가사 → **🎙️ 가사 자동 맞추기** 펼치기 → 가사 붙여 넣기(또는 **곡에서 가사 불러오기**: Suno 곡은 파일에 가사가 들어 있음)
-  → 버튼. 결과가 아래 표에 들어오니 초 단위로 고치고 💾 저장. **표를 LRC로 저장**하면 `lyrics_edited.lrc`가 생긴다.
-- 명령줄: `align projects/x/project.json [--lyrics 가사.txt] [--no-vocals] [--model medium] [--lrc-name x.lrc] [--write]`
-  (`--lyrics`가 없으면 음악 파일 내장 가사, `--write`면 project.json에도 기록)
-- 정확도 평가: `.venv/bin/python scripts/eval_align.py 자동.lrc 정답.lrc` → 시작 시간 ±0.3/0.5/1초 안에 든 줄 수
-- 속도(M2 Pro, 64초 곡): 보컬 분리 약 10초 + 정렬(large-v3) 약 15초. 첫 실행은 모델 다운로드로 1~2분 더.
-
-## 구조
+## 폴더 구조
 
 ```
-app.py                     Streamlit 화면
-shortsmaker/
-  models.py                pydantic 스키마 (Project, Item, LyricLine, Template)
-  timeline.py              장면 시작/끝 계산
-  scenes.py                Pillow 장면 레이어 (배경·텍스트 / 순위 팝 / 캐리커처 + 마스크)
-  lyrics.py                LRC 파싱·검사, 가사 PNG / ASS
-  ffmpeg_builder.py        FFmpeg 명령 조립·실행 (장면 클립 → xfade·가사·음악 합성)
-  pipeline.py              검증 → 장면 → 클립 → 최종 MP4 → 결과 검증
-  validate.py              렌더 전·후 검증
-  capcut_export.py         CapCut 초안 / 수동 가져오기 키트
-  lyrics_align.py          가사 타이밍 자동 맞추기 (2차: demucs 보컬 분리 + stable-ts 정렬, LRC 저장)
-  cli.py                   명령줄
-templates/{yagu,info_top5} 채널 템플릿
-scripts/                   샘플 생성, 렌더 결과 확인(probe.py), CapCut 호환성 프로브, 가사 정렬 평가(eval_align.py)
-build/ output/             중간 파일·결과물 (Git 제외)
+app.py, pages/          Streamlit 화면 (노래로 자동 제작 · 가사 만들기 · 빠른 제작)
+shortsmaker/            본체
+  models.py               pydantic 스키마 (프로젝트·템플릿)
+  quick_parse*.py         양식 답변 → 표 (줄 번호 오류)
+  rank_extract.py         가사 → 순위 표, 한글 숫자 변환, 열 밀림 검사
+  lyrics_align.py         가사 타이밍 자동 맞추기
+  card_timing.py          장면·글자 시각 계산
+  card_layers.py          화면 요소 그리기
+  card_mode.py            프레임 렌더 → FFmpeg 인코딩
+  capcut_export.py        CapCut 초안
+  variation.py            연출 바꾸기
+templates/<채널>/       template.json (좌표·색·글꼴)
+examples/demo/          저작권 문제 없는 데모 자료
+scripts/                자산 준비·데모·검사 스크립트
+tests/                  pytest (렌더 테스트는 @slow)
+docs/                   architecture · decisions · usage · images
 ```
 
-## CapCut 시험 기록 · 편집 패키지 (별도 세션 작업)
+## 문제 해결 기록
 
-- [1단계: Mac CapCut 초안 호환성 시험](docs/capcut-compatibility.md) — pyCapCut 초안의 이미지·음악이
-  "Unsupported Media"로 뜬 문제와 샌드박스 원인 분석
-- [2단계: CapCut 편집 재료 가져오기 시험](docs/capcut-import-verification.md) — 앱 UI에서 직접 가져온
-  PNG·MP3·SRT는 정상 표시·편집됨 (사용자가 고른 파일은 샌드박스 허용 → 위 분석과 일치)
-- `shortsmaker/editing_package.py`: 장면 이미지·MP3 복사본·SRT·구성 JSON·미리보기 MP4를 담은 편집 패키지 생성
-  (`kit` 명령과 목적이 겹친다. 하나로 합칠지는 다음 단계에서 정한다)
+버그마다 재현 테스트를 남겨 두었다. 아래 네 건은 **증상 → 원인 → 해결 → 추가한 테스트** 순서로 정리했다.
 
-  ```sh
-  .venv/bin/python scripts/create_editing_sample.py output/stage2-input-new
-  .venv/bin/python -m shortsmaker.editing_package output/stage2-input-new/input.json output/stage2-package-new
-  ```
-- `scripts/capcut_probe.py`, `scripts/adapt_capcut_probe.py`: 1단계 시험용 최소 초안 생성·보정 (실험용)
+### 1. 자막에서 '이승엽'이 '2승엽'으로 바뀜
+
+- **증상**: '1위 이승엽 오십육 홈런'을 부른 가사가 자막에 '1위 **2승엽** 56홈런'으로 나왔다.
+- **원인**: 한글 숫자 변환이 '숫자 + 단위' 모양만 봤다. 이름 첫 글자 '이'(2)와 다음 글자 '승'(승리의 단위)을 숫자로 읽었다.
+- **해결**: 선수·팀 이름을 변환 전에 자리표시로 빼 두었다가 되돌린다. 단위 바로 뒤에 조사가 아닌 한글이 이어지면
+  낱말의 일부로 본다. 한 글자 숫자는 단위와 붙어 있을 때만 바꾼다 (`rank_extract.normalize_numbers`).
+- **추가한 테스트**: `tests/test_rank_extract.py` 의 `test_numbers_never_touch_names`(8경우),
+  `test_protect_list_and_extract_keeps_names`, `tests/test_quick.py` 에서 자막에 '2승엽'이 없는지 확인
+
+### 2. 공동 순위가 있으면 영상을 만들 수 없음
+
+- **증상**: 'FA 계약 TOP 5'처럼 공동 2위가 2명이면 3위가 없다. 그런데 프로젝트가 저장되지 않았고, 가사에서 뽑은 표는
+  빈 3위 칸 때문에 확정되지 않았다.
+- **원인**: 스키마가 "순위 1~5가 한 번씩"만 허용했다. 영상 속 자리(5→1 순서)와 화면에 보이는 순위를 같은 값으로 썼다.
+- **해결**: 자리(`rank`)와 보이는 순위(`display_rank`)를 나눴다. 공동 순위 규칙(1, 2, 2, 4, 5)을 검사하는 함수를 두고,
+  공동 순위 때문에 원래 없는 순위는 빈 행으로 만들지 않는다 (`models.competition_ranks_ok`, `rank_extract.extract_ranks`).
+- **추가한 테스트**: `test_tie_rule`, `test_competition_ranks_edges`, `test_tie_slots_and_labels`,
+  `test_extract_fa_tie_two_players_no_third`, `test_skipped_rank_after_tie` (`tests/test_rank_extract.py`),
+  양식의 '공동 3위' 칸 읽기 `test_tied_rank_cells` (`tests/test_quick_parse.py`)
+
+### 3. 기록 칸에 이름이 들어간 표 열 밀림을 못 잡음 ([PR #2](https://github.com/diz99-art/ShortsMaker/pull/2))
+
+- **증상**: `5 | 박병호 | 넥센 히어로즈 | 박병호 | 2014`처럼 기록 칸에 선수·팀 이름이 들어가도 검사를 통과했다.
+  그대로 두면 카드의 기록 자리에 이름이 찍힌다.
+- **원인**: 열 밀림 검사가 선수 칸의 숫자, 팀 칸의 선수 이름, 연도 칸의 문장만 봤다. 기록 칸 규칙이 없었다.
+- **해결**: 기록 칸 값이 표의 선수 이름이나 구단 이름·줄임말·별칭과 **정확히** 같으면 경고한다.
+  '삼성전 5연승'처럼 팀 이름이 섞인 진짜 기록은 통과시킨다 (`rank_extract.column_problems`).
+- **추가한 테스트**: `test_name_in_record_column_detected`(4경우), `test_real_records_pass`(5경우).
+  고치기 전에 실패하는 테스트를 먼저 커밋했다
+
+### 4. 오류 메시지에 이유 대신 문서 주소만 보임 ([PR #2](https://github.com/diz99-art/ShortsMaker/pull/2))
+
+- **증상**: 양식의 보너스 줄 칸이 모자라면 `11번째 줄: 보너스 — For further information visit https://errors.pydantic.dev/…`만 나왔다.
+- **원인**: pydantic `ValidationError` 의 문자열은 "오류 개수 / 이유 / 문서 URL" 3줄이다. 코드는 한 줄짜리 오류처럼
+  마지막 줄만 잘라 썼다.
+- **해결**: `ValidationError` 는 따로 받아 `e.errors()` 의 이유 문장을 보여 준다 (`quick_parse.parse_quick`).
+  → `11번째 줄: 보너스 — 보너스 순위 장면은 순위·이름·기록이 필요합니다`
+- **추가한 테스트**: `test_bonus_error_message_says_why` (먼저 xfail 로 남겨 둔 것을 정식 테스트로),
+  `test_bonus_format_error_message` (형식 오류 메시지는 그대로인지)
+
+## 개발 방식
+
+AI 코딩 도구 두 개를 썼다. 무엇을 만들지와 무엇을 받아들일지는 내가 정했다.
+
+- **나**: 설계서(`CLAUDE.md`)와 단계별 요구사항 작성, 범위·디자인 결정, 결과 영상 직접 확인, PR merge 결정
+- **Claude Code**: `main` 브랜치에서 대부분의 기능 구현과 리팩터링, 테스트 작성
+- **Codex**: 별도 작업 폴더(git worktree, `codex/work` 브랜치)에서 맡은 파일만 작업.
+  main 에 들어간 것은 정보 채널 양식 파서(`quick_parse_info.py`)와 그 테스트다 (화면 연결·확장은 Claude Code).
+  YouTube 업로드 모듈은 별도 브랜치에서 실험 중이고 main 에는 없다
+- 두 도구가 같은 규칙을 읽도록 `CLAUDE.md` 와 `AGENTS.md` 에 같은 협업 규칙을 둔다
+  (Codex 는 main 에 직접 커밋하지 않음, 맡은 파일 밖은 묻고 고침, hook 검사 우회 금지)
+
+AI 가 만든 코드를 그대로 믿지 않으려고 아래 방법으로 검증했다.
+
+- **테스트 먼저**: 버그는 실패하는 재현 테스트를 먼저 커밋(`test:`)하고 고쳤다(`fix:`)
+- **렌더 프레임 비교**: 리팩터링 전후에 같은 프로젝트 3개를 렌더해 프레임 4,320장의 해시(framemd5)와 오디오 해시가
+  완전히 같은지 비교했다 (모듈 분리, 타입 정리, 버그 수정 때마다)
+- **PR + CI**: 모든 변경은 PR 로 올리고 ruff → mypy → pytest 가 통과해야 merge
+- **push 보호**: `pre-push` hook 이 정리 전 옛 기록, 개인 이메일, 허용하지 않은 브랜치의 push 를 막는다.
+  커밋 전에는 폰트·노래·그림·비밀 파일을 막는 검사가 돈다
+- **직접 확인**: 영상은 사람이 보고 판단해야 해서 결과 영상과 CapCut 초안은 직접 열어 봤다
+
+솔직히 적으면, 초반(2026-10-09~12)에는 기능을 빨리 늘리느라 큰 커밋에 여러 기능을 함께 넣었다.
+테스트 먼저·PR·CI·프레임 비교는 공개를 준비하며(2026-10-13~) 정착한 방식이다.
+
+## 앞으로 할 일
+
+- 별도 브랜치에서 실험 중인 YouTube 업로드 모듈(OAuth, dry run)을 검토해서 합칠지 정하기
+- mypy 엄격 검사 범위 넓히기 (지금은 핵심 모듈만, [이유](docs/decisions.md))
+- 큰 모듈 나누기: `auto_pipeline.py` (1,306줄)
+- CapCut 수동 가져오기 키트와 편집 패키지를 하나로 합치기
+- 손 작업 대비 제작 시간 측정해서 위 표 채우기
+
+## 문서
+
+- [docs/architecture.md](docs/architecture.md) — 모듈 구조와 데이터 흐름
+- [docs/decisions.md](docs/decisions.md) — 설계 결정과 이유
+- [docs/usage.md](docs/usage.md) — 화면·명령줄 사용법, 템플릿, 검증 규칙 전체
+- [docs/capcut-compatibility.md](docs/capcut-compatibility.md) — Mac CapCut 초안 호환성 시험 기록
+
+폰트·노래·그림은 저장소에 넣지 않는다. 폰트는 `make setup` 이 공식 배포처에서 받는다 ([assets/fonts](assets/fonts/README.md)).

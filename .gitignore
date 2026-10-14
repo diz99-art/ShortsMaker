@@ -26,6 +26,8 @@ projects/*
 !projects/.gitkeep
 reference/
 local/
+# 면접 준비 문서 (local/ 전체가 제외되지만 실수로 옮겨도 안 올라가게 이름으로 한 번 더)
+interview-prep.md
 capcut_drafts/
 *.local.json
 
