@@ -30,3 +30,10 @@ def test_open_project_of_every_template(template, tmp_path, monkeypatch):
     at = _open(root, "p")
     assert not at.exception, [e.value for e in at.exception]
     assert any("프로젝트 **p**" in i.value for i in at.info)
+
+
+def test_template_labels_cover_every_flow_template():
+    for t in ALL_TEMPLATES:
+        assert (ROOT / "templates" / t / "template.json").exists()
+        assert ap.template_label(t) != t                                   # 화면용 이름이 있음
+    assert ap.template_label("새_템플릿") == "새_템플릿"                     # 모르는 템플릿은 이름 그대로
